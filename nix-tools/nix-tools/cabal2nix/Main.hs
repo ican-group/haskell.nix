@@ -39,11 +39,30 @@ writeDoc file doc =
      hPutDoc handle doc
      hClose handle
 
+usage :: String
+usage = unlines
+  [ "cabal-to-nix - convert a Cabal package into a Nix expression"
+  , ""
+  , "Usage:"
+  , "  cabal-to-nix <url> <rev>        fetch the package from <url> (must start"
+  , "                                  with http) at revision/ref <rev> and emit"
+  , "                                  Nix for the cabal file(s) it contains (the"
+  , "                                  sha256 is prefetched, not supplied here)"
+  , "  cabal-to-nix <path> <file>      emit Nix for the cabal <file>, using <path>"
+  , "                                  as the source location"
+  , "  cabal-to-nix <path> <dir>       emit a Nix set for a pkg/version/*.cabal"
+  , "                                  directory tree rooted at <dir>"
+  , "  cabal-to-nix <file>             like '<path> <file>' with <path> = \".\""
+  , "  cabal-to-nix <dir>              like '<path> <dir>' with <path> = \".\""
+  , "  cabal-to-nix --help, -h         show this help"
+  ]
+
 main :: IO ()
 main = getArgs >>= \case
-  [url,hash] | "http" `isPrefixOf` url ->
+  args | args `elem` [["--help"], ["-h"]] -> putStr usage
+  [url,rev] | "http" `isPrefixOf` url ->
           let subdir = "." in
-          fetch (\dir -> cabalFromPath url hash subdir $ dir </> subdir)
+          fetch (\dir -> cabalFromPath url rev subdir $ dir </> subdir)
             (Source url mempty UnknownHash) >>= \case
             (Just (DerivationSource{..}, genBindings)) -> genBindings derivHash
             _ -> return ()
@@ -58,7 +77,7 @@ main = getArgs >>= \case
   [file] -> doesDirectoryExist file >>= \case
     False -> nixFromCabal "." (OnDisk file)
     True  -> print . prettyNix =<< cabalexprs file
-  _ -> die "call with cabalfile (Cabal2Nix file.cabal)."
+  _ -> die usage
   where
     nixFromCabal path cabal =
       print . prettyNix =<< cabal2nix False MinimalDetails (Just (Path path)) cabal

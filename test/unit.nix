@@ -167,6 +167,34 @@ lib.runTests {
       expected = true;
     };
 
+  # #1090: a cabal.project with CRLF line endings must parse identically to one
+  # with LF endings (no stray "\r" left on extracted values).
+  testParseIndexStateCRLF = {
+    expr = haskellLib.parseIndexState (builtins.replaceStrings [ "\n" ] [ "\r\n" ] ''
+      index-state: 2021-07-20T00:00:00Z
+      packages: ./*.cabal
+    '');
+    expected = "2021-07-20T00:00:00Z";
+  };
+
+  testParseSourceRepoPackagesCRLF =
+    let
+      lf = ''
+        packages: ./*.cabal
+
+        source-repository-package
+          type: git
+          location: https://github.com/input-output-hk/haskell.nix.git
+          tag: 487eea1c249537d34c27f6143dff2b9d5586c657
+          --sha256: 077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123
+      '';
+      crlf = builtins.replaceStrings [ "\n" ] [ "\r\n" ] lf;
+      sourceRepos = f: __toJSON (haskellLib.parseSourceRepositoryPackages "cabal.project" {} {} f).sourceRepos;
+    in {
+      expr = sourceRepos crlf;
+      expected = sourceRepos lf;
+    };
+
   testParseRepositoryBlock =
     let
       # The Cabal2Nix output in hackage-to-nix is imported into a lambda
