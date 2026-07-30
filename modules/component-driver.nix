@@ -31,9 +31,11 @@ let
       The pinned version will be ignored and the compiler's copy used instead, which
       usually surfaces later as an opaque
         `installed package ... is broken due to missing package ${name}-...`
-      error.  To use your version, remove '${name}' from `nonReinstallablePkgs`, e.g.
-        nonReinstallablePkgs = builtins.filter (n: n != "${name}") nonReinstallablePkgs;
-      Otherwise drop the override to keep using the compiler's copy.'' acc)
+      error.  To use your version, set `nonReinstallablePkgs` in a project module to an
+      explicit list that omits '${name}'.  The option replaces rather than merges (the
+      last definition wins), so a plain assignment is enough — but do not derive the
+      new list from `config.nonReinstallablePkgs`, that is self-referential and will
+      loop.  Otherwise drop the override to keep using the compiler's copy.'' acc)
     value shadowedNonReinstallable;
 
 in
