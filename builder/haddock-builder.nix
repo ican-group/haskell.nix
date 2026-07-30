@@ -122,6 +122,14 @@ let
         ${lib.optionalString doHoogle "--hoogle"} \
         ${lib.optionalString hyperlinkSource "--hyperlink-source"} \
         ${lib.optionalString quickjump "--quickjump"} \
+        ${# Pass the component's ghcOptions on to the GHC invocations haddock
+          # makes, so haddock sees the same language extensions/options the
+          # build used (see #2129).  Split each option string into words (as
+          # cabal does for its own `--ghc-options`) so each flag becomes its
+          # own `--optghc`, and shell-escape every argument so options
+          # containing whitespace or shell-special characters survive intact.
+          lib.escapeShellArgs (map (o: "--haddock-option=--optghc=${o}")
+            (lib.filter (o: o != "") (lib.concatMap (lib.splitString " ") component.ghcOptions)))} \
         ${lib.concatStringsSep " " setupHaddockFlags}
       }
       runHook postHaddock
@@ -144,6 +152,12 @@ let
            mkdir -p "$docdir"
 
            cp -R "$html" "$docdir"/html
+
+           # Advertise the haddock output to hydra so it appears in the build
+           # products (and is browsable in the hydra UI), mirroring what the
+           # coverage builder does for reports (see #2029).
+           mkdir -p $doc/nix-support
+           echo "doc haddock $docdir/html" >> $doc/nix-support/hydra-build-products
         fi
 
         ${ghc.targetPrefix}ghc-pkg -v0 init $out/package.conf.d
