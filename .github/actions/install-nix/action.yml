@@ -1,0 +1,46 @@
+name: "Install Nix"
+description: >
+  Install Nix on a GitHub-hosted runner with the substituters and disk space
+  haskell.nix's tests need.  Factored into a composite action because every job
+  in `pipeline.yml` and `lints.yml` needs exactly the same setup, and GitHub
+  Actions has no way to share a step list between jobs (no YAML anchors).
+
+runs:
+  using: composite
+  steps:
+    # GitHub-hosted runners ship with ~14GB free on `/`, which is not enough
+    # for a cold Nix store plus a GHC closure.  Deleting the preinstalled
+    # toolchains we never use (dotnet, Android SDK, the bundled GHC/Haskell
+    # tooling, CodeQL bundles) frees ~25GB.  Done inline rather than with a
+    # third-party action to avoid another CI dependency.
+    - name: "Free disk space"
+      shell: bash
+      run: |
+        echo "Before:"
+        df -h /
+        sudo rm -rf \
+          /usr/share/dotnet \
+          /usr/local/lib/android \
+          /opt/ghc \
+          /usr/local/.ghcup \
+          /opt/hostedtoolcache/CodeQL \
+          /usr/local/share/boost \
+          /usr/share/swift || true
+        sudo docker image prune --all --force || true
+        echo "After:"
+        df -h /
+
+    - name: "Install Nix with good defaults"
+      uses: input-output-hk/install-nix-action@v20
+      with:
+        # Same substituters and keys as `upload-artifacts.yml`.  Hosted runners
+        # start with an empty store, so hitting cache.iog.io / cache.zw3rk.com
+        # is what makes these jobs finish at all.
+        extra_nix_config: |
+          trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=
+          substituters = https://cache.nixos.org/ https://cache.iog.io/ https://cache.zw3rk.com
+          # Hosted runners have few cores; let Nix fetch substitutes in
+          # parallel rather than serialising on one connection.
+          http-connections = 50
+          narinfo-cache-negative-ttl = 0
+        nix_path: nixpkgs=channel:nixos-unstable

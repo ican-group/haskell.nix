@@ -58,7 +58,10 @@ let
         (haskellLib.flatLibDepends {depends = directlySelectedComponents;}));
 
   isSelectedComponent =
-    comp: selectedComponentsBitmap."${((haskellLib.dependToLib comp).name or null)}" or false;
+    # `.name` can be absent for some dependency configs; fall back to "" so the
+    # attribute lookup yields the `or false` branch instead of failing with
+    # "cannot coerce null to a string" (see #1985).
+    comp: selectedComponentsBitmap."${((haskellLib.dependToLib comp).name or "")}" or false;
   selectedComponentsBitmap =
     lib.mapAttrs
       (_: x: (builtins.any isSelectedComponent x.config.depends))
