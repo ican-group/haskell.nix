@@ -83,6 +83,20 @@
 
       ifdLevel = 3;
       runningHydraEvalTest = false;
+      # The system that evaluation-time derivations (plan-to-nix, dummy-ghc,
+      # hadrian's plan) are built on.  This is deliberately *not* the target
+      # system: our Hydra has 10 darwin builders, so evaluating there is
+      # fastest on darwin regardless of which platform the jobs are for.
+      #
+      # It has to be stated explicitly rather than left to `ci.nix`'s
+      # `builtins.currentSystem or "aarch64-darwin"` default, because
+      # `currentSystem` does not exist under pure evaluation (`nix-eval-jobs
+      # --flake`, `nix path-info --derivation .#…`).  There the default
+      # silently became the literal "aarch64-darwin", which is right for Hydra
+      # but leaves any evaluator without darwin builders unable to evaluate
+      # *anything* -- including the linux jobs.  CI on GitHub-hosted runners
+      # overrides this to "x86_64-linux" (see .github/workflows/pipeline.yml).
+      evalSystem = "aarch64-darwin";
       defaultCompiler = "ghc967";
       config = import ./config.nix;
 
@@ -216,7 +230,7 @@
           stripAttrsForHydra (filterDerivations (
             # This is awkward.
             import ./ci.nix {
-              inherit ifdLevel system;
+              inherit ifdLevel system evalSystem;
               haskellNix = self;
             }
           )));

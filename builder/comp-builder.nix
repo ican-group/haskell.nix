@@ -681,6 +681,13 @@ let
       (lib.optionalString stdenv.hostPlatform.isWindows ''
         export pkgsHostTargetAsString="''${pkgsHostTarget[@]}"
       '') +
+      # GHC only creates the -hiedir when it actually writes a .hie file, so a
+      # component with no compiled modules would leave the `hie` output missing
+      # and fail the derivation.  Create it up front so an empty HIE output is
+      # a valid result (see #1242).
+      (lib.optionalString writeHieFiles ''
+        mkdir -p $hie
+      '') +
       # The following could be refactored but would lead to many rebuilds
 
       # In case of content addressed components we need avoid parallel building (passing -j1)

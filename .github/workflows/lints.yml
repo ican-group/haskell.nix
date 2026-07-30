@@ -19,11 +19,14 @@ env:
   NIX_PATH: "nixpkgs=channel:nixos-unstable"
   REVIEWDOG_GITHUB_API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+# Was `[self-hosted, linux]`, which no longer has any runners; see the note in
+# `pipeline.yml`.  Nix comes from the shared composite action instead.
 jobs:
   deadnix:
-    runs-on: [self-hosted, linux]
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: ./.github/actions/install-nix
       - run: |
           nix run github:astro/deadnix -- --edit --no-lambda-pattern-names --exclude materialized
           TMPFILE=$(mktemp)

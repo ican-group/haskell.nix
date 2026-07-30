@@ -46,6 +46,10 @@ let
 
         in
           (relPath == stackYaml)
+          # Keep any `.yaml` so that a `stack.yaml` which is a symlink to e.g.
+          # `stack-8.6.5.yaml` still has its target present (otherwise the
+          # symlink dangles, #801).
+          || (evalPackages.lib.hasSuffix ".yaml" relPath)
           || (resolver != null && (relPath == resolver || isParent relPath resolver))
         ;
     };
