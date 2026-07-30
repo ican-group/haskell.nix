@@ -22,8 +22,20 @@
         `null` (the default) keeps the standard behaviour of `-j` capped at
         `min(NIX_BUILD_CORES, 4)`.  Set to `1` to build sequentially (useful
         for memory-hungry packages that OOM under parallel builds), or to any
-        other positive integer to pin the parallelism.  Only affects the v1
-        (`builderVersion = 1`) builder.
+        other positive integer to pin the parallelism.
+
+        Only affects the v1 (`builderVersion = 1`) builder; the v2 builder
+        builds whole cabal slices rather than individual components, so it has
+        no per-component equivalent and ignores this option.
+
+        Two v1 exceptions:
+
+        * `contentAddressed` components always build with `-j1`, because a
+          deterministic output is the point of `__contentAddressed`.  A larger
+          `buildJobs` is ignored there.
+        * ghcjs components pass no `-j` at all by default.  An explicitly set
+          `buildJobs` is honoured, but leaving it `null` does not introduce the
+          capped default.
       '';
       type = lib.types.nullOr lib.types.ints.positive;
       default = null;
