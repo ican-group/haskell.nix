@@ -278,6 +278,7 @@ test-suite tests
                      , tasty-golden
   build-tool-depends:  nix-tools:make-install-plan
                      , nix-tools:plan-to-nix
+                     , nix-tools:cabal-to-nix
                      , cabal-install:cabal
   hs-source-dirs:      tests
   default-language:    Haskell2010

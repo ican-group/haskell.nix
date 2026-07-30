@@ -1,0 +1,7 @@
+name: stack-symlink-yaml
+
+dependencies:
+- base
+
+library:
+  source-dirs: src
