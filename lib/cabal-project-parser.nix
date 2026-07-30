@@ -1,5 +1,14 @@
 { pkgs }:
 let
+  # Strip carriage returns so a cabal.project checked out with CRLF line
+  # endings parses the same as one with LF endings.  Without this every
+  # `splitString "\n"` below leaves a trailing "\r" on each line, silently
+  # corrupting extracted values (locations, tags, subdirs, sha256 comments)
+  # and block boundaries (see #1090).  Note: this drops string context, so
+  # callers that need it (e.g. builtins.split's context trick) must derive it
+  # from the original, un-normalised argument.
+  normalizeCRLF = builtins.replaceStrings [ "\r\n" ] [ "\n" ];
+
   span = pred: list:
     let n = pkgs.lib.lists.foldr (x: acc: if pred x then acc + 1 else 0) 0 list;
     in { fst = pkgs.lib.lists.take n list; snd = pkgs.lib.lists.drop n list; };
@@ -10,7 +19,7 @@ let
         indexState = pkgs.lib.lists.concatLists (
           pkgs.lib.lists.filter (l: l != null)
             (builtins.map (l: builtins.match "^index-state: *(.*)" l)
-              (pkgs.lib.splitString "\n" rawCabalProject)));
+              (pkgs.lib.splitString "\n" (normalizeCRLF rawCabalProject))));
       in
         pkgs.lib.lists.head (indexState ++ [ null ]);
 
@@ -124,10 +133,11 @@ let
 
   parseSourceRepositoryPackages = cabalProjectFileName: sha256map: source-repo-override: projectFile:
     let
-      splitResult = builtins.split "\n( *)source-repository-package\n" ("\n" + projectFile);
+      splitResult = builtins.split "\n( *)source-repository-package\n" ("\n" + normalizeCRLF projectFile);
       # builtins.split strips string context. Use substring to create a zero-length
       # string with the original context, then prepend it to carry context through
       # via concatenation (which doesn't validate paths like appendContext does).
+      # (Derived from the un-normalised projectFile so the context is preserved.)
       contextStr = builtins.substring 0 0 projectFile;
       # Construct a list of strings with just the indentation amounts for each map
       indentations = builtins.concatLists (builtins.filter builtins.isList splitResult);
@@ -220,7 +230,7 @@ let
   parseRepositories = evalPackages: cabalProjectFileName: sha256map: inputMap: nix-tools: projectFile:
     let
       # This will leave the name of repository in the first line of each block
-      blocks = pkgs.lib.splitString "\nrepository " ("\n" + projectFile);
+      blocks = pkgs.lib.splitString "\nrepository " ("\n" + normalizeCRLF projectFile);
       repoBlocks = builtins.map (parseRepositoryBlock evalPackages cabalProjectFileName sha256map inputMap nix-tools) (pkgs.lib.lists.drop 1 blocks);
     in {
       extra-hackages = pkgs.lib.lists.map (block: block.hackage) repoBlocks;
