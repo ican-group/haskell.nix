@@ -193,6 +193,7 @@ let
     stack-local-resolver = callTest ./stack-local-resolver {};
     stack-local-resolver-subdir = callTest ./stack-local-resolver-subdir {};
     stack-remote-resolver = callTest ./stack-remote-resolver {};
+    stack-symlink-yaml = callTest ./stack-symlink-yaml {};
     shell-for-setup-deps = callTest ./shell-for-setup-deps {};
     setup-deps = import ./setup-deps { inherit pkgs evalPackages compiler-nix-name; };
     callStackToNix = callTest ./call-stack-to-nix {};

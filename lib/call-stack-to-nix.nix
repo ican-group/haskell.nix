@@ -31,7 +31,10 @@ let
     src = src.origSrc or src;
     filter = path: type: (!(src ? filter) || src.filter path type) && (
       type == "directory" ||
-      evalPackages.lib.any (i: (evalPackages.lib.hasSuffix i path)) [ stackYaml ".cabal" "package.yaml" ]); });
+      # Keep any `.yaml` (not just `stackYaml`) so that when `stack.yaml` is a
+      # symlink to e.g. `stack-8.6.5.yaml`, the symlink target is retained too;
+      # otherwise it is filtered out and the symlink dangles (#801).
+      evalPackages.lib.any (i: (evalPackages.lib.hasSuffix i path)) [ stackYaml ".yaml" ".cabal" "package.yaml" ]); });
 
   stackToNixArgs = builtins.concatStringsSep " " [
     "--full"
