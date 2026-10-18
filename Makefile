@@ -31,6 +31,7 @@ check: ## Check whitespace, Nix syntax, emulator selection, and dependencies
 	nix-instantiate --eval --strict test/qemu-selection.nix
 	nix-instantiate --eval --strict test/annotations/selection.nix
 	nix-instantiate --eval --strict test/iserv-source-platform.nix -A passed
+	nix-instantiate --eval --strict test/windows-system-libraries.nix
 	nix-instantiate --eval --strict test/qemu-linux-user-inputs.nix -A passed
 	nix-instantiate --parse test/rosetta-signals.nix >/dev/null
 	nix-instantiate --parse overlays/mingw-stdio.nix >/dev/null
