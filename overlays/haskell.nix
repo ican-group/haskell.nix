@@ -1410,11 +1410,20 @@ final: prev: {
                 name = "iserv-proxy";
                 inherit compiler-nix-name evalSystem;
 
-                # The ARM32 symbol table includes missing-function stubs for
-                # real static Bionic routines. One shadows libc startup before
-                # TLS exists. Patch before planning so v2 hashes and source
-                # archives describe the same implementation.
+                # Patch platform-specific iserv-proxy symbol tables before
+                # planning so v2 hashes and source archives describe the same
+                # implementation. The ARM32 Bionic patch removes stubs that
+                # shadow real static libc routines; the i386 musl patch drops
+                # a hidden libc symbol that prevents dynamic linking.
                 src = if compiler-nix-name == "ghc914-sh"
+                  && pkgs.stdenv.hostPlatform.isLinux
+                  && pkgs.stdenv.hostPlatform.isMusl
+                  && pkgs.stdenv.hostPlatform.isx86_32
+                then config.evalPackages.applyPatches {
+                  name = "i386-musl-iserv-proxy-source";
+                  src = sources.iserv-proxy;
+                  patches = [ ./patches/iserv-proxy-i386-musl-dynamic-libc.patch ];
+                } else if compiler-nix-name == "ghc914-sh"
                   && pkgs.stdenv.hostPlatform.isAndroid
                   && pkgs.stdenv.hostPlatform.isAarch32
                 then config.evalPackages.applyPatches {
@@ -1542,9 +1551,11 @@ final: prev: {
                   # dlopening nixpkgs' libstdc++.so cannot find its
                   # libgcc_s.so.1.
                   #
-                  # Not i386: its symbol table names musl's hidden
-                  # `__aio_close`, which only links fully static (see
-                  # 571f1a2ac).
+                  # i386-musl's symbol table names musl's hidden
+                  # `__aio_close`, which only links fully static. The
+                  # i386 source patch above removes that table reference so
+                  # this interpreter can resolve the public libc symbols it
+                  # needs through dlsym like the other musl targets.
                   #
                   # pkgsStatic (`static`) has no libgcc_s, so there only
                   # libc is linked dynamically (musl-static still ships
@@ -1553,7 +1564,9 @@ final: prev: {
                   # builder/comp-v2-builder.nix).
                   + pkgs.lib.optionalString (
                        pkgs.stdenv.hostPlatform.isMusl
-                    && !pkgs.stdenv.hostPlatform.isx86_32
+                    && (!pkgs.stdenv.hostPlatform.isx86_32
+                      || (compiler-nix-name == "ghc914-sh"
+                        && pkgs.stdenv.hostPlatform.isLinux))
                     && (final.buildPackages.haskell-nix.compiler.${compiler-nix-name}.emptyGlobalPackageDb or false)
                   ) ''
                     package iserv-proxy
