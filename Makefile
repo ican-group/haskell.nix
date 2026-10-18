@@ -7,7 +7,7 @@ TEST_SUITE ?= unit-tests
 SYSTEM ?= x86_64-linux
 QEMU_ARG = $(if $(QEMU),--argstr qemu "$(QEMU)",)
 
-.PHONY: help check test test-linux-cross-wrapper test-v2-cabal-overrides test-qemu-linux-user test-qemu-arm32-personality test-elf-comdat-functions probe-rosetta-signals test-rosetta-signals verify
+.PHONY: help check test test-linux-cross-wrapper test-v2-cabal-overrides test-mingw-stdio test-qemu-linux-user test-qemu-arm32-personality test-elf-comdat-functions probe-rosetta-signals test-rosetta-signals verify
 
 ##@ Verification
 check: ## Check whitespace, Nix syntax, emulator selection, and dependencies
@@ -33,6 +33,9 @@ check: ## Check whitespace, Nix syntax, emulator selection, and dependencies
 	nix-instantiate --eval --strict test/iserv-source-platform.nix -A passed
 	nix-instantiate --eval --strict test/qemu-linux-user-inputs.nix -A passed
 	nix-instantiate --parse test/rosetta-signals.nix >/dev/null
+	nix-instantiate --parse overlays/mingw-stdio.nix >/dev/null
+	nix-instantiate --parse test/mingw-stdio/default.nix >/dev/null
+	nix-instantiate --eval --strict test/mingw-stdio/selection.nix
 
 test: ## Run the existing test driver (COMPILER, TEST_SUITE, TIMEOUT)
 	timeout -k 5 $(TIMEOUT) ./test/tests.sh $(COMPILER) $(TEST_SUITE)
@@ -42,6 +45,10 @@ test-linux-cross-wrapper: ## Test wrapper arguments, process ownership, and prof
 
 test-v2-cabal-overrides: ## Check revised metadata survives V2 source patches (SYSTEM, TIMEOUT)
 	timeout -k 5 $(TIMEOUT) nix-build --no-out-link test/v2-cabal-overrides.nix --argstr system $(SYSTEM)
+
+test-mingw-stdio: ## Test MinGW ISO swprintf under Wine (Linux SYSTEM, TIMEOUT)
+	timeout -k 5 $(TIMEOUT) nix-build --no-out-link test/mingw-stdio --arg pkgs \
+	  'let hn = import ./default.nix { system = "$(SYSTEM)"; }; in (import hn.sources.nixpkgs-unstable (hn.nixpkgsArgs // { system = "$(SYSTEM)"; })).pkgsCross.ucrt64'
 
 verify: check test-linux-cross-wrapper ## Run syntax, dependency, and wrapper regressions
 

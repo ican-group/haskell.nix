@@ -326,6 +326,13 @@ let
         || lib.versionAtLeast pkgs.pkgsBuildBuild.qemu.version "12";
       run = import ./qemu-arm32-personality.nix { pkgs = pkgs.pkgsBuildBuild; };
     };
+    mingw-stdio = lib.recurseIntoAttrs {
+      meta.disabled = !stdenv.hostPlatform.isWindows
+        || !stdenv.hostPlatform.isx86_64
+        || !pkgs.pkgsBuildBuild.stdenv.hostPlatform.isLinux
+        || !pkgs.pkgsBuildBuild.stdenv.hostPlatform.isx86_64;
+      run = import ./mingw-stdio { inherit pkgs; };
+    };
     external-static-plugin = callTest ./external-static-plugin {};
     exe-dlls = callTest ./exe-dlls { inherit util; };
     exe-lib-dlls = callTest ./exe-lib-dlls { inherit util; };
