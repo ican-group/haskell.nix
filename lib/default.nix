@@ -439,14 +439,20 @@ in {
          then if d ? instantiations
               then d.components.library.override { inherit (d) instantiations; }
               else d.components.library
-         else throw ("haskell.nix: the library of package '${d.identifier.name or "<unknown>"}'"
-           + " is not available because it was not in the install plan."
-           + " This usually means the package was given overrides (e.g. via"
-           + " `modules` / `packages.${d.identifier.name or "<name>"}`) but is not part"
-           + " of the cabal plan, so none of its components were planned."
-           + " Add it to the project's dependencies (so it appears in the plan),"
-           + " or remove the override.")
+         else throw (unplannedLibraryMessage (d.identifier.name or null))
     else d;
+
+  # The error for a dependency whose package has no library component because
+  # it was not in the install plan (#1379).  Shared by `dependToLib` (v1) and
+  # the v2 builder's dependency-slice lookup.
+  unplannedLibraryMessage = name:
+    "haskell.nix: the library of package '${if name == null then "<unknown>" else name}'"
+      + " is not available because it was not in the install plan."
+      + " This usually means the package was given overrides (e.g. via"
+      + " `modules` / `packages.${if name == null then "<name>" else name}`) but is not part"
+      + " of the cabal plan, so none of its components were planned."
+      + " Add it to the project's dependencies (so it appears in the plan),"
+      + " or remove the override.";
 
   projectOverlays = import ./project-overlays.nix {
     inherit lib haskellLib;

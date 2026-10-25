@@ -80,6 +80,12 @@ lib.runTests {
     expected = false;
   };
 
+  # The shared message names the package (used by v1 and the v2 builder).
+  testUnplannedLibraryMessageNamesPackage = {
+    expr = lib.hasInfix "package 'foo' is not available" (haskellLib.unplannedLibraryMessage "foo");
+    expected = true;
+  };
+
   testParseBlock1 = {
     expr = __toJSON (haskellLib.parseSourceRepositoryPackageBlock "cabal.project" {} {} "" ''
         type: git
