@@ -1,4 +1,4 @@
-{ lib, stdenv, stackProject', testSrc, testSrcRoot, compiler-nix-name, evalPackages }:
+{ lib, stdenv, stackProject', testSrc, testSrcRoot, compiler-nix-name, evalPackages, evalSystem }:
 
 let
   # The `extra-deps` git url is never fetched: `inputMap` maps it (keyed
@@ -11,7 +11,7 @@ let
     inputMap = {
       "https://github.com/input-output-hk/haskell.nix.git/bc01ebc05a8105035c9449943046b46c8364b932" = testSrcRoot;
     };
-    inherit evalPackages;
+    inherit evalSystem;
   };
   packages = project.hsPkgs;
 
