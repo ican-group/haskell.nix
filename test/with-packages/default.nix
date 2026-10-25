@@ -1,13 +1,14 @@
-{ stdenv, lib, haskellLib, util, cabalProject', testSrc, compiler-nix-name, evalPackages, buildPackages }:
+{ stdenv, lib, haskellLib, util, cabalProject', testSrc, compiler-nix-name, evalPackages, evalSystem, buildPackages, testCabalProjectLocal, testInputMap }:
 
 with lib;
 with util;
 
 let
   project = doExactConfig: cabalProject' {
-    inherit compiler-nix-name evalPackages;
+    inherit compiler-nix-name evalSystem;
     src = testSrc "with-packages";
-    cabalProjectLocal = builtins.readFile ../cabal.project.local;
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal;
     modules = [
       # overrides to fix the build
       {
@@ -17,9 +18,8 @@ let
       # vary component config for tests
       {
         packages.test-with-packages.components.library.doExactConfig = doExactConfig;
+        packages.test-with-packages.components.library.usesTemplateHaskell = true;
       }
-
-      { inherit evalPackages; }
     ];
   };
 

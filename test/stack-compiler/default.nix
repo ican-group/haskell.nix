@@ -1,9 +1,9 @@
-{ lib, stackProject', testSrc, compiler-nix-name, evalPackages }:
+{ lib, stackProject', testSrc, compiler-nix-name, evalPackages, evalSystem }:
 
 let
   project = stackProject' {
     src = testSrc "stack-compiler";
-    inherit evalPackages;
+    inherit evalSystem;
   };
   packages = project.hsPkgs;
 

@@ -1,10 +1,10 @@
-{ stdenv, lib, project', haskellLib, testSrc, compiler-nix-name, evalPackages }:
+{ stdenv, lib, project', haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem }:
 
 with lib;
 
 let
   project = project' {
-    inherit compiler-nix-name evalPackages;
+    inherit compiler-nix-name evalSystem;
     src = testSrc "literate-haskell";
   };
 

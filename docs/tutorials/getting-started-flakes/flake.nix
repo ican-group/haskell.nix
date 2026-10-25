@@ -2,8 +2,13 @@
   description = "A very basic flake";
   inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
+  # nixpkgs unstable (26.11) dropped x86_64-darwin, and `eachSystem` below
+  # evaluates *every* listed system to collect its output names — so one
+  # unimportable system breaks `nix build` on all of them.  Keep the last
+  # pin that supports it and use it for that system only.
+  inputs.nixpkgs-2605.follows = "haskellNix/nixpkgs-2605";
   inputs.flake-utils.url = "github:numtide/flake-utils";
-  outputs = { self, nixpkgs, flake-utils, haskellNix }:
+  outputs = { self, nixpkgs, nixpkgs-2605, flake-utils, haskellNix }:
     flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
     let
       overlays = [ haskellNix.overlay
@@ -29,7 +34,8 @@
             };
         })
       ];
-      pkgs = import nixpkgs { inherit system overlays; inherit (haskellNix) config; };
+      pkgs = import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs)
+        { inherit system overlays; inherit (haskellNix) config; };
       flake = pkgs.helloProject.flake {
         # This adds support for `nix build .#js-unknown-ghcjs:hello:exe:hello`
         # crossPlatforms = p: [p.ghcjs];

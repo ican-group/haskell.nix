@@ -1,0 +1,64 @@
+--- a/lib/Target/ARM/ARMAsmPrinter.cpp
++++ b/lib/Target/ARM/ARMAsmPrinter.cpp
+@@ -95,9 +95,17 @@
+   const GlobalValue *GV = dyn_cast<GlobalValue>(CV->stripPointerCasts());
+   assert(GV && "C++ constructor pointer was not a GlobalValue!");
+ 
++  // Subtarget is only set by runOnMachineFunction, so it is still null for a
++  // module that declares @llvm.global_ctors but defines no functions at all.
++  // Such a module reaches here via doFinalization -> emitGlobalVariable and
++  // used to crash.  Only the object format is needed, and the triple carries
++  // that independently of any function.
++  bool IsELF = Subtarget ? Subtarget->isTargetELF()
++                         : TM.getTargetTriple().isOSBinFormatELF();
++
+   const MCExpr *E = MCSymbolRefExpr::create(
+       GetARMGVSymbol(GV, ARMII::MO_NO_FLAG),
+-      (Subtarget->isTargetELF() ? ARM::S_TARGET1 : ARM::S_None), OutContext);
++      (IsELF ? ARM::S_TARGET1 : ARM::S_None), OutContext);
+ 
+   OutStreamer->emitValue(E, Size);
+ }
+@@ -866,10 +874,19 @@
+ 
+ MCSymbol *ARMAsmPrinter::GetARMGVSymbol(const GlobalValue *GV,
+                                         unsigned char TargetFlags) {
+-  if (Subtarget->isTargetMachO()) {
+-    bool IsIndirect =
+-        (TargetFlags & ARMII::MO_NONLAZY) && Subtarget->isGVIndirectSymbol(GV);
++  // See emitXXStructor: Subtarget can be null when the module has no function
++  // definitions.  Fall back to the triple for the object format, and treat a
++  // symbol as non-indirect when there is no Subtarget to ask.
++  const Triple &TT = TM.getTargetTriple();
++  bool IsMachO =
++      Subtarget ? Subtarget->isTargetMachO() : TT.isOSBinFormatMachO();
++  bool IsCOFF = Subtarget ? Subtarget->isTargetCOFF() : TT.isOSBinFormatCOFF();
++  bool IsELF = Subtarget ? Subtarget->isTargetELF() : TT.isOSBinFormatELF();
+ 
++  if (IsMachO) {
++    bool IsIndirect = (TargetFlags & ARMII::MO_NONLAZY) && Subtarget &&
++                      Subtarget->isGVIndirectSymbol(GV);
++
+     if (!IsIndirect)
+       return getSymbol(GV);
+ 
+@@ -885,8 +902,8 @@
+       StubSym = MachineModuleInfoImpl::StubValueTy(getSymbol(GV),
+                                                    !GV->hasInternalLinkage());
+     return MCSym;
+-  } else if (Subtarget->isTargetCOFF()) {
+-    assert(Subtarget->isTargetWindows() &&
++  } else if (IsCOFF) {
++    assert((!Subtarget || Subtarget->isTargetWindows()) &&
+            "Windows is the only supported COFF target");
+ 
+     bool IsIndirect =
+@@ -914,7 +931,7 @@
+     }
+ 
+     return MCSym;
+-  } else if (Subtarget->isTargetELF()) {
++  } else if (IsELF) {
+     return getSymbolPreferLocal(*GV);
+   }
+   llvm_unreachable("unexpected target");

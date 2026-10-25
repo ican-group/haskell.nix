@@ -39,6 +39,9 @@ in addPackageKeys {
   packages.cpphs.package.license = lib.mkForce "LGPL-2.1-only";
   packages.polyparse.package.license = lib.mkForce "LGPL-2.1-only";
 
+  # Remove when ghc-toolchain's cabal file has a LICENSE.
+  packages.ghc-toolchain.package.license = lib.mkForce "BSD-3-Clause";
+
   # These two patches are needed by GHCJS
   packages.Cabal.patches = [
     (fromUntil "3.2.0.0" "3.5" ../overlays/patches/Cabal/Cabal-3.0.0.0-drop-pkg-db-check.diff)

@@ -1,12 +1,12 @@
 # Test a package set
-{ stdenv, lib, util, cabalProject', haskellLib, gmp6, zlib, runCommand, testSrc, compiler-nix-name, evalPackages, buildPackages }:
+{ stdenv, lib, util, cabalProject', haskellLib, gmp6, zlib, runCommand, testSrc, compiler-nix-name, evalPackages, evalSystem, buildPackages }:
 
 with lib;
 
 let
   project =
     cabalProject' {
-      inherit compiler-nix-name evalPackages;
+      inherit compiler-nix-name evalSystem;
       src = testSrc "cabal-doctests";
     };
 
