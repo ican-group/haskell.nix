@@ -294,5 +294,6 @@ test-suite stack-project-tests
                      , extra
                      , filepath
                      , nix-tools
+                     , nix-tools:cabal2nix
   hs-source-dirs:      tests
   default-language:    Haskell2010
