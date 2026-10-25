@@ -698,15 +698,27 @@ final: prev: {
             # TODO: this should be moved into `call-stack-to-nix`
             { packages =
                 let
-                  repoToAttr = { name, url, rev, ref ? null, sha256 ? null, subdir ? null, is-private ? false, input ? null, ... }: {
+                  repoToAttr = { name, url, rev, ref ? null, sha256 ? null, subdir ? null, is-private ? false, input ? null, ... }:
+                    let hasSubdir = subdir != null && subdir != "."; in {
                     ${name} = {
                       src =
                         # When a dependency url was resolved via `inputMap`
                         # (see `lib/stack-cache-generator.nix`) use the mapped
                         # local path / flake input directly instead of
-                        # fetching it again.
+                        # fetching it again.  Select the subdir with
+                        # `cleanSourceWith` rather than the `postUnpack` below:
+                        # a mapped input may itself be a cleaned source, and
+                        # the component source cleaning assumes the package is
+                        # at the root of `src`, so it would drop the subdir.
                         if input != null
-                        then input
+                        then
+                          if hasSubdir
+                            then final.haskell-nix.haskellLib.cleanSourceWith {
+                              src = input;
+                              subDir = subdir;
+                              name = "${name}-src";
+                            }
+                            else input
                         else if is-private
                         then
                           builtins.fetchGit
@@ -715,7 +727,7 @@ final: prev: {
                             )
                         else
                           final.fetchgit { inherit url rev sha256; };
-                    } // final.buildPackages.lib.optionalAttrs (subdir != null && subdir != ".") { postUnpack = "sourceRoot+=/${subdir}; echo source root reset to $sourceRoot"; };
+                    } // final.buildPackages.lib.optionalAttrs (input == null && hasSubdir) { postUnpack = "sourceRoot+=/${subdir}; echo source root reset to $sourceRoot"; };
                   };
 
                   cacheMap = builtins.map repoToAttr cache;
