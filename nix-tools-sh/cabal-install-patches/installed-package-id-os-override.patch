@@ -1,0 +1,58 @@
+Allow overriding the OS used by `hashedInstalledPackageId` via env var.
+
+`hashedInstalledPackageId` selects between `Long` / `Short` /
+`VeryShort` unit-id formats based on `buildOS` — i.e. the OS where
+cabal-install is currently executing.  For haskell.nix that's the
+*eval* platform of the plan-nix derivation, not the *build* platform
+where cabal will later actually do the compile.  Cross those wires
+(eval on Darwin, slice builds on Linux) and the unit-ids in plan-nix
+diverge from the unit-ids cabal computes inside the slice — every
+slice then tries to rebuild every dep from source and fails the
+expected-package check.
+
+Add `CABAL_INSTALLED_PACKAGE_ID_OS` as an override.  When set (to a
+Cabal-parseable OS name like `linux`, `osx`, `mingw32`), it replaces
+`buildOS` for the purposes of unit-id format selection.  Unset → keep
+existing behaviour.
+
+haskell.nix sets this env var to `pkgs.stdenv.buildPlatform`'s OS
+when invoking `make-install-plan`, so plan-nix unit-ids match what
+slice cabal v2-build computes on the build platform regardless of
+which system happens to evaluate the plan-nix derivation.
+
+--- a/src/Distribution/Client/PackageHash.hs
++++ b/src/Distribution/Client/PackageHash.hs
+@@ -65,6 +65,8 @@
+ import qualified Data.ByteString.Lazy.Char8 as LBS
+ import qualified Data.Map as Map
+ import qualified Data.Set as Set
++import System.Environment (lookupEnv)
++import System.IO.Unsafe (unsafePerformIO)
+ 
+ -------------------------------
+ -- Calculating package hashes
+@@ -78,9 +80,22 @@
+ -- See 'hashedInstalledPackageIdLong' vs 'hashedInstalledPackageIdShort'.
+ hashedInstalledPackageId :: PackageHashInputs -> InstalledPackageId
+ hashedInstalledPackageId
+-  | buildOS == Windows = hashedInstalledPackageIdShort
+-  | buildOS == OSX = hashedInstalledPackageIdLong
++  | os == Windows = hashedInstalledPackageIdShort
++  | os == OSX = hashedInstalledPackageIdLong
+   | otherwise = hashedInstalledPackageIdLong
++  where
++    os = effectiveInstalledPackageIdOS
++
++-- | OS used to pick the unit-id format.  Defaults to 'buildOS' (the
++-- platform cabal-install is running on).  haskell.nix overrides this
++-- via the @CABAL_INSTALLED_PACKAGE_ID_OS@ env var so that plan-nix
++-- unit-ids agree with slice-build unit-ids regardless of where the
++-- planner happens to execute.
++{-# NOINLINE effectiveInstalledPackageIdOS #-}
++effectiveInstalledPackageIdOS :: OS
++effectiveInstalledPackageIdOS = unsafePerformIO $ do
++  m <- lookupEnv "CABAL_INSTALLED_PACKAGE_ID_OS"
++  pure $ fromMaybe buildOS (m >>= simpleParsec)
+ 
+ -- | Calculate a 'InstalledPackageId' for a package using our nix-style
+ -- inputs hashing method.

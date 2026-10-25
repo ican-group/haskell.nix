@@ -148,8 +148,15 @@ let
         # Forward $ghc/lib/ and $ghc/share/ so `ghc --print-libdir`
         # (which makeWrapper preserves via getExecutablePath) still
         # finds the boot libs.
+        #
+        # `if`, not `[ -d ... ] && ...`: this loop is the LAST command in the
+        # builder, so with a missing directory the `&&` form left the loop's
+        # exit status at 1 and the whole derivation failed -- silently, since a
+        # failed test writes nothing.  `set -e` never fired (the test is the
+        # left operand of `&&`, which is exempt); the script simply ran off the
+        # end with a non-zero status, and the log was empty.
         for d in lib share; do
-          [ -d ${ghc}/$d ] && ln -s ${ghc}/$d $out/$d
+          if [ -d ${ghc}/$d ]; then ln -s ${ghc}/$d $out/$d; fi
         done
       '';
 

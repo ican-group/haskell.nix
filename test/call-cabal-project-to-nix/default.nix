@@ -1,4 +1,4 @@
-{ stdenv, lib, buildPackages, mkCabalProjectPkgSet, callCabalProjectToNix, loadCabalPlan, haskellLib, testSrc, compiler-nix-name, evalPackages }:
+{ stdenv, lib, buildPackages, mkCabalProjectPkgSet, callCabalProjectToNix, loadCabalPlan, haskellLib, testSrc, compiler-nix-name, evalPackages, testCabalProjectLocal, testInputMap }:
 
 with lib;
 
@@ -21,7 +21,8 @@ let
     inherit compiler-nix-name evalPackages;
     # reuse the cabal-simple test project
     src = testSrc "cabal-simple";
-    cabalProjectLocal = builtins.readFile ../cabal.project.local
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal
       + androidStaticLocal
       + lib.optionalString (haskellLib.isCrossHost && stdenv.hostPlatform.isAarch64) ''
         constraints: text -simdutf, text source
@@ -44,6 +45,30 @@ let
   packages = pkgSet.config.hsPkgs;
 
 in lib.recurseIntoAttrs {
+  # This test deliberately drives the low-level callCabalProjectToNix /
+  # mkCabalProjectPkgSet path, which does NOT pull in
+  # `modules/cabal-project.nix` -- see the `androidStaticLocal` note above,
+  # where that same gap already forced one of the module's defaults to be
+  # restated here by hand.
+  #
+  # A stable-haskell `-target` cross compiler (ghc914-sh aimed at any cross
+  # target) ships no target boot libraries whatsoever: its plan-time
+  # `ghc-pkg dump` is empty (`emptyGlobalPackageDb`), and it is that module
+  # which then supplies base/rts/... as `packages:` sources and switches on
+  # the fork's two-stage `--with-build-compiler` resolution.  Bypass it and
+  # the solver has neither an installed nor a source `base`:
+  #
+  #   rejecting: base; 4.22.0.0, ... (constraint from non-reinstallable
+  #   package requires installed instance)
+  #
+  # Restating the generated boot-package configuration here would amount to
+  # testing the injection rather than the low-level path, so skip those
+  # compilers instead.  Keyed on the capability rather than the name, so the
+  # next such compiler needs no edit; the same compiler's NATIVE variant has
+  # a populated db and still runs, as does every hadrian-built compiler on
+  # every cross target.
+  meta.disabled =
+    buildPackages.haskell-nix.compiler.${compiler-nix-name}.emptyGlobalPackageDb or false;
   ifdInputs = {
     plan-nix = callProjectResults.projectNix;
   };

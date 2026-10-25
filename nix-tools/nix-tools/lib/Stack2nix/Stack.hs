@@ -202,7 +202,11 @@ instance FromJSON StackSnapshot where
   parseJSON = withObject "Snapshot" $ \s -> Snapshot
     <$> (s .: "resolver" <|> s .: "snapshot")
     <*> s .:? "compiler" .!= Nothing
-    <*> s .: "name"
+    -- `name` is optional for custom snapshots (stack itself does not require
+    -- it) and stack-to-nix discards it anyway (bound as `_name` in
+    -- Stack2nix.External.Resolve.resolveSnapshot), so default it rather than
+    -- fail parsing with `key "name" not found` (see #1678, #1157).
+    <*> s .:? "name" .!= "custom-snapshot"
     <*> s .:? "packages" .!= []
     <*> s .:? "flags" .!= mempty
     <*> s .:? "ghc-options" .!= mempty

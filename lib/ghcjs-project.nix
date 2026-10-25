@@ -116,7 +116,7 @@ let
         }
 
         rm -rf utils/pkg-cache/ghc
-        cp -r ${ghc.generated} utils/pkg-cache/ghc
+        cp -r ${ghc.generated-light or ghc.generated} utils/pkg-cache/ghc
 
         for a in integer-gmp base unix; do
           cp ${../overlays/patches/config.sub} ghc/libraries/$a/config.sub

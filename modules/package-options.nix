@@ -89,6 +89,18 @@
       default = [ ];
     };
 
+    additional-prebuilt-depends = lib.mkOption {
+      type = lib.types.listOf lib.types.package;
+      default = [];
+      description = ''
+        Per-component additional pre-built Haskell packages to make available
+        as dependencies (adds their .conf files to this component's package DB).
+        Merged with the project-wide prebuilt-depends from cabal-project.nix.
+        Uses a different name from `prebuilt-depends` to avoid conflicting with
+        the top-level option of the same name in component-driver.nix.
+      '';
+    };
+
     configureOptions = lib.mkOption {
       description = ''
         Arguments that correspond to cabal.project's

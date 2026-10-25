@@ -4,6 +4,7 @@
 , testSrc
 , compiler-nix-name
 , evalPackages
+, evalSystem
 }:
 
 with lib;
@@ -15,7 +16,7 @@ let
 
   # IFD stack-to-nix
   project = { gpl ? true }: stackProject' {
-    inherit evalPackages;
+    inherit evalSystem;
     src = testSrc "fully-static";
     pkg-def-extras = [];
     modules = [

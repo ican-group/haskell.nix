@@ -1,0 +1,312 @@
+From 0c32c29de52a2b13630f088f41558abf80cc0495 Mon Sep 17 00:00:00 2001
+From: Hamish Mackenzie <Hamish.K.Mackenzie@gmail.com>
+Date: Fri, 23 Oct 2026 15:04:36 +1300
+Subject: [PATCH] ATT parser: read wasm and gcc .zero values; never read junk
+ as 0
+
+Batch cross-compilation resolved almost nothing on wasm32 (wasi) and
+the GHC JavaScript backend (emcc): clang's wasm assembly writes values as
+`.int64` / `.int32`, which the parser skipped, so every constant fell
+back to the per-directive binary search (about 570 emcc runs for a
+28-constant .hsc file, 117s).
+
+Worse, the last label in the file collected the `.ascii` / `.int8`
+data of the trailing `.custom_section.producers` / `target_features`
+sections, and `combineInst` turned that run into the sentinel `Quad 0`,
+which `lookupInteger` happily returns.  So on wasm the last batched
+constant of every file silently became 0 (e.g. `EWOULDBLOCK = 0`
+instead of 6).
+
+- Read `.int64` / `.int32`.
+- Treat `.custom_section.*` like debug sections and drop its data.
+- Read gcc's `.zero 4` / `.zero 8` (zero-initialised globals in .bss),
+  which made every zero-valued constant fall back on gcc targets.
+- Represent an uninterpretable run as `Unknown`, which no lookup
+  accepts, so the caller falls back instead of reading 0.
+---
+ src/ATTParser.hs                 |  21 +++++-
+ test/Spec.hs                     |  10 +++
+ test/asm/Makefile                |   2 +
+ test/asm/wasm32-wasi.s           | 117 +++++++++++++++++++++++++++++++
+ test/asm/x86_64-linux-gcc-zero.s |  24 +++++++
+ test/asm/zero.c                  |   4 ++
+ 6 files changed, 175 insertions(+), 3 deletions(-)
+ create mode 100644 test/asm/wasm32-wasi.s
+ create mode 100644 test/asm/x86_64-linux-gcc-zero.s
+ create mode 100644 test/asm/zero.c
+
+diff --git a/src/ATTParser.hs b/src/ATTParser.hs
+index 3d915a6..2b47dbc 100644
+--- a/src/ATTParser.hs
++++ b/src/ATTParser.hs
+@@ -26,6 +26,8 @@ data Inst = Ident String
+           | Quad Word64
+           | Ref String
+           | Ascii String
++          -- | A run of data we cannot interpret as one value.
++          | Unknown [Inst]
+           deriving Show
+ 
+ mkLong :: Word32 -> Inst
+@@ -85,6 +87,9 @@ preprocess ('\t':attr) = let (h, t) = break isSpace attr
+                                        | otherwise      -> [mkRef  $ (w x)]
+                          ("data8":x:_) | isNumber (w x) -> [mkQuad $ read (w x)]
+                                        | otherwise      -> [mkRef  $ (w x)]
++                         -- WebAssembly (clang wasm32 / emscripten)
++                         (".int64":x:_)| isNumber (w x) -> [mkQuad $ read (w x)]
++                                       | otherwise      -> [mkRef  $ (w x)]
+ 
+                          -- 4 byte values
+                          (".long":x:_) | isNumber (w x) -> [mkLong $ read (w x)]
+@@ -93,11 +98,17 @@ preprocess ('\t':attr) = let (h, t) = break isSpace attr
+                                        | otherwise      -> [mkRef  $ (w x)]
+                          (".4byte":x:_)| isNumber (w x) -> [mkLong $ read (w x)]
+                                        | otherwise      -> [mkRef  $ (w x)]
++                         -- WebAssembly (clang wasm32 / emscripten)
++                         (".int32":x:_)| isNumber (w x) -> [mkLong $ read (w x)]
++                                       | otherwise      -> [mkRef  $ (w x)]
+ 
+                          (".space":x:_)| (w x) == "4"   -> [mkLong 0]
+                                        | (w x) == "8"   -> [mkQuad 0]
+                          (".skip":x:_) | (w x) == "4"   -> [mkLong 0]
+                                        | (w x) == "8"   -> [mkQuad 0]
++                         -- GCC emits zero-initialised globals into .bss as .zero
++                         (".zero":x:_) | (w x) == "4"   -> [mkLong 0]
++                                       | (w x) == "8"   -> [mkQuad 0]
+ 
+                          (".ascii":x:_)             -> [mkAscii $ read x]
+                          (".asciz":x:_)             -> [mkAscii $ read x ++ "\0"]
+@@ -130,15 +141,18 @@ parseInsts _ = error "Invalid instructions"
+ 
+ -- | combine instructions (e.g. two long into a quad)
+ -- Unknown patterns (e.g. debug section leftovers, WebAssembly metadata)
+--- are mapped to a sentinel Quad 0 instead of a Ref, so that inlineRef
+--- does not try to resolve a non-existent symbol.
++-- become 'Unknown' rather than a 'Ref', so that inlineRef does not try
++-- to resolve a non-existent symbol.  They must not look like a value:
++-- 'lookupInteger' and 'lookupString' return Nothing for them, so the
++-- caller falls back to another way of computing the constant instead of
++-- silently reading 0.
+ combineInst :: [Inst] -> Inst
+ combineInst [Quad i] = Quad i
+ combineInst [Long i] = Quad (fromIntegral i)
+ combineInst [Long h, Long l] = Quad $ (shiftL (fromIntegral h) 32) .|. fromIntegral l
+ combineInst [Ref s]  = Ref s
+ combineInst [Ascii s] = Ascii s
+-combineInst _is = Quad 0  -- sentinel: unrecognized pattern, will not match lookups
++combineInst is = Unknown is
+ 
+ -- | inline references
+ inlineRef :: [(String, Inst)] -> [(String, Inst)]
+@@ -193,6 +207,7 @@ filterDebugSections = go False
+       in any (`isPrefixOf'` afterSection)
+            [ ".debug$"  -- COFF CodeView (.debug$S, .debug$T)
+            , ".debug_"  -- ELF DWARF (.debug_info, .debug_abbrev, etc.)
++           , ".custom_section."  -- WebAssembly producers/target_features metadata
+            ]
+ 
+     -- Bare section labels at column 0 (e.g. ".text", ".data", ".bss")
+diff --git a/test/Spec.hs b/test/Spec.hs
+index 3269dbf..3feae43 100644
+--- a/test/Spec.hs
++++ b/test/Spec.hs
+@@ -42,6 +42,15 @@ main = specMain $ do
+ 
+         it "t should be \"Hello World\\\"\\n\\0\"" $ do
+           lookupString "t" x `shouldBe` (Just "Hello World\" 12345\0")
++    describe "gcc .zero" $ do
++      x <- runIO $ parse "test/asm/x86_64-linux-gcc-zero.s"
++      it "z should be 0" $ do
++        lookupInteger "z" x `shouldBe` (Just 0)
++      it "o should be 1" $ do
++        lookupInteger "o" x `shouldBe` (Just 1)
++    describe "uninterpretable data" $ do
++      it "is not read as a value" $ do
++        lookupInteger "u" [("u", combineInst [Quad 1, Ascii "x"])] `shouldBe` Nothing
+     -- 32 bit
+     forM_ [("arm ios",      "test/asm/arm-ios.s")
+           ,("arm linux",    "test/asm/arm.s")
+@@ -49,6 +58,7 @@ main = specMain $ do
+           ,("sparc linux",  "test/asm/sparc-linux.s")
+           ,("mips linux",   "test/asm/mips-linux.s")
+           ,("powerpc linux","test/asm/powerpc-linux.s")
++          ,("wasm32 wasi",  "test/asm/wasm32-wasi.s")
+           ]
+       $ \(d, f) ->do
+       describe d $ do
+diff --git a/test/asm/Makefile b/test/asm/Makefile
+index 6f6a02c..96e26cf 100644
+--- a/test/asm/Makefile
++++ b/test/asm/Makefile
+@@ -23,3 +23,5 @@ all:
+ 	s390-unknown-linux-gnu-gcc -S -c tmp.c -o s390-linux.s
+ 	s390x-unknown-linux-gnu-gcc -S -c tmp.c -o s390x-linux.s
+ 	sh4-unknown-linux-gnu-gcc -S -c tmp.c -o sh4-linux.s
++	clang -target wasm32-wasi -S -c tmp.c -o wasm32-wasi.s
++	x86_64-unknown-linux-musl-gcc -S -c -g0 zero.c -o x86_64-linux-gcc-zero.s
+diff --git a/test/asm/wasm32-wasi.s b/test/asm/wasm32-wasi.s
+new file mode 100644
+index 0000000..bd8f832
+--- /dev/null
++++ b/test/asm/wasm32-wasi.s
+@@ -0,0 +1,117 @@
++	.file	"tmp.c"
++	.hidden	___hsc2hs_BOM___                # @___hsc2hs_BOM___
++	.type	___hsc2hs_BOM___,@object
++	.section	.data.___hsc2hs_BOM___,"",@
++	.globl	___hsc2hs_BOM___
++	.p2align	3, 0x0
++___hsc2hs_BOM___:
++	.int64	4294967296                      # 0x100000000
++	.size	___hsc2hs_BOM___, 8
++
++	.hidden	x___hsc2hs_sign___              # @x___hsc2hs_sign___
++	.type	x___hsc2hs_sign___,@object
++	.section	.bss.x___hsc2hs_sign___,"",@
++	.globl	x___hsc2hs_sign___
++	.p2align	3, 0x0
++x___hsc2hs_sign___:
++	.int64	0                               # 0x0
++	.size	x___hsc2hs_sign___, 8
++
++	.hidden	x                               # @x
++	.type	x,@object
++	.section	.data.x,"",@
++	.globl	x
++	.p2align	3, 0x0
++x:
++	.int64	1                               # 0x1
++	.size	x, 8
++
++	.hidden	y___hsc2hs_sign___              # @y___hsc2hs_sign___
++	.type	y___hsc2hs_sign___,@object
++	.section	.bss.y___hsc2hs_sign___,"",@
++	.globl	y___hsc2hs_sign___
++	.p2align	3, 0x0
++y___hsc2hs_sign___:
++	.int64	0                               # 0x0
++	.size	y___hsc2hs_sign___, 8
++
++	.hidden	y                               # @y
++	.type	y,@object
++	.section	.data.y,"",@
++	.globl	y
++	.p2align	3, 0x0
++y:
++	.int64	4294967295                      # 0xffffffff
++	.size	y, 8
++
++	.hidden	z___hsc2hs_sign___              # @z___hsc2hs_sign___
++	.type	z___hsc2hs_sign___,@object
++	.section	.data.z___hsc2hs_sign___,"",@
++	.globl	z___hsc2hs_sign___
++	.p2align	3, 0x0
++z___hsc2hs_sign___:
++	.int64	1                               # 0x1
++	.size	z___hsc2hs_sign___, 8
++
++	.hidden	z                               # @z
++	.type	z,@object
++	.section	.data.z,"",@
++	.globl	z
++	.p2align	3, 0x0
++z:
++	.int64	-1                              # 0xffffffffffffffff
++	.size	z, 8
++
++	.type	.L.str,@object                  # @.str
++	.section	.rodata..L.str,"S",@
++.L.str:
++	.asciz	"Hello World\" 12345"
++	.size	.L.str, 19
++
++	.hidden	t                               # @t
++	.type	t,@object
++	.section	.data.t,"",@
++	.globl	t
++	.p2align	2, 0x0
++t:
++	.int32	.L.str
++	.size	t, 4
++
++	.ident	"clang version 21.1.8"
++	.section	.custom_section.producers,"",@
++	.int8	1
++	.int8	12
++	.ascii	"processed-by"
++	.int8	1
++	.int8	5
++	.ascii	"clang"
++	.int8	6
++	.ascii	"21.1.8"
++	.section	.data.t,"",@
++	.section	.custom_section.target_features,"",@
++	.int8	8
++	.int8	43
++	.int8	11
++	.ascii	"bulk-memory"
++	.int8	43
++	.int8	15
++	.ascii	"bulk-memory-opt"
++	.int8	43
++	.int8	22
++	.ascii	"call-indirect-overlong"
++	.int8	43
++	.int8	10
++	.ascii	"multivalue"
++	.int8	43
++	.int8	15
++	.ascii	"mutable-globals"
++	.int8	43
++	.int8	19
++	.ascii	"nontrapping-fptoint"
++	.int8	43
++	.int8	15
++	.ascii	"reference-types"
++	.int8	43
++	.int8	8
++	.ascii	"sign-ext"
++	.section	.data.t,"",@
+diff --git a/test/asm/x86_64-linux-gcc-zero.s b/test/asm/x86_64-linux-gcc-zero.s
+new file mode 100644
+index 0000000..0d20d9a
+--- /dev/null
++++ b/test/asm/x86_64-linux-gcc-zero.s
+@@ -0,0 +1,24 @@
++	.file	"zero.c"
++	.text
++	.globl	z___hsc2hs_sign___
++	.bss
++	.align 8
++	.type	z___hsc2hs_sign___, @object
++	.size	z___hsc2hs_sign___, 8
++z___hsc2hs_sign___:
++	.zero	8
++	.globl	z
++	.align 8
++	.type	z, @object
++	.size	z, 8
++z:
++	.zero	8
++	.globl	o
++	.data
++	.align 8
++	.type	o, @object
++	.size	o, 8
++o:
++	.quad	1
++	.ident	"GCC: (GNU) 15.2.0"
++	.section	.note.GNU-stack,"",@progbits
+diff --git a/test/asm/zero.c b/test/asm/zero.c
+new file mode 100644
+index 0000000..8ba3f45
+--- /dev/null
++++ b/test/asm/zero.c
+@@ -0,0 +1,4 @@
++// gcc places zero-initialised globals in .bss as `.zero 8`
++unsigned long long z___hsc2hs_sign___ = 0 < 0;
++unsigned long long z = 0;
++unsigned long long o = 1;
+-- 
+2.54.0
+

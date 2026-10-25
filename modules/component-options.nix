@@ -6,6 +6,21 @@
       default = true;
     };
 
+    usesTemplateHaskell = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        Declare that building this component runs Template Haskell splices.
+        When cross compiling (builder v2) for a dynamically linked musl
+        host, such a component is built with `-fexternal-interpreter`: the
+        in-process interpreter cannot load musl shared objects into the
+        glibc compiler.  Nothing can tell ahead of time whether a component
+        will evaluate a splice, so this has to be said by whoever knows --
+        e.g. in a project's `modules`:
+        `packages.th-orphans.components.library.usesTemplateHaskell = true;`
+      '';
+    };
+
     configureFlags = lib.mkOption {
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [];

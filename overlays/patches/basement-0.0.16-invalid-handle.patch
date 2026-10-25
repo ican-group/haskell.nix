@@ -1,0 +1,5 @@
+--- a/Basement/Terminal/Size.hsc
++++ b/Basement/Terminal/Size.hsc
+@@ -124 +124 @@
+-invalidHandleValue = #{const INVALID_HANDLE_VALUE}
++invalidHandleValue = fromIntegral (#{const ((INT_PTR) INVALID_HANDLE_VALUE)} :: Int)

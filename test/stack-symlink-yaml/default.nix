@@ -1,9 +1,13 @@
-{ lib, project', testSrc, compiler-nix-name, evalPackages }:
+# `evalPackages` is unused but always supplied by `callTest`.
+{ lib, project', testSrc, compiler-nix-name, evalPackages, evalSystem }:
 
 let
   project = project' {
     src = testSrc "stack-symlink-yaml";
-    inherit evalPackages;
+    # `evalPackages` is read-only (derived from `evalSystem`, see
+    # modules/project-common.nix) -- setting it is a second definition and
+    # errors out.  Pass the platform instead.
+    inherit evalSystem;
   };
   packages = project.hsPkgs;
 

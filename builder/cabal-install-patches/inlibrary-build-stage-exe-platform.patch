@@ -1,0 +1,46 @@
+Use the package's own stage toolchain when configuring in-library.
+
+`libraryConfigureInputsFromElabPackage` built the in-library
+`LocalBuildInfo` with the **Host** toolchain's compiler and platform
+unconditionally, while `SetupWrapper` (correctly) built the package's
+program db from the package's **own stage** toolchain
+(`getStage toolchains (elabStage pkg)`).
+
+For a single-stage plan this makes no difference (Build and Host share a
+toolchain).  But in a two-stage (cross) plan a Build-stage executable —
+e.g. a `build-tool-depends` such as `alex`, compiled for the build
+platform with the build `ghc` from the program db — got its exe name from
+`exeTargetName (hostPlatform lbi)`, i.e. the *Host* platform's extension.
+The result: a native-linux `alex` installed as `alex.exe` in the
+build-platform bin dir.  The consumer's configure then searched for bare
+`alex` (correct, since it runs on the build platform) and failed with
+`[Cabal-7620] The program 'alex' ... could not be found`.
+
+Taking the compiler and platform from the package's own stage toolchain
+keeps them consistent with the program db and names build-stage
+executables with the build platform's extension.
+
+--- a/src/Distribution/Client/InLibrary.hs
++++ b/src/Distribution/Client/InLibrary.hs
+@@ -124,9 +124,18 @@ libraryConfigureInputsFromElabPackage
+     where
+       pkgDescr = elabPkgDescription pkg
+       gpkgDescr = elabGPkgDescription pkg
+-      hostToolchain = getStage toolchains Host
+-      plat = toolchainPlatform hostToolchain
+-      compil = toolchainCompiler hostToolchain
++      -- Configure the package with its OWN stage's toolchain, matching the
++      -- program db built in 'SetupWrapper' (which already uses
++      -- 'getStage toolchains (elabStage pkg)').  Using the Host toolchain
++      -- unconditionally gave a Build-stage executable — e.g. a
++      -- 'build-tool-depends' such as alex, compiled on the build platform — the
++      -- Host platform's exe extension: 'exeTargetName (hostPlatform lbi)' then
++      -- named the (native-linux) tool 'alex.exe', so the consumer's configure
++      -- (searching for bare 'alex') failed with Cabal-7620.  For non-two-stage
++      -- plans Build and Host share a toolchain, so this is a no-op there.
++      stageToolchain = getStage toolchains (elabStage pkg)
++      plat = toolchainPlatform stageToolchain
++      compil = toolchainCompiler stageToolchain
+
+ configure
+   :: LibraryConfigureInputs

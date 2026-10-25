@@ -1,10 +1,10 @@
-{ lib, project', testSrc, compiler-nix-name, evalPackages }:
+{ lib, project', testSrc, compiler-nix-name, evalPackages, evalSystem }:
 
 let
   project = project' {
     src = testSrc "stack-remote-resolver";
     resolverSha256 = "sha256-Vw1i0woTpbnbfl7KLAWZW6tfMHV7MOGLtzSlacM5sLE=";
-    inherit evalPackages;
+    inherit evalSystem;
   };
   packages = project.hsPkgs;
 

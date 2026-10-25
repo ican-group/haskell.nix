@@ -24,13 +24,26 @@ let
             compiler-nix-name = final.lib.mkDefault compiler-nix-name;
             # compilerSelection = p: p.haskell.compiler;
 
-            # tests need to fetch hackage
-            configureArgs = final.lib.mkDefault "--disable-tests";
+            # Test components are left enabled (haskell.nix already passes
+            # `--enable-tests` when generating the plan) so that the pure test
+            # suites are built and run as flake checks, and therefore as part
+            # of `hydraJobs`.  Suites that need network access are opted out
+            # individually via `doCheck` below rather than by disabling every
+            # test component.
 
-            # See ./cabal-install-patches.nix for why this patch is
-            # needed.  Applied here for the regular nix-tools build,
-            # and again from `static/project.nix` for the static build.
-            modules = [ ./cabal-install-patches.nix ];
+            modules = [
+              # See ./cabal-install-patches.nix for why this patch is
+              # needed.  Applied here for the regular nix-tools build,
+              # and again from `static/project.nix` for the static build.
+              ./cabal-install-patches.nix
+              {
+                # The golden `tests` suite calls `cabal update` on startup, so
+                # it needs network access that the build sandbox does not
+                # provide.  Keep building it (so it cannot silently stop
+                # compiling) but do not run it as a check.
+                packages.nix-tools.components.tests.tests.doCheck = false;
+              }
+            ];
 
             # Tools to include in the development shell
             shell.tools.cabal = {};
