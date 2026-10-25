@@ -6,14 +6,14 @@
 #     Add unprefixed aliases for every prefixed binary so cabal
 #     finds `ghc-pkg`, `hsc2hs`, `runghc`, etc.
 #
-#   * ghcjs: lndir real ghc's libdir into the shim, materialise a
+#   * ghcjs: lndir real ghc's TOPDIR into the shim, materialise a
 #     writable `settings` file, sed-swap the `ar command` entry to
 #     `ghcjsArWrapper` (drops missing `.o`s — backpack-on-ghcjs
-#     workaround), and wrap `ghc` / `ghc-<v>` with `-B<libdir>` so
+#     workaround), and wrap `ghc` / `ghc-<v>` with `-B<topdir>` so
 #     ghc uses the patched settings.
 #
-#   * native-musl ghc ≥ 9.10: lndir libdir into the shim, wrap ghc
-#     binaries with `-B<libdir>`, and add unprefixed aliases for
+#   * native-musl ghc ≥ 9.10: lndir topdir into the shim, wrap ghc
+#     binaries with `-B<topdir>`, and add unprefixed aliases for
 #     `unlit` and `ghc-iserv[-dyn|-prof]`.  Mirrors v1's
 #     `ghc-for-component-wrapper.nix:136-140`.
 #
@@ -21,6 +21,10 @@
 #   * `build-cabal-slice.nix` — slice's `--with-compiler=` target.
 #   * `shell-for-v2.nix` — base of the user-facing shell's ghc;
 #     the `ghc-pkg` exposure mode layers env-var wrappers on top.
+#
+# Topdir vs libdir matters on the stable-haskell multi-target GHCs:
+# `--print-libdir` answers with the target-resolved `targets/<triple>/lib`,
+# while `-B` expects the level above it.  See `mirrorTopdir` below.
 { stdenv, lib, pkgsBuildBuild, haskellLib }:
 
 { ghc
@@ -55,6 +59,43 @@ let
   needsLibShim =
     stdenv.hostPlatform.isGhcjs
     || haskellLib.isNativeMusl;
+
+  # Mirror the real ghc's libdir tree into the shim and leave three shell
+  # variables behind for the branch that uses it:
+  #
+  #   libRel       the mirrored TOPDIR, relative to $out -- this is what `-B`
+  #                must be given.
+  #   settingsRel  the TARGET libdir, relative to $out -- this is where
+  #                `settings` actually lives.
+  #   ghcTop       the source topdir that was mirrored.
+  #
+  # Why topdir and not just `--print-libdir`: on a stable-haskell
+  # multi-target GHC that flag answers with the TARGET-resolved directory
+  # (`$topdir/targets/<triple>/lib`), whereas `-B` wants the level above it --
+  # GHC appends `targets/<triple>/lib` to whatever `-B` is given.  Handing the
+  # resolved path back doubles the suffix and every invocation dies with
+  #
+  #   ghc: Couldn't find specific target `<triple>' in
+  #     `…/targets/<triple>/lib/targets/<triple>/lib'
+  #
+  # `ghc --numeric-version` included, which then exits 1 having printed
+  # nothing -- and cabal's compiler probe reports that empty string back as
+  # [Cabal-1008] "the version of … could not be determined" (seen on
+  # `ghcjs.tests.cabal-sublib-shell`).  Single-target GHCs have no
+  # `targets/<triple>/lib` suffix to strip, so `ghcTop == ghcLib` and they are
+  # unaffected -- which is why native-musl never showed this.
+  mirrorTopdir = ''
+    mkdir -p $out/bin
+    ghcLib=$(${ghc}/bin/${ghcBin} --print-libdir)
+    ghcTop="$ghcLib"
+    case "$ghcLib" in
+      */targets/*/lib) ghcTop=''${ghcLib%/targets/*/lib} ;;
+    esac
+    libRel=''${ghcTop#${ghc}/}
+    settingsRel=''${ghcLib#${ghc}/}
+    mkdir -p "$out/$libRel"
+    lndir -silent "$ghcTop" "$out/$libRel"
+  '';
 in
 
 pkgsBuildBuild.runCommand "${ghc.name}-shim" {
@@ -69,17 +110,22 @@ pkgsBuildBuild.runCommand "${ghc.name}-shim" {
   };
 } (
   (if stdenv.hostPlatform.isGhcjs then ''
-    mkdir -p $out/bin
-    ghcLib=$(${ghc}/bin/${ghcBin} --print-libdir)
-    libRel=''${ghcLib#${ghc}/}
-    mkdir -p "$out/$libRel"
-    lndir -silent "$ghcLib" "$out/$libRel"
-    settingsFile="$out/$libRel/settings"
+    ${mirrorTopdir}
+    settingsFile="$out/$settingsRel/settings"
     if [ -L "$settingsFile" ]; then
       cp --remove-destination "$(readlink -f "$settingsFile")" "$settingsFile"
     fi
     ${lib.optionalString (ghcjsArWrapper != null) ''
-      sed -i 's|("ar command", "[^"]*")|("ar command", "${ghcjsArWrapper}")|' "$settingsFile"
+      # NB no space after the comma in the generated settings file —
+      # `("ar command","…")` — so match optional whitespace.  With the old
+      # `", "` pattern the sed silently never matched and both GHC and
+      # cabal (which takes its `ar` hint from ghc's settings — the
+      # "Using ar found on system at" line) kept the RAW emar.
+      sed -i 's|("ar command", *"[^"]*")|("ar command","${ghcjsArWrapper}")|' "$settingsFile"
+      grep -qF '${ghcjsArWrapper}' "$settingsFile" || {
+        echo "ghc-shim: ar command swap did not match settings" >&2
+        exit 1
+      }
     ''}
     for f in ${ghc}/bin/*; do
       base=$(basename "$f")
@@ -94,11 +140,7 @@ pkgsBuildBuild.runCommand "${ghc.name}-shim" {
     done
   ''
   else if haskellLib.isNativeMusl then ''
-    mkdir -p $out/bin
-    ghcLib=$(${ghc}/bin/${ghcBin} --print-libdir)
-    libRel=''${ghcLib#${ghc}/}
-    mkdir -p "$out/$libRel"
-    lndir -silent "$ghcLib" "$out/$libRel"
+    ${mirrorTopdir}
     for f in ${ghc}/bin/*; do
       base=$(basename "$f")
       case "$base" in

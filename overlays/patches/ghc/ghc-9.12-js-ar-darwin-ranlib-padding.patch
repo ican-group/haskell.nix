@@ -1,0 +1,68 @@
+--- a/compiler/GHC/SysTools/Ar.hs	2026-07-11 20:05:51.933312742 +1200
++++ b/compiler/GHC/SysTools/Ar.hs	2026-07-11 20:06:47.872992731 +1200
+@@ -36,6 +36,7 @@
+ 
+ import GHC.Prelude
+ 
++import Data.Bits ((.&.))
+ import Data.List (mapAccumL, isPrefixOf)
+ import Data.Monoid ((<>))
+ import Data.Binary.Get
+@@ -112,8 +113,56 @@
+         when (odd st_size) $
+           void (getByteString 1)
+ 
++        -- Archives rewritten by Apple's ranlib (cctools; the default
++        -- `ranlib` on darwin, which cabal runs after `ar` on macOS build
++        -- hosts) pad each member's data to an 8-byte boundary with '\n'
++        -- bytes and include that padding in the header's size field,
++        -- relying on the member's object format being self-describing.
++        -- Mach-O readers tolerate the trailing bytes, but WebAssembly
++        -- consumers do not: the JS backend extracts C-bits wasm objects
++        -- from package archives and hands them to emscripten, where
++        -- wasm-ld fails with "section too large" on the padding.  Recover
++        -- a wasm member's true length from its section table and drop the
++        -- padding.
++        let file' = trimWasmPadding file
++
+         rest    <- getBSDArchEntries
+-        return $ (ArchiveEntry name time own grp mode (st_size - (off2 - off1)) file) : rest
++        return $ (ArchiveEntry name time own grp mode (B.length file') file') : rest
++
++-- | If the payload is a WebAssembly module followed by trailing '\n'
++-- padding (Apple ranlib's 8-byte member alignment, counted into the
++-- header's size field), return just the module bytes; otherwise return
++-- the payload unchanged.  The true length is recovered by walking the
++-- module's sections (a 1-byte id plus a ULEB128 length each).
++trimWasmPadding :: B.ByteString -> B.ByteString
++trimWasmPadding bs
++  | B.take 4 bs == "\0asm"
++  , end < len
++  , B.all (== 0x0a) (B.drop end bs)
++  = B.take end bs
++  | otherwise = bs
++  where
++    len = B.length bs
++    -- 4 bytes magic + 4 bytes version, then sections.
++    end = walk 8
++    -- Walk sections from @off@, returning the offset where the
++    -- well-formed prefix of sections ends.
++    walk off = case sectionEnd off of
++      Just off' | off' <= len -> walk off'
++      _                       -> off
++    sectionEnd off
++      | off >= len = Nothing
++      | otherwise  = do
++          (sz, off') <- uleb (off + 1) (0 :: Int) 0
++          return (off' + sz)
++    uleb off sh acc
++      | off >= len || sh > 63 = Nothing
++      | otherwise =
++          let b    = B.index bs off
++              acc' = acc + fromIntegral (b .&. 0x7f) * (2 ^ sh)
++          in if b .&. 0x80 /= 0
++               then uleb (off + 1) (sh + 7) acc'
++               else Just (acc', off + 1)
+ 
+ -- | GNU Archives feature a special '//' entry that contains the
+ -- extended names. Those are referred to as /<num>, where num is the

@@ -1,16 +1,32 @@
-{ stdenv, lib, cabalProject', haskellLib, testSrc, compiler-nix-name, evalPackages, buildPackages }:
+{ stdenv, lib, cabalProject', haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem, buildPackages, testCabalProjectLocal, testInputMap }:
 
 with lib;
 
 let
   project = cabalProject' {
     src = testSrc "ghcjs-overlay";
-    inherit compiler-nix-name evalPackages;
-    cabalProjectLocal = builtins.readFile ../cabal.project.local;
+    # `evalSystem` is the knob for the eval platform and `evalPackages` is
+    # derived from it, so passing `evalSystem` alone keeps the two from being
+    # specified independently.
+    inherit compiler-nix-name evalSystem;
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal;
   };
   packages = project.hsPkgs;
 
 in lib.recurseIntoAttrs {
+  # The point of this test is that the ghcjs overlay is in use: its
+  # `double-conversion ==2.0.2.0` is the overlay's copy, patched for the JS
+  # backend, and hackage's build of that version is what the test would
+  # otherwise get.  test/head-hackage.nix drops the overlay from
+  # `active-repositories` for a stable-haskell `-target` compiler -- whose
+  # from-source boot libraries and boot-dep pins the overlay contradicts -- so
+  # under such a compiler there is no overlay here to test.
+  # Only where the overlay was actually in play: on any other target
+  # `active-repositories` never named it, so this test was already resolving
+  # double-conversion from hackage there and keeps doing so.
+  meta.disabled = stdenv.hostPlatform.isGhcjs
+    && (buildPackages.haskell-nix.compiler.${compiler-nix-name}.emptyGlobalPackageDb or false);
   ifdInputs = {
     inherit (project) plan-nix;
   };

@@ -1,15 +1,28 @@
-{ stdenv, lib, mkCabalProjectPkgSet, cabalProject', haskellLib, util, testSrc, compiler-nix-name, evalPackages }:
+{ stdenv, lib, mkCabalProjectPkgSet, cabalProject', haskellLib, util, testSrc, compiler-nix-name, evalPackages, evalSystem, testCabalProjectLocal, testInputMap }:
 
 with lib;
 
 let
   project = cabalProject' {
-    inherit compiler-nix-name evalPackages;
+    inherit compiler-nix-name evalSystem;
     src = testSrc "cabal-22";
-    cabalProjectLocal = builtins.readFile ../cabal.project.local;
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal;
   };
 
   packages = project.hsPkgs;
+
+  # Whether this compiler can produce Haskell shared libraries at all.
+  # ghc914-sh cannot, on purpose: `enableSharedStage2` in
+  # overlays/stable-haskell.nix is False and the stage2 boot libraries come
+  # from `cabal.project.stage2.static`, so the compiler ships no shared way of
+  # any boot library and reports `enableShared = false`.  The comment there
+  # records that the dynamic alternative was tried (3f3cf0506, da6b6dae1) and
+  # reverted, and names this exact class of fallout -- a consumer told
+  # `--enable-shared` that then finds no dynamic way.
+  #
+  # `or true` so nothing changes for compilers that do not carry the passthru.
+  ghcSupportsShared = project.pkg-set.config.ghc.package.enableShared or true;
 
 in lib.recurseIntoAttrs {
   # When using ghcjs on darwin this test fails with
@@ -43,7 +56,14 @@ in lib.recurseIntoAttrs {
       ${haskellLib.lddForTests} $exe | grep 'libc[.]so'
     '' + optionalString stdenv.isDarwin ''
       otool -L $exe | grep "libSystem.B"
-    '' + ''
+    '' +
+    # Only if the compiler builds shared Haskell libraries.  The check above
+    # this one -- that the EXECUTABLE links the system libc dynamically -- is
+    # unaffected and stays: that is true of a static-Haskell build too, and it
+    # passes on ghc914-sh today.  What follows looks for a `.so`/`.dylib` of
+    # the project's own library, which such a compiler never emits, and the
+    # `find | grep` then fails the whole test under `set -e`.
+    optionalString ghcSupportsShared (''
       # fixme: posix-specific
       printf "checking that dynamic library is produced... " >& 2
     '' + optionalString stdenv.isLinux ''
@@ -58,7 +78,7 @@ in lib.recurseIntoAttrs {
       ${haskellLib.lddForTests} $sofile | grep libHSghc-prim
     '' + optionalString stdenv.isDarwin ''
       otool -L $sofile | grep libHSghc-
-    '')) + ''
+    ''))) + ''
       touch $out
 
       printf "checking whether benchmark ran... " >& 2

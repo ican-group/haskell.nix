@@ -51,7 +51,7 @@ swap the project's GHC for its `.dwarf` variant via the
 
 ```nix
 project = cabalProject' {
-  inherit compiler-nix-name evalPackages;
+  inherit compiler-nix-name evalSystem;
   src = ...;
   compilerSelection = p:
     pkgs.lib.mapAttrs (_: c: c.dwarf) p.haskell-nix.compiler;

@@ -47,10 +47,17 @@ let
   # systemd derivation on an unsupported target (it recurses in the musl /
   # static stdenv adapter).  Extend both if a future `pc-version` package has
   # similarly limited platform support.
+  # Cross is excluded as well: systemd builds its BPF objects with
+  # `clang -target bpf`, an invocation that gets neither the target's libc nor
+  # kernel headers, so a cross systemd dies on `#include <errno.h>` /
+  # `<linux/types.h>` (aarch64-multiplatform, nixpkgs 2026-08).  The `.pc`
+  # `Version:` under test is platform-independent, so the native jobs cover it —
+  # same argument as freetype below.
   systemdPkgConfigNames = [ "libsystemd" "systemd" "systemd-journal" "libudev" "udev" ];
   hostBuildsSystemd =
     stdenv.hostPlatform.libc == "glibc"
-    && !stdenv.hostPlatform.isStatic;
+    && !stdenv.hostPlatform.isStatic
+    && stdenv.hostPlatform == stdenv.buildPlatform;
 
   # freetype carries a `pc-version` too, but its build (zlib / libpng / brotli
   # …) doesn't cross-compile to wasm, musl or android.  Its `.pc` `Version:` is

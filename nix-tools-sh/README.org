@@ -1,0 +1,49 @@
+#+STARTUP: showall hidestars
+
+* ~nix-tools~
+
+[[https://buildkite.com/input-output-hk/nix-tools][https://badge.buildkite.com/8c5ed154c28db5d7184560c8000e57180b2b362b7a0431602e.svg]]
+
+~nix-tools~ is a set of Haskell → Nix tools to integrate Haskell
+projects into Nix build environments.
+
+* Motivation
+
+Why (yet) another conversion to Nix?  ~cabal2nix~ has served the Nix
+community well for a long time.  It does have short comings that can't
+be easily overcome without significantly altering ~cabal2nix~.  These
+are among others:
+
+- hard coded flags / operating system upon invocation
+- package resolution in cabal2nix instead of nix.
+
+Ideally we'd convert cabal files into Nix expression and retain almost
+everything from the cabal file and let Nix deal with the expression
+afterwards.
+
+~nix-tools~ explores this space of a very simple ~.cabal~ conversion
+into a ~nix~ expression and then doing the lifting in Nix.
+
+* QuickStart
+
+View the [[https://input-output-hk.github.io/haskell.nix/][haskell.nix documentation]] for instructions on how to get
+started with your own project.
+
+* Building
+
+To build all of the ~nix-tools~ using Cabal:
+
+#+begin_example
+cabal new-build
+#+end_example
+
+* Project Roadmap
+
+Under the [[https://github.com/input-output-hk/haskell.nix][haskell.nix]]
+umbrella there are a few [[https://github.com/input-output-hk/haskell.nix/projects][GitHub Projects]]
+for tracking completion of the project goals. If you would like to
+follow or contribute to this effort then that would be a good place to
+start.
+
+Please open bug reports in the
+[[https://github.com/input-output-hk/haskell.nix/issues][Haskell.nix issue tracker]].
