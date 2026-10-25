@@ -132,12 +132,12 @@ flags2nix pkgFlags =
   ]
 
 -- | Converts 'GhcOptions' into @{ packageName = { ghcOptions = [ "..." ]; }; }@
--- Each option token becomes its own list element (previously a multi-word
--- string was emitted as a single element; see #1676).
+-- A scalar @stack.yaml@ value becomes a single element and each entry of a
+-- snapshot's array becomes its own element (see #1676).
 ghcOptions2nix :: GhcOptions -> [Binding NExpr]
 ghcOptions2nix ghcOptions =
   [ quoted pkgName $= mkNonRecSet
-    [ "ghcOptions" $= mkList (map mkStr (ghcOptionsTokens opts)) ]
+    [ "ghcOptions" $= mkList (map mkStr (ghcOptionsList opts)) ]
   | (pkgName, opts) <- HM.toList ghcOptions
   ]
 

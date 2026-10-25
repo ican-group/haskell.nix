@@ -127,22 +127,15 @@ type PackageFlags = HM.HashMap T.Text (HM.HashMap T.Text Bool)
 
 -- | A package's @ghc-options@ value.  In @stack.yaml@ this is written as a
 -- single string (@"-O2 -Wall"@), but in snapshot/resolver definitions stack
--- writes it as an array of strings (@["-O2", "-Wall"]@).  We accept both and
--- normalise to a list of individual option tokens (see #1676).
-newtype GhcOptionsValue = GhcOptionsValue { ghcOptionsTokens :: [T.Text] }
+-- writes it as an array of strings (@["-O2", "-Wall"]@).  We accept both
+-- (see #1676) and keep the strings exactly as written: Cabal splits each one
+-- into arguments itself, honouring quotes, so splitting on whitespace here
+-- would break quoted arguments like @-i"dir  with  spaces"@.
+newtype GhcOptionsValue = GhcOptionsValue { ghcOptionsList :: [T.Text] }
   deriving (Show)
 
 instance FromJSON GhcOptionsValue where
-  parseJSON v = GhcOptionsValue <$> (asList <|> asScalar)
-    where
-      -- array form: [String] (each element further split on whitespace so an
-      -- element like "-O2 -Wall" is still handled).  The element list needs an
-      -- annotation, otherwise `concatMap`'s `Foldable` container is ambiguous.
-      asList   = do
-        opts <- parseJSON v
-        pure (concatMap T.words (opts :: [T.Text]))
-      -- scalar form: a single whitespace-separated String
-      asScalar = T.words <$> parseJSON v
+  parseJSON v = GhcOptionsValue <$> (parseJSON v <|> (pure <$> parseJSON v))
 
 type GhcOptions = HM.HashMap T.Text GhcOptionsValue
 
