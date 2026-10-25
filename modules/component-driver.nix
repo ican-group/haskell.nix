@@ -37,7 +37,7 @@ let
       new list from `config.nonReinstallablePkgs`, that is self-referential and will
       loop.${lib.optionalString (lib.elem name config.bootPkgs) ''
           '${name}' is also in `bootPkgs`, which shadows it the same way, so
-        set `bootPkgs` to an explicit list that omits it too.''}  Otherwise drop the
+        set `bootPkgs` using `lib.mkForce` and an explicit list that omits it too.''}  Otherwise drop the
       override to keep using the compiler's copy.'' acc)
     value shadowedNonReinstallable;
 
