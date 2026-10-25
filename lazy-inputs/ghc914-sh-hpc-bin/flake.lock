@@ -1,0 +1,28 @@
+{
+  "nodes": {
+    "root": {
+      "inputs": {
+        "ghc914-sh-hpc-bin": "ghc914-sh-hpc-bin"
+      }
+    },
+    "ghc914-sh-hpc-bin": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1748637034,
+        "narHash": "sha256-i5L+P7OPpL3HTITteoigHrdt8C/u4PZxNt9XDQyNY5M=",
+        "owner": "stable-haskell",
+        "repo": "hpc-bin",
+        "rev": "5923da3fe77993b7afc15b5163cffcaa7da6ecf5",
+        "type": "github"
+      },
+      "original": {
+        "owner": "stable-haskell",
+        "repo": "hpc-bin",
+        "rev": "5923da3fe77993b7afc15b5163cffcaa7da6ecf5",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

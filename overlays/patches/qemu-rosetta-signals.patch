@@ -1,0 +1,72 @@
+--- a/linux-user/signal.c
++++ b/linux-user/signal.c
+@@ -18,3 +18,8 @@
+  */
+ #include "qemu/osdep.h"
++#if __has_include("exec/mmap-lock.h")
++#include "exec/mmap-lock.h"
++#else
++#include "exec/exec-all.h"
++#endif
+ #include "qemu/bitops.h"
+@@ -800,10 +805,10 @@
+     sigfillset(&act.sa_mask);
+     sigaction(host_sig, &act, NULL);
+
++    /* Rosetta drops a self-sent SIGSEGV if it is blocked when sent. */
++    sigdelset(&act.sa_mask, host_sig);
++    sigprocmask(SIG_SETMASK, &act.sa_mask, NULL);
+     kill(getpid(), host_sig);
+-
+-    /* Make sure the signal isn't masked (reusing the mask inside of act). */
+-    sigdelset(&act.sa_mask, host_sig);
+     sigsuspend(&act.sa_mask);
+
+     /* unreachable */
+@@ -959,6 +964,35 @@
+     die_with_signal(info->si_signo);
+ }
+
++/*
++ * Rosetta reports SEGV_MAPERR for writes to mapped, protected pages.
++ * Check the host mapping as well as QEMU's page metadata before allowing
++ * page_unprotect() to retry such a fault. An actual host mapping hole must
++ * remain a fault, including when QEMU's metadata says it is writable.
++ */
++static bool host_sigsegv_mapped_write(uintptr_t host_addr, abi_ptr guest_addr)
++{
++#ifdef __x86_64__
++    int saved_errno = errno;
++    int flags;
++    unsigned char vec;
++    uintptr_t host_page = host_addr & -qemu_real_host_page_size();
++    bool mapped;
++
++    mmap_lock();
++    flags = page_get_flags(guest_addr);
++    /* PAGE_WRITE may already be set by another faulting thread. */
++    mapped = (flags & (PAGE_VALID | PAGE_WRITE_ORG))
++             == (PAGE_VALID | PAGE_WRITE_ORG)
++             && mincore((void *)host_page, 1, &vec) == 0;
++    mmap_unlock();
++    errno = saved_errno;
++    return mapped;
++#else
++    return false;
++#endif
++}
++
+ static void host_sigsegv_handler(CPUState *cpu, siginfo_t *info,
+                                  host_sigcontext *uc)
+ {
+@@ -977,7 +1011,9 @@
+     /* If this was a write to a TB protected page, restart. */
+     if (is_write
+         && is_valid
+-        && info->si_code == SEGV_ACCERR
++        && (info->si_code == SEGV_ACCERR
++            || (info->si_code == SEGV_MAPERR
++                && host_sigsegv_mapped_write(host_addr, guest_addr)))
+         && handle_sigsegv_accerr_write(cpu, host_signal_mask(uc),
+                                        pc, guest_addr)) {
+         return;

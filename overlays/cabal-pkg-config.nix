@@ -1,4 +1,25 @@
 final: prev:
+let
+  # Shared by `allPkgConfigWrapper` (plan-time solving) and
+  # `cabalPkgConfigWrapper` (in-slice solving): the pkg-config module
+  # universe fabricated from nixpkgs METADATA, no builds involved.
+  #
+  # Prefer an explicit `pc-version` when the derivation carries one:
+  # some packages' `.pc` `Version:` field differs from the derivation
+  # `.version` (e.g. systemd's libsystemd.pc reports `259` while the
+  # derivation `.version` is `259.3`).  The real `pkg-config` reads the
+  # `.pc` field, so metadata answers must report the same value or a
+  # slice's UnitId (which folds the resolved pkgconfig-dep version into
+  # `pkgHashPkgConfigDeps`) will fork.
+  #
+  # Failing that, try the `.version` attribute, or failing that look in
+  # the `.name`.  Some packages like `icu` have the correct version in
+  # `.name` but no `.version`.
+  getVersion = p: p.pc-version or p.version or (builtins.parseDrvName (p.name or "")).version;
+  pkgconfigPkgs =
+    final.lib.filterAttrs (_name: p: __length p > 0 && getVersion (__head p) != "")
+      (import ../lib/pkgconf-nixpkgs-map.nix final);
+in
 {
   # systemd's `libsystemd.pc` reports only the major version (e.g. `259`),
   # whereas the derivation `.version` is e.g. `259.3`.  Set `pc-version` so
@@ -82,23 +103,9 @@ final: prev:
   # or the package.  If that does not work we may need a way to include
   # overrides here.
   allPkgConfigWrapper =
-    let
-      # Prefer an explicit `pc-version` when the derivation carries one:
-      # some packages' `.pc` `Version:` field differs from the derivation
-      # `.version` (e.g. systemd's libsystemd.pc reports `259` while the
-      # derivation `.version` is `259.3`).  The real `pkg-config` the v2
-      # build slice runs reads the `.pc` field, so plan-to-nix must report
-      # the same value here or the slice's UnitId (which folds the resolved
-      # pkgconfig-dep version into `pkgHashPkgConfigDeps`) will fork.
-      #
-      # Failing that, try the `.version` attribute, or failing that look in
-      # the `.name`.  Some packages like `icu` have the correct version in
-      # `.name` but no `.version`.
-      getVersion = p: p.pc-version or p.version or (builtins.parseDrvName (p.name or "")).version;
-      pkgconfigPkgs =
-        final.lib.filterAttrs (_name: p: __length p > 0 && getVersion (__head p) != "")
-          (import ../lib/pkgconf-nixpkgs-map.nix final);
-    in prev.pkg-config.overrideAttrs (attrs:
+    # `getVersion` / `pkgconfigPkgs` are shared with
+    # `cabalPkgConfigWrapper` below — see the file-level `let`.
+    prev.pkg-config.overrideAttrs (attrs:
       let
         # These vars moved from attrs to attrs.env in nixpkgs adc8900df1758eda56abd68f7d781d1df74fa531
         # ... and then 706de783c83f3e24e5ea2a28e1249320aa19f57e moved them to attrs.passthru
@@ -139,19 +146,36 @@ final: prev:
         chmod +x $out/bin/${targetPrefix}${baseBinName}
       '';
   });
-  # cabal 3.8 asks pkg-config for linker options for both
-  # dynamic and static linking.
-  # For some derivations (glib for instance) pkg-config can
-  # fail when `--static` is passed.  This might be because
-  # the library only has dynamic libraries.
+  # The pkg-config every v2 slice runs (`--with-pkg-config=`).  Hybrid:
   #
-  # To work around this problem this wrapper makes cabal lazy
-  # by return a single command line option when it fails.
-  # That option should never be used and if it is hopefully
-  # the name of the option itself will be helpful.
+  #   * Real `.pc` files (this slice's realized `-dev` buildInputs, on
+  #     PKG_CONFIG_PATH) answer first — configure-time `--cflags` /
+  #     `--libs` queries for units the slice actually BUILDS need real
+  #     paths, and `--modversion` prefers them too.
   #
-  # See https://github.com/input-output-hk/haskell.nix/issues/1642
+  #   * Names with no realized `.pc` fall back to the SAME nixpkgs
+  #     metadata plan-time solving used (`pkgconfigPkgs` above): the
+  #     slice's solver must see pkgconfig-depends of units it merely
+  #     SOLVES — sibling components' deps staged source-only via
+  #     comp-v2-builder's `metadataSourceFrags` — without realizing
+  #     their C stacks (leksah's exe:leksah webkitgtk, when the target
+  #     is exe:leksah-warp).  The `pc-version` passthru discipline
+  #     (see `getVersion`) keeps both answer sources equal, which is
+  #     what keeps UnitIds identical whichever one answered.  A
+  #     configure-time query for a metadata-only name still fails
+  #     loudly (no real `.pc`) — nothing can silently link against
+  #     fabricated flags.
   #
+  #   * `--libs --static`: cabal 3.8 asks for linker options for both
+  #     dynamic and static linking, and some derivations' `.pc` (glib)
+  #     fail with `--static`.  Keep the historical workaround: make
+  #     cabal lazy by returning a single (hopefully self-describing)
+  #     fake option on failure.
+  #     See https://github.com/input-output-hk/haskell.nix/issues/1642
+  #
+  # One derivation serves every slice — the metadata list is the full
+  # `lib/pkgconf-nixpkgs-map.nix` universe, not a per-slice set, so
+  # slices don't fork on it.
   cabalPkgConfigWrapper = prev.pkg-config.overrideAttrs (attrs: (
   let
     # These vars moved from attrs to attrs.env in nixpkgs adc8900df1758eda56abd68f7d781d1df74fa531
@@ -163,25 +187,117 @@ final: prev:
     baseBinName = attrs.baseBinName
                or attrs.env.baseBinName
                or attrs.passthru.baseBinName;
+    # Assoc-array entries rather than `case` branches: the lookup used to
+    # be `v=$(metaversion "$name")`, and a command substitution FORKS.
+    # cabal asks for every name in this universe (~3.5k), so that was 3.5k
+    # forks on top of the pkg-config spawns -- and a 3.5k-branch `case` is
+    # a linear scan, making the whole thing quadratic.  An array is loaded
+    # once and indexed in O(1) with no subshell.
+    metaVersionEntries = final.lib.concatStrings
+      (final.lib.mapAttrsToList (name: ps:
+        "    [${final.lib.escapeShellArg name}]=${
+          final.lib.escapeShellArg (getVersion (__head ps))}\n")
+        pkgconfigPkgs);
+    metaNames = final.lib.concatMapStrings (n: n + "\n") (__attrNames pkgconfigPkgs);
+    # `writeScript`, not `builtins.toFile`: the script references
+    # derivations (the shell), which toFile forbids.
+    hybrid = final.writeScript "cabal-pkg-config-hybrid" (''
+      #!${final.stdenv.shell}
+      real="$(dirname "$0")/${targetPrefix}${baseBinName}-wrapped"
+      # Loaded lazily: `--libs` / `--cflags` and the catch-all `exec` path
+      # never need it, and this is the hot script in every slice's plan.
+      hsnix_load_meta() {
+        [ -n "''${hsnix_meta_loaded:-}" ] && return 0
+        declare -gA hsnix_meta=(
+      '' + metaVersionEntries + ''
+        )
+        hsnix_meta_loaded=1
+      }
+      case "''${1:-}" in
+        --list-all)
+          # Real entries verbatim, then metadata names the real set
+          # lacks (cabal parses only the first word of each line).
+          declare -A hsnix_seen=()
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            hsnix_seen[''${line%% *}]=1
+            printf '%s\n' "$line"
+          done < <("$real" --list-all 2>/dev/null)
+          while IFS= read -r name; do
+            [ -n "$name" ] || continue
+            [ -n "''${hsnix_seen[$name]:-}" ] \
+              || printf '%s %s\n' "$name" "(haskell.nix metadata)"
+          done <<'HSNIX_NAMES'
+      '' + metaNames + ''
+      HSNIX_NAMES
+          ;;
+        --modversion)
+          shift
+          # Ask the real pkg-config ONCE which modules it actually has.
+          #
+          # cabal follows `--list-all` with `--modversion` for every name
+          # it just received, and the list we hand it is the whole
+          # `pkgconf-nixpkgs-map.nix` universe (~3.5k names) rather than
+          # the handful with a real `.pc`.  Shelling out per name then
+          # spawns thousands of processes that are certain to fail --
+          # each one a nixpkgs wrapper script plus the binary it execs.
+          # Measured on a cross-musl slice for a package with NO
+          # pkgconfig-depends at all: the real pkg-config knew 0 modules,
+          # cabal asked for 3490, and the resulting 6988 spawns were 63 of
+          # the plan's 65 seconds.  Consulting `--list-all` first turns
+          # that into one process.
+          #
+          # Answer order is unchanged where it can matter: a real `.pc`
+          # still wins over metadata (a slice's UnitId folds the resolved
+          # version into `pkgHashPkgConfigDeps`, so the two must agree),
+          # metadata answers what the real one does not have, and the real
+          # one is still tried as a last resort for the corner case of a
+          # module that `--modversion` resolves but `--list-all` omits.
+          declare -A hsnix_real=()
+          while IFS= read -r line; do
+            [ -n "$line" ] || continue
+            hsnix_real[''${line%% *}]=1
+          done < <("$real" --list-all 2>/dev/null)
+          hsnix_load_meta
+          status=0
+          for name in "$@"; do
+            if [ -n "''${hsnix_real[$name]:-}" ] \
+               && v=$("$real" --modversion "$name" 2>/dev/null); then
+              printf '%s\n' "$v"
+            elif [ -n "''${hsnix_meta[$name]+x}" ]; then
+              printf '%s\n' "''${hsnix_meta[$name]}"
+            elif v=$("$real" --modversion "$name" 2>/dev/null); then
+              printf '%s\n' "$v"
+            else
+              echo "Package '$name' not found (no .pc file, no haskell.nix metadata)" >&2
+              status=1
+            fi
+          done
+          exit $status
+          ;;
+        --libs)
+          if [ "''${2:-}" = "--static" ]; then
+            OUTPUT=$(mktemp)
+            ERROR=$(mktemp)
+            if "$real" "$@" >"$OUTPUT" 2>"$ERROR"; then
+              cat "$OUTPUT"
+            else
+              echo "--error-pkg-config-static-failed=$ERROR"
+            fi
+          else
+            exec "$real" "$@"
+          fi
+          ;;
+        *)
+          exec "$real" "$@"
+          ;;
+      esac
+    '');
   in {
     installPhase = attrs.installPhase + ''
       mv $out/bin/${targetPrefix}${baseBinName} \
         $out/bin/${targetPrefix}${baseBinName}-wrapped
-
-      cat <<EOF >$out/bin/${targetPrefix}${baseBinName}
-      #!${final.stdenv.shell}
-      if [[ "\$1" == "--libs" && "\$2" == "--static" ]]; then
-        OUTPUT=\$(mktemp)
-        ERROR=\$(mktemp)
-        if $out/bin/${targetPrefix}${baseBinName}-wrapped "\$@" >\$OUTPUT 2>\$ERROR; then
-          cat \$OUTPUT
-        else
-          echo "--error-pkg-config-static-failed=\$ERROR"
-        fi
-      else
-        $out/bin/${targetPrefix}${baseBinName}-wrapped "\$@"
-      fi
-      EOF
+      cp ${hybrid} $out/bin/${targetPrefix}${baseBinName}
       chmod +x $out/bin/${targetPrefix}${baseBinName}
     '';
   }));

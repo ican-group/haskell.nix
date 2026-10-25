@@ -1,0 +1,30 @@
+Allow the source repository to be an unsigned local one.
+
+The tool writes a cabal config for its `cabal update` / `cabal fetch` of the
+original packages, and marks the repository `secure: True` without naming any
+root keys.  cabal then falls back to its built-in root keys for the repository
+name, so pointing `--repo-url` at a local `file:` mirror of the index fails
+with:
+
+    Expected at least 3 signatures from:
+      fe331502606802feac15e514d9b9ea83fee8b6ffef71335479a2e68d84adc6b0
+      ...
+    Found signatures from:
+
+We serve the index from the nix store, already pinned and hash-checked by the
+`hackage.nix` index-state, so there is nothing for TUF to add here.  This is
+the same escape hatch haskell.nix uses in its own `bootstrapIndexTarball`
+(`overlays/haskell.nix`), including the placeholder root key -- `key-threshold:
+0` alone is not enough to stop cabal looking for signatures.
+
+--- a/src/Main.hs
++++ b/src/Main.hs
+@@ -89,6 +89,8 @@ fetchSources config pkgs = do
+       [ "repository " <> _remote_repo_name config
+       , "  url: " <> _remote_repo_url config
+       , "  secure: True"
++      , "  root-keys: aaa"
++      , "  key-threshold: 0"
+       , ""
+       , "http-transport: plain-http"
+       , "remote-repo-cache: " <> T.pack (_remote_repo_cache config)

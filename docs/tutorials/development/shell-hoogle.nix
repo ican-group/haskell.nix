@@ -1,8 +1,8 @@
 # shell-hoogle.nix
 let
-  project = import ./default.nix {};
+  project = import ./default.nix;
 in
   project.shellFor {
-      packages = ps: [ps.my-package];
+      packages = ps: [ps.hello];
       withHoogle = true;
   }
