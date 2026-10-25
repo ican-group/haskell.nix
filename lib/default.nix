@@ -112,6 +112,10 @@ in {
     lib.filter (name:
          packages ? ${name}
       && packages.${name} != null
+      # A `packages.<name>` record that only carries by-name overrides has
+      # no `package.identifier` (see `hasPackageDefinition` in
+      # modules/package.nix); reading its version would throw.
+      && (packages.${name}.hasPackageDefinition or true)
       && compilerPackages ? ${name}
       && (packages.${name}.package.identifier.version or null) != null
       && packages.${name}.package.identifier.version != compilerPackages.${name}

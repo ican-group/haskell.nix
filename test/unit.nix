@@ -68,6 +68,20 @@ lib.runTests {
     expected = [ ];
   };
 
+  # A by-name override record (no package definition) is skipped without
+  # touching its undefined `package.identifier.version`.
+  testShadowedNonReinstallableIgnoresOverrideOnly = {
+    expr = haskellLib.shadowedNonReinstallablePkgs {
+      nonReinstallablePkgs = [ "base" "Cabal" ];
+      compilerPackages = { base = "4.18.0.0"; Cabal = "3.10.1.0"; };
+      packages = { Cabal = {
+        hasPackageDefinition = false;
+        package.identifier.version = throw "option used but not defined";
+      }; };
+    };
+    expected = [ ];
+  };
+
   # identity function for applyComponents
   test-applyComponents-id = {
     expr = haskellLib.applyComponents (_componentId: component: component) emptyConfig;
