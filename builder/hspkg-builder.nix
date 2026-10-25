@@ -97,14 +97,34 @@ let
           let
             plan     = config.plan-json.install-plan;
             byId     = config.plan-json-by-id;
-            sibs     = lib.filter
+            # HOST-stage entries only: the fork's build twins share the
+            # bare id/name/version but carry the BUILD-stage dep set
+            # (setup universes), which must not union into the host
+            # slices' dep/constraint scopes.  Falls back to every entry
+            # for build-stage-only packages (their slices still build,
+            # natively with the same compiler).
+            sibsOf = stagePred: lib.filter
               (p: (p.pkg-name or null) == package.identifier.name
-                  && (p.pkg-version or null) == package.identifier.version)
+                  && (p.pkg-version or null) == package.identifier.version
+                  && stagePred p)
               plan;
+            hostSibs = sibsOf (p: pkgs.haskell-nix.haskellLib.planUnitStage p == "host");
+            sibs = if hostSibs != [] then hostSibs else sibsOf (_: true);
+            # NOT the `setup` component: setup deps are a separate
+            # solver universe (`<pkg>:setup.<dep>` qualifiers,
+            # BUILD-stage under the fork).  Folding them in here sends
+            # them through `homeLibDepSlices` into `dependsSlices` —
+            # the lib-scope CONSTRAINTS — where their version pins
+            # clash with the library closure (leksah: gi-gobject's
+            # setup wants haskell-gi-overloading 1.0 while its lib
+            # closure needs 0.0; the `==1.0` pin made the lib goal
+            # unsatisfiable).  Setup deps reach the slice through
+            # `setupDepSlices` (store + repo, no constraints) and the
+            # per-package `<pkg>:setup.<dep> ==<ver>` pins instead.
             libDepsOf = p:
               (p.depends or [])
               ++ lib.concatMap (c: c.depends or [])
-                   (lib.attrValues (p.components or {}));
+                   (lib.attrValues (builtins.removeAttrs (p.components or {}) ["setup"]));
             exeDepsOf = p:
               (p.exe-depends or [])
               ++ lib.concatMap (c: c.exe-depends or [])
@@ -115,20 +135,26 @@ let
               let q = byId.${id} or null;
               in if q == null
                  then null
-                 else { name = q.pkg-name; version = q.pkg-version; };
+                 else { name = q.pkg-name; version = q.pkg-version; inherit id; };
             # Boot packages (base, ghc-prim, rts, ...) don't have
             # slicable haskell.nix builds — they come with GHC and
             # are already registered in the starting package db.
             # `pre-existing` in plan-json flags these; skip them.
-            preExisting = lib.filter
-              (p: (p.type or null) == "pre-existing")
-              plan;
-            preExistingNames = map (p: p.pkg-name) preExisting;
-            isExcluded = nv:
-              nv == null
-              || nv.name == package.identifier.name
-              || lib.elem nv.name preExistingNames;
-            filterIds = ids: lib.filter (nv: !(isExcluded nv)) (map idToNV ids);
+            # Exclude by the referenced UNIT's type, not by name: under
+            # stable-haskell a boot library can exist BOTH pre-existing
+            # (the compiler's db) and reinstalled `configured inplace`
+            # (parsec on the musl cross), and a sibling dep edge that
+            # points at the reinstalled twin must still reach the slice
+            # — a name-based skip drops it and the slice's solver then
+            # finds no parsec at all.
+            isExcludedId = id:
+              let q = byId.${id} or null;
+              in q == null
+                 || (q.pkg-name or null) == package.identifier.name
+                 || (q.type or null) == "pre-existing";
+            filterIds = ids:
+              lib.filter (nv: nv != null)
+                (map idToNV (lib.filter (id: !(isExcludedId id)) ids));
           in {
             homeDependIds    = filterIds libIds;
             homeBuildToolIds = filterIds exeIds;
@@ -137,6 +163,10 @@ let
           inherit componentId component package name src flags patches cabalFile cabal-generator;
           inherit (pkg) prePatch postPatch;
           inherit (homeIds) homeDependIds homeBuildToolIds;
+          # Boot packages the compiler provides — comp-v2-builder keeps these
+          # out of two-stage build-tool source staging (they have no real
+          # hackage src, so staging them would coerce a null fetchurl hash).
+          inherit (config) nonReinstallablePkgs;
           pkgSet = config.packages;
           packageIdsByName = config.package-ids-by-name;
           # Raw plan.json `install-plan` array — comp-v2-builder
@@ -149,6 +179,9 @@ let
           # and shared across all slices so the v2 builder doesn't
           # rebuild the same N-entry attrset per component.
           planJsonByPlanId = config.plan-json-by-id;
+          # The BUILD-twin-preferring variant, for the custom-setup
+          # machinery (setup scopes are build-stage under the fork).
+          planJsonByPlanIdBuild = config.plan-json-by-id-build;
           # Project-global pragma / doc / flag data, computed once from
           # the plan (see `builder/v2-project-globals.nix`) and shared
           # across every slice instead of recomputed per component.

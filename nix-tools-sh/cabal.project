@@ -1,0 +1,88 @@
+index-state: 2026-01-18T00:00:00Z
+with-compiler: ghc-9.6
+
+-- Needed for building aarch64-linux musl version with GHC 9.6
+constraints: containers installed, Cabal >=3.16.1.0
+allow-older: Cabal-syntax-json:base, Cabal-syntax-json:containers
+allow-newer: Cabal-syntax-json:Cabal, Cabal-syntax-json:Cabal-syntax
+
+packages: nix-tools
+
+-- haskell.nix expects nix-tools to provide the cabal and hpack executables
+-- so we put these two packages here, so they will be present even if nix-tools
+-- dependencies change
+extra-packages: cabal-install, hpack, Cabal-syntax-json
+
+test-show-details: direct
+
+allow-newer:
+    -- nix-tools (and its deps) bound Cabal/Cabal-syntax to ^>=3.16;
+    -- the stable-haskell fork below is 3.17.  Relax the upper bound on
+    -- these deps project-wide so make-install-plan links the fork.
+    Cabal,
+    Cabal-syntax,
+    cabal-install,
+    cabal-install-solver,
+    algebraic-graphs:deepseq,
+    hackage-db:base,
+    hackage-db:Cabal,
+    hnix:aeson,
+    hnix:base,
+    hnix:bytestring,
+    hnix:free,
+    hnix:relude,
+    hnix-store-core:base,
+    hnix-store-core:bytestring,
+    hnix-store-core:cryptonite,
+    hnix-store-core:memory,
+    hnix:template-haskell,
+    hpack:Cabal,
+    lens-family-th:base,
+    lens-family-th:template-haskell,
+
+source-repository-package
+    type: git
+    location: https://github.com/michaelpj/hackage-db.git
+    tag: f3b9240212b036391871e4ea09891e91efcea7a1
+    --sha256: sha256-n0ATmkwtR68E2FuZK3QIQgZirVmWbd21vIQmzhGKsRw=
+
+source-repository-package
+    type: git
+    location: https://github.com/andreabedini/Cabal-syntax-json.git
+    tag: b0033ed4d00a09340c64f4290cc649f4009deabd
+    --sha256: sha256-Aymi25AQLSMextVeXbsMnaOppxAO93qVbwo7Vt44ej4=
+
+-- Build make-install-plan against the stable-haskell cabal fork
+-- (branch hkm/installed-sublibs — the Cabal the stable-ghc-9.14 stage
+-- projects pin (f2e0a89e, which adds stage-qualified `package build:*` /
+-- `package host:*` sections) plus the installed-sublib solver support,
+-- plan-node dedupe, unit receipts,
+-- Host-stage scoping of executable-static, and a per-stage `shared`
+-- default for targets whose RTS linker only loads shared libraries
+-- (wasm), so a wasm Host plans shared libraries while its native Build
+-- stage does not; the SAME rev the v2
+-- builder's cabal-install is pinned to in builder/default.nix, so
+-- plan-time and slice-time elaboration can never skew).  This is the
+-- cabal that ships the cross-compilation "stage" system
+-- (haskell/cabal#11179: ProjectConfigToolchain /
+-- --with-build-compiler / build:/host: stage-qualified constraints),
+-- which lets the solver break the Win32 -> hsc2hs -> process -> Win32
+-- build-tool cycle by resolving build-tool-depends in the build scope
+-- instead of relying on a full Hackage "older universe".
+source-repository-package
+    type: git
+    location: https://github.com/stable-haskell/Cabal.git
+    tag: ad937de5b7cf2140ba55130d60b06f83af7fab90
+    --sha256: sha256-khDkYbQMgm0Cj0DBJStkagj147Nh9+QLAOnk4eRyEXc=
+    subdir: Cabal
+            Cabal-syntax
+            cabal-install
+            cabal-install-solver
+            hooks-exe
+
+source-repository-package
+    type: git
+    location: https://github.com/stable-haskell/hackage-security.git
+    tag: baaad2e189a8203966f7d3f752a348f02eefd1b2
+    --sha256: sha256-mVWZCWGJKsSjQSqb5iw0Q8fmV+4aFZVL4zOmMaNnEhA=
+    subdir: hackage-security

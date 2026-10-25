@@ -1,0 +1,29 @@
+diff --git a/cbits/symbols.x86_64-windows.c b/cbits/symbols.x86_64-windows.c
+--- a/cbits/symbols.x86_64-windows.c
++++ b/cbits/symbols.x86_64-windows.c
+@@ -4,0 +5,14 @@
++
++#include <stdarg.h>
++#include <wchar.h>
++
++/* <stdlib.h> declares the dllimport accessor; keep the slot containing its
++   function address for the iserv linker's indirect-data lookup. */
++static const void *iserv_imp_p_environ = (const void *)&__p__environ;
++
++/* These MinGW CRT implementations are linked into iserv-proxy, but its
++   dynamic object linker also needs their addresses in the symbol table. */
++extern int __cdecl __ms_fwprintf(FILE *, const wchar_t *, ...);
++extern int __cdecl __mingw_wpformat(int, void *, int, const wchar_t *, va_list);
++extern int __cdecl __mingw_vswprintf(wchar_t *, size_t, const wchar_t *, va_list);
++extern int __cdecl __mingw_swprintf(wchar_t *, size_t, const wchar_t *, ...);
+@@ -105,0 +120,7 @@
++    /* MinGW formatter implementations are already linked into this exe. */
++    SYM(__ms_fwprintf),
++    SYM(__mingw_wpformat),
++    SYM(__mingw_vswprintf),
++    SYM(__mingw_swprintf),
++    /* MinGW-w64 14 libmingwex `_assert` references this directly. */
++    SYM(__acrt_iob_func),
+@@ -106,0 +127,2 @@
++    { "__imp___p__environ", (void *)&iserv_imp_p_environ,
++      STRENGTH_NORMAL, SYM_TYPE_INDIRECT_DATA },

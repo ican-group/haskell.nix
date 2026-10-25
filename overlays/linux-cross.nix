@@ -6,6 +6,11 @@
 , makeWrapper
 , qemu
 , qemuSuffix ? (haskellLib.qemuByHostPlatform hostPlatform)
+  # Command used to run host-platform ELF binaries on the build platform.
+  # Defaults to qemu user-mode emulation; darwin build hosts pass
+  # hyper-linux's `hl` instead (qemu user-mode does not exist on macOS).
+  # When set, the `qemu` argument is never forced.
+, pipeCommand ? "${qemu}/bin/qemu-${qemuSuffix}"
 , iserv-proxy
 , iserv-proxy-interpreter
 , iserv-proxy-interpreter-prof
@@ -30,8 +35,9 @@ let
     PROXY_ARGS=''${PROXY_ARGS:-}
     # Unset configure flags as configure should have run already
     unset configureFlags
-    (>&2 echo "---> Starting iserv-proxy with piped ${interpreter.exeName} (qemu: ${qemu}/bin/qemu-${qemuSuffix})")
-    ${iserv-proxy}/bin/iserv-proxy $@ --pipe ${qemu}/bin/qemu-${qemuSuffix} ${interpreter}/bin/${interpreter.exeName} tmp --stdio $ISERV_ARGS
+    (>&2 echo "---> Starting iserv-proxy with piped ${interpreter.exeName} (emulator: ${pipeCommand})")
+    # GHC must track the proxy PID so cancellation signals reach the proxy.
+    exec ${iserv-proxy}/bin/iserv-proxy "$@" --pipe ${pipeCommand} ${interpreter}/bin/${interpreter.exeName} tmp --stdio $ISERV_ARGS
     '';
   qemuIservWrapper = symlinkJoin { name = "iserv-wrapper"; paths = [ (qemuIservWrapperScript false) (qemuIservWrapperScript true) ]; };
   configureFlags = lib.optional (hostPlatform.isAarch32 || hostPlatform.isAndroid) "--disable-split-sections";
@@ -45,10 +51,10 @@ let
       # -dynamic-system-linker disabled. Link -ldl for android.
       ++ lib.optionals hostPlatform.isAndroid ["-optl-ldl"];
 
-  # Wrapper for qemu testing
+  # Wrapper for running test executables under the emulator
   qemuTestWrapper = writeShellScriptBin "test-wrapper" ''
     set -euo pipefail
-    ${qemu}/bin/qemu-${qemuSuffix} $@*
+    ${pipeCommand} "$@"
   '';
 
   # Choose the appropriate test wrapper
@@ -93,8 +99,15 @@ let
         # Forward $ghc/lib/ and $ghc/share/ so `ghc --print-libdir`
         # (which makeWrapper preserves via getExecutablePath) still
         # finds the boot libs.
+        #
+        # `if`, not `[ -d ... ] && ...`: this loop is the LAST command in the
+        # builder, so with a missing directory the `&&` form left the loop's
+        # exit status at 1 and the whole derivation failed -- silently, since a
+        # failed test writes nothing.  `set -e` never fired (the test is the
+        # left operand of `&&`, which is exempt); the script simply ran off the
+        # end with a non-zero status, and the log was empty.
         for d in lib share; do
-          [ -d ${ghc}/$d ] && ln -s ${ghc}/$d $out/$d
+          if [ -d ${ghc}/$d ]; then ln -s ${ghc}/$d $out/$d; fi
         done
       '';
 

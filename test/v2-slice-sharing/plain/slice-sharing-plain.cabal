@@ -1,0 +1,9 @@
+cabal-version: 2.2
+name:          slice-sharing-plain
+version:       0.1.0.0
+license:       LicenseRef-PublicDomain
+
+library
+  exposed-modules:  SliceSharing
+  build-depends:    base, primitive
+  default-language: Haskell2010

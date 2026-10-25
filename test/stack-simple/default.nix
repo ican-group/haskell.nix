@@ -1,4 +1,4 @@
-{ stdenv, lib, pkgs, mkStackPkgSet, haskellLib, testSrc, compiler-nix-name, evalPackages }:
+{ stdenv, lib, pkgs, mkStackPkgSet, haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem }:
 
 with lib;
 
@@ -6,7 +6,7 @@ let
   project = pkgs.haskell-nix.stackProject' {
     src = testSrc "stack-simple";
     stackYaml = "stack-${compiler-nix-name}.yaml";
-    inherit evalPackages;
+    inherit evalSystem;
   };
 
   packages = project.hsPkgs;
