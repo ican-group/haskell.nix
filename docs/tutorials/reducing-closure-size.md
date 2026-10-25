@@ -62,9 +62,17 @@ Setting these on the component (rather than globally) keeps the change
 scoped to the executable you ship, so libraries used for further
 linking are left untouched.
 
-`dontStrip = false` also removes the `--disable-executable-stripping`
-and `--disable-library-stripping` flags that haskell.nix otherwise
-passes to `Setup`, so Cabal strips as well.
+`dontStrip = false` also makes haskell.nix pass
+`--enable-executable-stripping` and `--enable-library-stripping` to
+`Setup` (instead of the `--disable-...` flags it passes by default), so
+Cabal strips as well.
+
+These component options (and `postInstall` below) are applied by the
+default per-component builder (`builderVersion = 1`).  The v2 slice
+builder (`builderVersion = 2`, the default for the stable-haskell
+compilers such as `ghc914-sh`) does not strip its outputs and ignores
+them; see [Post-processing a built executable](#post-processing-a-built-executable)
+for an approach that works with either builder.
 
 ## Fully static executables
 
@@ -106,6 +114,32 @@ loop.  `nukeReferences` (`${pkgs.buildPackages.nukeReferences}/bin/nuke-refs`)
 is a blunter alternative that rewrites *every* store-path reference in
 the given files; only use it when you are certain the binary has no
 legitimate runtime dependencies.
+
+## Post-processing a built executable
+
+Instead of changing how the component is built, you can copy the
+executable into a new derivation and clean it up there.  This works
+with both builders (and leaves the original component, and anything
+that depends on it, unchanged):
+
+```nix
+let
+  exe = project.hsPkgs.your-package.components.exes.your-exe;
+in pkgs.runCommand "your-exe-slim" {
+  nativeBuildInputs = [ pkgs.buildPackages.removeReferencesTo ];
+} ''
+  mkdir -p $out/bin
+  cp ${exe.exePath} $out/bin/
+  chmod +w $out/bin/your-exe
+  remove-references-to -t ${pkgs.buildPackages.gcc} $out/bin/your-exe
+''
+```
+
+`runCommand` does not run the stdenv fixup phase, so the binary is not
+stripped; to strip it as well, use `pkgs.runCommandCC` and add
+`$STRIP $out/bin/your-exe`.  Data files and other runtime
+dependencies of the executable are not copied, so check that it still
+runs.
 
 ## Why are these not the default?
 
