@@ -5,3 +5,6 @@ nix-tools/.plan.nix/*.nix linguist-generated=true
 nix-tools/pkgs.nix linguist-generated=true
 .stack-to-nix.cache linguist-generated=true
 materialized/**/* linguist-generated=true
+
+# A unified diff represents an unchanged blank line with a single space.
+test/rosetta-poll-fork/post-ack-work.patch whitespace=-blank-at-eol

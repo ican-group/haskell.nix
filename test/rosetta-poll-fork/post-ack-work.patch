@@ -1,0 +1,99 @@
+--- a/poll_fork.c
++++ b/poll_fork.c
+@@ -21,6 +21,7 @@
+ #define MAX_ITERATIONS UINT64_C(10000000)
+ #define MAX_TIMEOUT_MS UINT64_C(3600000)
+ #define DEFAULT_PROGRESS_EVERY UINT64_C(100)
++#define MAX_POST_ACK_WORK UINT64_C(100000)
+ 
+ typedef struct {
+     struct pollfd *fds;
+@@ -40,6 +41,9 @@
+     struct timespec timeout;
+     bool timing;
+     uint64_t poll_ns;
++    uint64_t post_ack_work_max;
++    uint64_t post_ack_work_iterations;
++    volatile uint64_t post_ack_work_checksum;
+ } poll_state;
+ 
+ static uint64_t elapsed_ns(const struct timespec *start, const struct timespec *end) {
+@@ -109,6 +113,14 @@
+     atomic_store_explicit(&state->poller_done, true, memory_order_release);
+     notify_poller_state(state);
+     return error_code == 0 ? NULL : &poller_error;
++}
++
++static void do_post_ack_work(poll_state *state, uint64_t generation) {
++    uint64_t count = (generation * UINT64_C(37)) % (state->post_ack_work_max + UINT64_C(1));
++    for (uint64_t i = 0U; i < count; ++i) {
++        state->post_ack_work_checksum += generation + i;
++    }
++    state->post_ack_work_iterations += count;
+ }
+ 
+ static void *poller_main(void *argument) {
+@@ -153,6 +165,7 @@
+                 int unlock_rc = pthread_mutex_unlock(&state->mutex);
+                 if (unlock_rc != 0 || rc != 0) return poller_finish(state, unlock_rc != 0 ? unlock_rc : rc);
+             }
++            if (state->post_ack_work_max != 0U) do_post_ack_work(state, state->readiness_cycles);
+         }
+     }
+ }
+@@ -225,19 +238,21 @@
+ 
+ static void usage(const char *program) {
+     (void)fprintf(stderr,
+-        "Usage: %s [--api poll|ppoll] [--iterations N] [--timeout-ms N] [--progress-every N] [--timing]\n"
++        "Usage: %s [--api poll|ppoll] [--iterations N] [--timeout-ms N] [--post-ack-work-max N] [--progress-every N] [--timing]\n"
+         "  --api API          libc wait call: poll or ppoll (default ppoll)\n"
+         "  --iterations N     fork cycles (1..%" PRIu64 ", default %" PRIu64 ")\n"
+         "  --timeout-ms N     finite wait timeout (0..%" PRIu64 "); omit for indefinite\n"
++        "  --post-ack-work-max N bounded post-ack arithmetic work (0..%" PRIu64 ", default 0)\n"
+         "  --progress-every N report phases every N cycles (default %" PRIu64 ")\n"
+         "  --timing           include monotonic wait-call and total elapsed time\n",
+-        program, MAX_ITERATIONS, DEFAULT_ITERATIONS, MAX_TIMEOUT_MS, DEFAULT_PROGRESS_EVERY);
++        program, MAX_ITERATIONS, DEFAULT_ITERATIONS, MAX_TIMEOUT_MS, MAX_POST_ACK_WORK, DEFAULT_PROGRESS_EVERY);
+ }
+ 
+ int main(int argc, char **argv) {
+     uint64_t iterations = DEFAULT_ITERATIONS;
+     uint64_t timeout_ms = 0U;
+     uint64_t progress_every = DEFAULT_PROGRESS_EVERY;
++    uint64_t post_ack_work_max = 0U;
+     bool finite_timeout = false, timing = false;
+     bool use_ppoll = true;
+     int pipe_fds[2] = {-1, -1};
+@@ -267,6 +282,8 @@
+             finite_timeout = true;
+         } else if (strcmp(argv[i], "--progress-every") == 0 && i + 1 < argc) {
+             if (!parse_u64(argv[++i], MAX_ITERATIONS, &progress_every) || progress_every == 0U) goto bad_args;
++        } else if (strcmp(argv[i], "--post-ack-work-max") == 0 && i + 1 < argc) {
++            if (!parse_u64(argv[++i], MAX_POST_ACK_WORK, &post_ack_work_max)) goto bad_args;
+         } else if (strcmp(argv[i], "--timing") == 0) {
+             timing = true;
+         } else {
+@@ -274,6 +291,9 @@
+         }
+     }
+     state.timing = timing;
++    state.post_ack_work_max = post_ack_work_max;
++    state.post_ack_work_iterations = 0U;
++    state.post_ack_work_checksum = 0U;
+     state.finite_timeout = finite_timeout;
+     state.use_ppoll = use_ppoll;
+     state.timeout_ms = timeout_ms;
+@@ -355,9 +375,10 @@
+     }
+     if (timing && clock_gettime(CLOCK_MONOTONIC, &total_end) != 0) goto cleanup;
+     status = EXIT_SUCCESS;
+-    (void)printf("forks=%" PRIu64 " readiness_cycles=%" PRIu64 " api=%s mode=%s",
++    (void)printf("forks=%" PRIu64 " readiness_cycles=%" PRIu64 " api=%s mode=%s post_ack_work_max=%" PRIu64 " post_ack_work_iterations=%" PRIu64 " post_ack_work_checksum=%" PRIu64,
+         forks_completed, state.readiness_cycles, use_ppoll ? "ppoll" : "poll",
+-        finite_timeout ? "finite" : "indefinite");
++        finite_timeout ? "finite" : "indefinite", state.post_ack_work_max,
++        state.post_ack_work_iterations, state.post_ack_work_checksum);
+     if (finite_timeout) (void)printf(" timeout_ms=%" PRIu64, timeout_ms);
+     if (timing) (void)printf(" wait_ms=%.3f total_ms=%.3f",
+         (double)state.poll_ns / 1000000.0,

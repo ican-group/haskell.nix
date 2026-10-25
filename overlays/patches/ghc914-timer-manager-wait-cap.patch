@@ -1,0 +1,17 @@
+--- a/src/GHC/Internal/Event/TimerManager.hs
++++ b/src/GHC/Internal/Event/TimerManager.hs
+@@ -178,7 +178,13 @@
+ step :: TimerManager -> IO Bool
+ step mgr = do
+   timeout <- mkTimeout
+-  _ <- I.poll (emBackend mgr) (Just timeout) (handleControlEvent mgr)
++  -- Experimental bound for translated blocking polls. Keep deadline
++  -- selection and callback execution in mkTimeout unchanged.
++  let maxWait = 1000000000 -- nanoseconds
++      pollTimeout = case timeout of
++        Forever -> Timeout maxWait
++        Timeout ns -> Timeout (min ns maxWait)
++  _ <- I.poll (emBackend mgr) (Just pollTimeout) (handleControlEvent mgr)
+   state <- readIORef (emState mgr)
+   state `seq` return (state == Running)
+  where

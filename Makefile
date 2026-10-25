@@ -6,11 +6,12 @@ COMPILER ?= ghc9141
 TEST_SUITE ?= unit-tests
 SYSTEM ?= x86_64-linux
 QEMU_ARG = $(if $(QEMU),--argstr qemu "$(QEMU)",)
+NIXPKGS_LIB_ARG = $(if $(NIXPKGS_LIB),--arg lib 'import $(NIXPKGS_LIB)',)
 
-.PHONY: help check test test-linux-cross-wrapper test-v2-cabal-overrides test-windows-basement-v1 test-windows-basement-v2 test-mingw-stdio test-qemu-linux-user test-qemu-arm32-personality test-elf-comdat-functions probe-rosetta-signals test-rosetta-signals verify
+.PHONY: help check check-rosetta-timer-cap test test-linux-cross-wrapper test-v2-cabal-overrides test-windows-basement-v1 test-windows-basement-v2 test-mingw-stdio test-qemu-linux-user test-qemu-arm32-personality test-elf-comdat-functions probe-rosetta-signals test-rosetta-signals verify
 
 ##@ Verification
-check: ## Check whitespace, Nix syntax, emulator selection, and dependencies
+check: check-rosetta-timer-cap ## Check whitespace, Nix syntax, emulator selection, and dependencies
 	git diff --check
 	nix-instantiate --parse builder/comp-v2-builder.nix >/dev/null
 	nix-instantiate --eval --strict test/native-ghc-builder.nix
@@ -65,6 +66,12 @@ test-elf-comdat-functions: ## Test RTS COMDAT selection and duplicate rejection 
 	timeout -k 5 $(TIMEOUT) nix-build --no-out-link test/default.nix --argstr compiler-nix-name ghc914-sh -A elf-comdat-functions.run
 
 ##@ Linux emulator diagnostics
+check-rosetta-timer-cap: ## Check opt-in compiler scope without IFD/builds (optional NIXPKGS_LIB)
+	nix-instantiate --parse overlays/rosetta-timer-wait-cap.nix >/dev/null
+	nix-instantiate --parse modules/stable-haskell-timer-wait-cap.nix >/dev/null
+	nix-instantiate --extra-experimental-features flakes --eval --strict test/rosetta-timer-cap-scope.nix $(NIXPKGS_LIB_ARG)
+	$(PYTHON) test/timer-manager-wait-cap/expose-fixture-modules.py --self-test
+
 probe-rosetta-signals: ## Record host signal behavior without requiring compliant Rosetta behavior (SYSTEM)
 	timeout -k 5 $(TIMEOUT) nix-build --no-out-link test/rosetta-signals.nix --argstr system $(SYSTEM)
 

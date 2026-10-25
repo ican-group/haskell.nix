@@ -292,6 +292,89 @@ cross-Template-Haskell build. See [the regression instructions](../../test/READM
 for emulator overrides and instructions for rerunning an existing test output.
 
 
+### Rosetta host-compiler wait cap (experimental)
+
+A private GHC 9.14 host-compiler workload on macOS/Rosetta stalled while a
+compiler thread waited indefinitely in the host `ghc-internal` TimerManager.
+The retained GHC trace showed a private suspension signal delivered at the
+native poll adapter's entry. Signal return resumed at that adapter entry,
+rather than an interrupted syscall continuation. Later passive snapshots found
+the poller in an indefinite two-FD poll while the matching suspension requester
+waited for ACK1. This is evidence for a missed-wakeup race on the observed
+Rosetta path; it does not establish the cause of the historical Hydra guest
+stall, whose matching signal trace is unavailable.
+
+The proposed workaround changes only the native x86_64 Linux host stage2
+`ghc-internal` TimerManager backend wait: `Forever` becomes one second and
+finite waits are capped at one second. Existing monotonic deadline selection,
+callback handling, and wakeup protocol remain in place. The overlay is opt-in and absent from the default overlay list. It leaves
+configured source and the stage1 bootstrap unpatched. Cross wrappers share
+the patched native host compiler through their native build package set;
+Android and other target boot libraries do not receive this patch.
+
+A standalone C reproducer isolated the wait cycle on the same pinned Rosetta
+poll/suspension path. The captured Rosetta image SHA256 is
+`e743f8a5dcdf8255c507e41e4085d8a7c6cc5efda8585265f6c1603f2cbe1ab6`.
+With a one-second finite timeout, full observation
+recorded a pending request before `ppoll`, its normal return with result zero,
+then the existing acknowledgment path publishing ACK2 and attempting to wake
+the requester. Later readiness and requester events, plus the reproducer's
+source protocol, show indirect progress through the remaining fork/wait
+iterations. The run completed all 10,000 iterations. The wake syscall result
+and each native clone completion were not directly recorded, so this is a
+bounded observed recovery of the C wait cycle, not proof of every internal
+step.
+
+| Observation | Result |
+| --- | --- |
+| Signal immediately before the native `ppoll` syscall | Request pending; signal return resumes at syscall entry; indefinite poll can remain blocked. |
+| Finite `ppoll` return | After about 1.007 seconds, returns 0 with no descriptors ready and request still pending. |
+| Existing runtime path | ACK2 is published and a futex wake is attempted; subsequent same-context poll sees readiness, followed by requester activity and workload completion. |
+
+The harness selects the libc `poll` API (`--api poll`); on this pinned Rosetta
+path it enters the native `ppoll` syscall backend. The harness's `ppoll` API
+takes a different measured adapter and is not interchangeable in this test.
+A [trace excerpt and provenance](../../test/rosetta-poll-fork/timeout-rescue-excerpt.json)
+retain the decisive seven records and source/runtime hashes. The full private
+trace is not included.
+
+The C fixture is retained under [`test/rosetta-poll-fork/`](../../test/rosetta-poll-fork/), including the original `poll_fork.c` (source SHA256 prefix `cd0bb8…`) and the post-ACK patch reconstructing source SHA256 prefix `6514a8…`. The original native C baseline passed 12 runs of 1,000 forks. The post-ACK variant has not been qualified by native execution; the Rosetta finite-timeout capture is the mechanism-level observation described above.
+
+The cap has also been applied to an experimental GHC candidate. Three full 241-module compiler workloads completed, and the candidate trace observed finite waits of at most one second on the matching heap poll descriptors. Those GHC captures did not include a timeout return while the request was pending. They therefore establish build/workload integration and wait coverage, not timeout-based rescue of GHC's exact cycle. A later full-observation C run also changed diagnostic timing. No performance claim follows from these runs.
+
+This is a proposed, opt-in host-side workaround for a captured Rosetta behavior. It does not modify target libraries, prove a repair to the historical Hydra incident, qualify other platforms, or establish production readiness. The cited evidence is observational and bounded; no claim is made that the race cannot recur.
+
+For flake inputs named `nixpkgs` and `haskellNix`, enable the experiment by
+appending the overlay after haskell.nix:
+
+```nix
+import nixpkgs {
+  system = "x86_64-linux";
+  overlays = [
+    haskellNix.overlay
+    (import (haskellNix + "/overlays/rosetta-timer-wait-cap.nix"))
+  ];
+}
+```
+
+The hook is selected only for the fully native x86_64 Linux
+`ghc914-sh-stage2` project built by `ghc914-sh-stage1`. It appends the patch to
+`packages.ghc-internal.patches`, preserving existing patches and caller modules.
+Patching an Android target library alone would not change the TimerManager
+already linked into the host compiler. Enabling this overlay changes compiler
+and dependent build identities; an old immutable Hydra derivation is not a test
+of the new selection.
+
+Run the pure scope and fixture-metadata checks with
+`make check-rosetta-timer-cap`. A cached Nixpkgs library may be supplied with
+`NIXPKGS_LIB=/path/to/nixpkgs/lib` to avoid flake input resolution. The
+[TimerManager fixture](../../test/timer-manager-wait-cap/Makefile) checks the
+selected compiler's actual library with a fake backend: deadline selection,
+no early/duplicate callbacks, earlier wakeups, cancellation, shutdown and
+cleanup. It does not execute Rosetta's poll adapter. The separately bounded
+[C commands](../../test/rosetta-poll-fork/USAGE.md) exercise that race; a passing
+run without a captured pending cycle is not proof of recovery.
+
 [nh2]: https://github.com/nh2/static-haskell-nix
 [vaibhav]: https://vaibhavsagar.com/blog/2018/01/03/static-haskell-nix/
 [haskell.nix]: https://github.com/input-output-hk/haskell.nix
