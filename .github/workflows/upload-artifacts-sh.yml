@@ -1,0 +1,243 @@
+name: Update Static Nix Tools (stable-haskell)
+
+# Sibling of upload-artifacts.yml for the *stable-haskell* nix-tools variant,
+# built from ./nix-tools-sh.
+#
+# Why a second workflow rather than a matrix over upload-artifacts.yml: the two
+# variants are two source trees, not two build configurations of one, because
+# the fork changes the Haskell sources (Cabal2Nix, MakeInstallPlan,
+# ProjectPlanOutput, Freeze, setup-ghcjs) alongside cabal.project.  Two
+# workflows on two tag namespaces keeps the release cadences independent, which
+# matters here: the fork will move at a different rate from mainline nix-tools,
+# and a mainline release must never be able to disturb the stable-haskell pin.
+#
+# Differences from upload-artifacts.yml, all deliberate:
+#
+#  * Tag namespace `nix-tools-sh-*`.  upload-artifacts.yml excludes it
+#    explicitly -- `nix-tools-sh-*` matches its `nix-tools-*` pattern, so
+#    without that exclusion every release here would also start a run there
+#    that could only fail.
+#
+#  * Waits on the `<system>.nix-tools-sh.static.zipped.nix-tools-static-sh*`
+#    jobs, not the mainline ones, and the assets are named
+#    `<arch>-nix-tools-static-sh.zip`.
+#
+#  * Writes ./nix-tools-static-sh.nix, never ./nix-tools-static.nix.  That is
+#    the entire point: the existing GHC versions keep the Cabal 3.16 tools.
+#
+# Everything else follows upload-artifacts.yml, including JOBSET: because
+# ./nix-tools-sh lives on master, these tags are cut from master commits just
+# like mainline ones, so the master jobset has the evaluation.
+
+on:
+  push:
+    tags:
+      - "nix-tools-sh-*"
+
+env:
+  GH_TOKEN: ${{ github.token }}
+
+# Same split as upload-artifacts.yml: the default token stays read-only and only
+# the release job elevates.  There is no pull_request trigger here, so no path
+# in this workflow ever runs against unreviewed code.
+permissions:
+  contents: read
+
+jobs:
+  wait-for-hydra:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Take the zips from Hydra, which built them, rather than reconstructing
+      # our way back to them with nix -- see the long note in
+      # upload-artifacts.yml.  In short: a linux runner cannot cheaply
+      # instantiate these attributes, and substituting is a race against whether
+      # the path made it off the build machine.  Hydra always has what it built
+      # and publishes a sha256 per build product, so integrity still holds.
+      - name: "Wait for and pull stable-haskell nix-tools"
+        env:
+          COMMIT: ${{ github.sha }}
+          JOBSET: master
+          # Generous: these zips are cross-built and the queue can be deep.  It
+          # only has to beat the job actually finishing, and a stuck build shows
+          # up as this timeout rather than as a run that hangs all day.
+          TIMEOUT_MIN: 240
+        run: |
+          set -euo pipefail
+          hydra=https://ci.zw3rk.com
+          project=input-output-hk-haskell-nix
+
+          jobs="aarch64-darwin.nix-tools-sh.static.zipped.nix-tools-static-sh
+          x86_64-darwin.nix-tools-sh.static.zipped.nix-tools-static-sh
+          x86_64-linux.nix-tools-sh.static.zipped.nix-tools-static-sh
+          x86_64-linux.nix-tools-sh.static.zipped.nix-tools-static-sh-arm64"
+
+          deadline=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
+
+          # Find the evaluation for this revision.  `.flake` carries the full ref
+          # (github:owner/repo/<rev>?narHash=...), so match the revision as a
+          # substring.  Every step is guarded so a transient API failure or a jq
+          # miss retries instead of tripping set -e/pipefail; only the deadline
+          # ends the loop unsuccessfully.
+          evalid=""
+          while :; do
+            evals=$(curl -sf --max-time 120 -H 'Accept: application/json' "$hydra/jobset/$project/$JOBSET/evals") || evals=""
+            evalid=$(printf '%s' "$evals" \
+                       | jq -r --arg r "$COMMIT" 'first(.evals[]? | select((.flake // "") | contains($r)) | .id) // empty' 2>/dev/null) \
+              || evalid=""
+            if [ -n "$evalid" ]; then break; fi
+            [ "$(date +%s)" -lt "$deadline" ] || {
+              echo "::error::timed out after ${TIMEOUT_MIN}m waiting for Hydra to evaluate $COMMIT in jobset $JOBSET"
+              echo "nix-tools-sh-* tags must be cut from master commits, since ./nix-tools-sh lives on master."
+              echo "evaluations Hydra does have for that jobset:"
+              printf '%s' "$evals" | jq -r '.evals[]? | "  eval \(.id): \(.flake // "?")"' || true
+              exit 1
+            }
+            echo "waiting for Hydra to evaluate $COMMIT in jobset $JOBSET"
+            sleep 60
+          done
+          echo "Hydra eval $evalid for $COMMIT (jobset $JOBSET)"
+
+          for job in $jobs; do
+            # `finished` flips to 1 once Hydra is done with the build, whatever
+            # the outcome; buildstatus is only meaningful after that.  `--retry`
+            # so a transient 5xx does not fail the run, while a job genuinely
+            # absent from the eval still fails fast.
+            while :; do
+              meta=$(curl -sfL --retry 3 --retry-delay 5 --max-time 120 -H 'Accept: application/json' "$hydra/eval/$evalid/job/$job") \
+                || { echo "::error::$job is not in eval $evalid"; exit 1; }
+              [ "$(echo "$meta" | jq -r '.finished')" = "1" ] && break
+              [ "$(date +%s)" -lt "$deadline" ] \
+                || { echo "::error::timed out after ${TIMEOUT_MIN}m waiting for $job"; exit 1; }
+              echo "waiting for $job (build $(echo "$meta" | jq -r '.id'))"
+              sleep 60
+            done
+
+            status=$(echo "$meta" | jq -r '.buildstatus')
+            [ "$status" = "0" ] || { echo "::error::$job failed (buildstatus $status)"; exit 1; }
+
+            buildid=$(echo "$meta" | jq -r '.id')
+
+            # One build product per zip.  Download it and verify against the
+            # sha256 Hydra recorded, so a truncated transfer cannot become a
+            # published release.
+            echo "$meta" | jq -r '.buildproducts | to_entries[] | "\(.key) \(.value.name) \(.value.sha256hash // "")"' \
+            | while read -r idx name sha; do
+                case "$name" in *-nix-tools-static-sh.zip) ;; *) continue ;; esac
+                echo "downloading $name from build $buildid (product $idx)"
+                curl -sfL --retry 3 --retry-delay 5 -o "$name" "$hydra/build/$buildid/download/$idx/$name"
+                if [ -n "$sha" ]; then
+                  got=$(nix-hash --type sha256 --flat "$name" 2>/dev/null || sha256sum "$name" | cut -d' ' -f1)
+                  [ "$got" = "$sha" ] || { echo "::error::$name sha256 mismatch: got $got want $sha"; exit 1; }
+                  echo "  sha256 ok"
+                else
+                  echo "::warning::Hydra published no sha256 for $name; skipping verification"
+                fi
+              done
+          done
+
+          ls -l ./*-nix-tools-static-sh.zip
+
+      - name: Upload zips
+        uses: actions/upload-artifact@v4
+        with:
+          name: nix-tools-static-sh
+          path: "*-nix-tools-static-sh.zip"
+          if-no-files-found: error
+
+  release:
+    needs: wait-for-hydra
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+
+    # Needed to publish the release, push the pin branch and open the PR that
+    # bumps nix-tools-static-sh.nix.  This workflow has no pull_request trigger
+    # at all, so the write token is never exposed to PR code.
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # Only needed for `nix-hash` in the pin computation below.
+      - name: Install Nix with good defaults
+        uses: input-output-hk/install-nix-action@v20
+        with:
+          extra_nix_config: |
+            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=
+            substituters = https://cache.nixos.org/ https://cache.iog.io/ https://cache.zw3rk.com
+          nix_path: nixpkgs=channel:nixos-unstable
+
+      - name: Download nix-tools zips
+        uses: actions/download-artifact@v4
+        with:
+          name: nix-tools-static-sh
+
+      # Publish the release first so the download URLs the pin refers to exist
+      # before the pin-bump PR does.
+      - name: Release
+        uses: input-output-hk/action-gh-release@v1
+        with:
+          files: |
+            *-nix-tools-static-sh.zip
+
+      - name: Configure Git
+        run: |
+          git config --global user.name 'Auto Update Bot'
+          git config --global user.email 'no-reply@iohk.io'
+
+      # Update the pin on a fresh, per-release branch and open a PR against
+      # master, mirroring upload-artifacts.yml.  A per-tag branch keeps a 1:1
+      # trail from release to pin and avoids clobbering when two changes are in
+      # flight.
+      - name: "Compute nix-tools-static-sh.nix and open PR"
+        run: |
+          set -euo pipefail
+          git fetch origin master
+          branch="update-nix-tools-static-sh/${GITHUB_REF_NAME}"
+          # Fetch the branch if an earlier run of this tag already pushed it, so
+          # --force-with-lease has a remote-tracking ref to check against.
+          git fetch origin "+refs/heads/$branch:refs/remotes/origin/$branch" || true
+          git switch --force-create "$branch" origin/master
+          (
+            echo "# Generated by .github/workflows/upload-artifacts-sh.yml for ${GITHUB_REF_NAME}."
+            echo "#"
+            echo "# The stable-haskell nix-tools pin, built from ./nix-tools-sh against the"
+            echo "# stable-haskell Cabal fork (3.17).  Separate from ./nix-tools-static.nix on"
+            echo "# purpose: these tools must NOT become the default for the existing GHC"
+            echo "# versions.  Opt in per project with haskell-nix.nix-tools-unchecked-sh; see"
+            echo "# overlays/default.nix."
+            echo "pkgs: let baseurl = \"https://github.com/input-output-hk/haskell.nix/releases/download/${GITHUB_REF_NAME}/\"; in {"
+            for arch in aarch64-darwin x86_64-darwin aarch64-linux x86_64-linux; do
+              echo "  ${arch} = pkgs.fetchurl { "
+              echo "     name = \"${arch}-nix-tools-static-sh\";"
+              echo "     url = \"\${baseurl}${arch}-nix-tools-static-sh.zip\";"
+              echo "     sha256 = \"$(nix-hash --sri --type sha256 --flat ${arch}-nix-tools-static-sh.zip)\";"
+              echo "  };"
+            done
+            echo "}"
+          ) > nix-tools-static-sh.nix
+          cat nix-tools-static-sh.nix
+          git add nix-tools-static-sh.nix
+          # Nothing to do if this release's pin is already on master.
+          if git diff --cached --quiet; then
+            echo "nix-tools-static-sh.nix already up to date for ${GITHUB_REF_NAME}; skipping PR."
+            exit 0
+          fi
+          git commit -m "Update nix-tools-static-sh.nix for ${GITHUB_REF_NAME}"
+          git push --force-with-lease origin "$branch"
+          # Skip PR creation only when one is already open for this branch; any
+          # other gh failure (auth, API errors) must fail the job so a dropped
+          # pin bump is not reported as success.
+          if [ "$(gh pr list --head "$branch" --base master --state open --json number --jq length)" -gt 0 ]; then
+            echo "A PR for $branch already exists."
+          else
+            gh pr create --base master --head "$branch" \
+              --title "Update nix-tools-static-sh.nix for ${GITHUB_REF_NAME}" \
+              --body "Automated pin bump: point \`nix-tools-static-sh.nix\` at the stable-haskell static nix-tools released for \`${GITHUB_REF_NAME}\`. This is the stable-haskell variant (Cabal 3.17 fork), not the shared pin; nothing selects it by default."
+          fi

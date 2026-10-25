@@ -16,7 +16,23 @@
 { lib, stdenv, runCommand, buildCabalStoreSlice, composeStore, ghc, hsPkgs, pkgs, haskellLib
 # Optional cross-TH plumbing for the host platform.  Currently
 # only set by overlays/windows.nix and exposes `wrapGhc :: ghc -> ghc`.
-, templateHaskell ? null }:
+, templateHaskell ? null
+# Host-platform iserv-proxy executables (see builder/default.nix), used by
+# the `-pgmi` bridge for the profiled external interpreter.
+, iservProxyExes ? null
+# Project-level switch (see modules/project-common.nix): build slices
+# for `style: "local"` plan units in cabal `packages:` mode instead of
+# `extra-packages:` mode, so the slice's cabal elaborates the SAME
+# deterministic local unit id the project plan records
+# (`base-4.22.0.0`, `rts-1.0.3-threaded-nodebug`, ...).  Set by the
+# stable-haskell stage2 boot-lib project, whose registered ids become
+# the compiler's global package db — consumer plan-time dummy dumps
+# must be able to predict them (an extra-packages slice registers an
+# unpredictable `<pkgid>-<hash>` id instead).
+, v2LocalPackageSlices ? false
+# The same local-`packages:` slicing for the named packages only (see
+# modules/project-common.nix).
+, v2LocalPackageSliceNames ? [] }:
 
 { componentId, component, package, name, src, flags ? {}, patches ? [], cabalFile ? null, pkgSet
 , cabal-generator ? null # "hpack" if the package ships only `package.yaml`
@@ -29,11 +45,24 @@
                          # cabal.project `constraints:` block.
 , planJsonByPlanId ? {}  # `planJson` indexed by `id` — pre-built once
                          # at the project level, shared across slices.
-, planV2Globals ? {}     # { projectConfigPragmas; docEnabledNames; flagsByName; }
+                         # HOST twins win id collisions.
+, planJsonByPlanIdBuild ? null
+                         # the BUILD-twin-preferring variant, used by
+                         # the custom-setup machinery (setup scopes are
+                         # build-stage under the fork).  Defaults to
+                         # `planJsonByPlanId` when the project doesn't
+                         # provide it.
+, planV2Globals ? {}     # { projectConfigPragmas; perPkgConfigBlocks;
+                         #   docEnabledNames; flagsByName; }
                          # derived once from the plan (see
                          # `builder/v2-project-globals.nix`), shared across slices.
 , homeDependIds    ? []  # [{ name; version; }] — sibling-component LIB deps from plan-json
 , homeBuildToolIds ? []  # [{ name; version; }] — sibling-component EXE deps from plan-json
+, nonReinstallablePkgs ? []
+                         # `config.nonReinstallablePkgs` — the packages the
+                         # compiler provides (rts, base, array, …).  Used to
+                         # keep boot libs out of two-stage build-tool source
+                         # staging (they have no real hackage src).
 , prePatch ? null, postPatch ? null, ... }@allArgs:
 
 let
@@ -46,6 +75,7 @@ let
   docEnabledNames      = planV2Globals.docEnabledNames or {};
   planFlagsByName      = planV2Globals.flagsByName or {};
   projectConfigPragmas = planV2Globals.projectConfigPragmas or "";
+  perPkgConfigBlocks   = planV2Globals.perPkgConfigBlocks or {};
 
   # Resolve a dependency package record in `hsp` (`hsPkgs` or
   # `hsPkgs.pkgsBuildBuild`) by name, disambiguating by version.
@@ -57,9 +87,24 @@ let
   # redirect is unique, so prefer it whenever we know the version and
   # fall back to the bare name only when we don't (or when there's no
   # version-specific redirect, e.g. on `pkgsBuildBuild`).
+  # When falling back to the bare name with a known version, the record
+  # found must actually BE that version: plan `targets` hold one entry
+  # per package NAME (what `cabal build <name>` targets), so with two
+  # versions in the plan (a pre-existing boot `Cabal-3.17.0.1-inplace`
+  # alongside a configured setup-dep `Cabal-3.16.1.0`) the bare-name
+  # redirect points at the *other* version — and a pre-existing unit has
+  # no buildable definition behind it (only the `planned.nix` stub, with
+  # `src = null`).  Returning null instead lets every caller's
+  # null-filter skip the dep; the correct slice reaches the consumer
+  # through an id-keyed path (`directDepSlices`, `setupDepSlices`).
   lookupDepPkg = hsp: name: version:
     let byNV = if version != null then hsp."${name}-${version}" or null else null;
-    in if byNV != null then byNV else hsp.${name} or null;
+        byName = hsp.${name} or null;
+    in if byNV != null then byNV
+       else if version == null || byName == null
+            || (byName.identifier.version or null) == version
+       then byName
+       else null;
 
   # Cross-compile detection — drives:
   #   * whether home-build-tool source goes in the slicing repo
@@ -72,6 +117,13 @@ let
   #     unit-ids legitimately diverge from what cabal computes
   #     against the real cross GHC).
   isCross = (ghc.targetPrefix or "") != "";
+  # The stable-haskell `-target` cross wrapper is morally cross but keeps
+  # `targetPrefix = ""` (it is the native compiler + `-target`), so
+  # `isCross` above is false for it.  Its empty target global db is the
+  # reliable signal that boot libraries are planned from source and that
+  # hashed unit-ids computed against the REAL wrapper legitimately diverge
+  # from the plan-time dummy ghc's — used only by the unit-id check below.
+  isTwoStageCross = ghc.emptyGlobalPackageDb or false;
 
   # Plan-nix entry for this slice's own unit (looked up via the
   # unit-id `modules/install-plan/planned.nix` recorded on the
@@ -110,7 +162,11 @@ let
       GIT_COMMITTER_NAME='No One' GIT_COMMITTER_EMAIL= \
         git commit -m "Minimal Repo For Haskell.Nix" --author 'No One <>'
     '';
-  ownSourceRepoBlock = lib.optionalString isSourceRepoPkg ''
+  # Skipped for local-`packages:` mode slices: their target is staged
+  # as a local source dir instead, which is what gives the fork's
+  # deterministic (bare pkgid) elaboration — an srp block would make
+  # cabal elaborate the package BuildAndInstall with a hashed id.
+  ownSourceRepoBlock = lib.optionalString (isSourceRepoPkg && !isLocalPackageSlice) ''
     source-repository-package
       type: git
       location: file://${minimalSourceRepo}
@@ -360,8 +416,35 @@ let
   # the same `pkgHashSourceHash` here as it would against real
   # hackage.  Patches and pre/postPatch hooks still go through the
   # repack path because they actually change source bytes.
+  pkgUntouched =
+    !package.isLocal && resolvedPatches == [] && prePatch == null && postPatch == null;
   pkgTarball =
-    if !package.isLocal && resolvedPatches == [] && prePatch == null && postPatch == null then src
+    if pkgUntouched && lib.hasSuffix ".tar.gz" (src.name or "") then src
+    else if pkgUntouched then
+      # Non-local src that is not provably a tarball — e.g. a
+      # source-repository-package SUBDIR (Cabal-syntax inside the
+      # stable-haskell Cabal SRP), which is a DIRECTORY.  The slicing
+      # repo symlinks pkgTarball as `<name>-<ver>.tar.gz` and runs
+      # `tar -xOzf` on it, so passing the directory through fails
+      # "Cannot read: Is a directory".  Normalize: pack a directory
+      # into a real tarball (deterministic flags, `<name>-<ver>/`
+      # top-level dir per the tarball convention); pass a file through
+      # unchanged.  Hackage fetches keep the direct `src` path above
+      # (their .name ends in .tar.gz), so their slice hashes don't move.
+      runCommand "v2-tar-${pkgName}-${pkgVersion}"
+        { preferLocalBuild = true; }
+        ''
+          if [ -d ${src} ]; then
+            workDir=$(mktemp -d)
+            mkdir -p $workDir/${pkgName}-${pkgVersion}
+            cp -rL ${src}/. $workDir/${pkgName}-${pkgVersion}/
+            chmod -R u+w $workDir
+            tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
+                -czf $out -C $workDir ${pkgName}-${pkgVersion}
+          else
+            cp ${src} $out
+          fi
+        ''
     else runCommand "v2-tar-${pkgName}-${pkgVersion}"
            { preferLocalBuild = true; }
            # `cp -L` resolves symlinks against `${src}` at copy time.
@@ -383,9 +466,9 @@ let
               cp -rL --no-preserve=mode $srcParent/. $workDir/
               chmod -R u+w $workDir
               target=$workDir/$pkgSubDir
+              ${cabalFileOverride}
               ${patchApplyScript}
               ${hpackScript}
-              ${cabalFileOverride}
               # Rename the package subdir to match the tarball convention
               # so cabal sees `<name>-<version>/` when unpacking.
               mv $target $workDir/${pkgName}-${pkgVersion}
@@ -399,9 +482,9 @@ let
               ${if package.isLocal
                 then "cp -rL ${src}/. $target/"
                 else "tar -xzf ${src} --strip-components=1 -C $target"}
+              ${cabalFileOverride}
               ${patchApplyScript}
               ${hpackScript}
-              ${cabalFileOverride}
               tar --sort=name --mtime='@0' --owner=0 --group=0 --numeric-owner \
                   -czf $out -C $workDir ${pkgName}-${pkgVersion}
             '');
@@ -475,7 +558,7 @@ let
   externalDepIds = haskellLib.uniqueWithName
     (map (d: { name = d.identifier.name; version = d.identifier.version; }) externalDeps
      ++ lib.filter (nv: nv.name != pkgName)
-          (homeDependIds ++ homeBuildToolIds));
+          (homeDependIdsInClosure ++ homeBuildToolIds));
 
   # An entry in `component.depends` is either a dep package record
   # (has `.components`, e.g. `hsPkgs.provider`) or a v2 slice
@@ -583,7 +666,13 @@ let
   #     `.y` files in the slice.
   #
   # On NATIVE the two are the same slice (pkgsBuildBuild == hsPkgs).
+  # Empty for two-stage (stable-haskell -target cross) plans: build tools
+  # are BUILD-stage inplace units the consuming slice's cabal builds
+  # itself (see load-cabal-plan's lookupDependencies) — there are no
+  # per-tool slices whose unit ids a consumer's re-plan would recognise.
   transitiveBuildToolEntries =
+    lib.optionals (!isTwoStagePlan) transitiveBuildToolEntries';
+  transitiveBuildToolEntries' =
     let raw = lib.concatMap (e:
       let p   = e.entry;
           pn  = p.pkg-name or "";
@@ -674,14 +763,22 @@ let
       ) transitiveBuildToolEntries);
 
   # Package names whose presence in the slice's plan / captured-unit
-  # set is expected on cross.  Normally cabal recognises each
-  # transitive build-tool's `targetSlice` (matching unit-id) and
-  # neither plans nor builds it; this list is the safety net for
-  # cases where a uid mismatch slips through (cabal would then
-  # plan + build the tool, the unit would be captured here, and
-  # we want to accept that rather than fail).  Empty on native.
+  # set is tolerated — CROSS ONLY.  On cross this is a safety net:
+  # normally cabal recognises each transitive build-tool's
+  # `targetSlice` (matching unit-id) and neither plans nor builds it,
+  # but a uid mismatch can slip through legitimately (`--with-PROG`
+  # flags enter the real cabal's pkgHashProgramArgs but not
+  # plan-nix's), and we accept the in-slice tool build rather than
+  # fail.  On NATIVE the check is strict: the fork writes a unit
+  # receipt for every store install and its plan-improvement pass
+  # flips receipt-backed units (including executables, which the
+  # solver can never see as installed) to Installed — so a pre-built
+  # tool appearing in the slice's will-build set means its re-solved
+  # unit id diverged from the composed slice's, which is a real bug
+  # to fix, never to tolerate.
   allowedBuildToolPackages =
-    if isCross then lib.unique (map (e: e.pkgName) transitiveBuildToolEntries) else [];
+    lib.optionals isCross
+      (lib.unique (map (e: e.pkgName) transitiveBuildToolEntries));
 
   # Cross-only: entries fed to `build-cabal-slice.nix`'s
   # `buildToolBinOverlays`.  After the slice composes its starting
@@ -702,9 +799,18 @@ let
   # `cardano-wallet-ui` exports `cardano-wallet-ui:common` and
   # `cardano-wallet-ui:shelley` but has no main `library`.
   # Returns null when none is present (boot / pre-existing pkgs).
+  # Prefer the exact plan-unit id when hspkg-builder supplied one: a
+  # name+version lookup goes through the plan-`targets` name redirects,
+  # which for a package that ALSO has a pre-existing boot twin (parsec,
+  # Cabal) point at that other, unbuildable unit — the id is exact
+  # (same reasoning as `setupDepSlices`).
   homeDepSliceOf = nv:
-    let dPkg = lookupDepPkg hsPkgs nv.name (nv.version or null);
-        depLib = if dPkg != null
+    let byId = if (nv.id or null) != null then hsPkgs.${nv.id} or null else null;
+    in sliceOfPkgRecord
+         (if byId != null then byId
+          else lookupDepPkg hsPkgs nv.name (nv.version or null));
+  sliceOfPkgRecord = dPkg:
+    let depLib = if dPkg != null
                     && (dPkg ? components)
                     && (dPkg.components ? library)
                     && (dPkg.components.library != null)
@@ -729,8 +835,46 @@ let
     in if depLib != null then depLib
        else if anySublib != null then anySublib
        else anyExe;
+  # Two-stage (stable-haskell -target cross) plans build their build-tools
+  # as BUILD-stage inplace units inside each consuming slice's own cabal
+  # (load-cabal-plan gives such plans EMPTY `build-tools` — see its
+  # `lookupDependencies`).  Resolving a build-tool exe id here through the
+  # `anyExe` fallback yields the HOST exe slice, which itself lib-depends on
+  # THIS package's host library — e.g. process's `exe-depends: hsc2hs` →
+  # host hsc2hs slice → host process slice → eval-time infinite recursion.
+  # So drop the build-tool-ONLY ids (those that are not also genuine lib
+  # deps) from the store-composition set for two-stage plans; the runnable
+  # tool comes from `homeDepExeSlices` (pkgsBuildBuild) instead.
+  # Sibling lib deps INSIDE this component's own dependency closure —
+  # `allDepClosure` is seeded from this component's unit alone (see
+  # `ourPlanUnits`), so membership by name partitions `homeDependIds`:
+  # in-closure sibling deps compose as built slices below (their units
+  # ARE needed to build the target — e.g. a test component's own deps,
+  # which arrive only via `homeDependIds`); out-of-closure ones are
+  # solver-only and travel source-staged via `metadataSourceFrags`.
+  componentClosureNames =
+    lib.unique (map (e: e.entry.pkg-name or "") allDepClosure);
+  # Keep a sibling dep as a BUILT slice when it is in this component's
+  # own closure, and ALSO when the metadata path could not stage it (no
+  # hackage sdist — GHC-boot universes): only deps that actually moved
+  # to the source-only index may leave the built-slice path, or the
+  # slice's solve hits "unknown package: <sibling dep>".
+  homeDependIdsInClosure =
+    lib.filter (nv:
+      lib.elem nv.name componentClosureNames
+      || !(lib.elem nv.name metadataStagedNames)) homeDependIds;
+
+  homeLibDepNames =
+    map (d: d.identifier.name) externalDeps
+    ++ map (nv: nv.name) homeDependIds;
+  buildToolOnlyNames = lib.filter (n: !(lib.elem n homeLibDepNames))
+    (map (nv: nv.name) homeBuildToolIds);
+  homeStoreDepIds =
+    if isTwoStagePlan
+    then lib.filter (nv: !(lib.elem nv.name buildToolOnlyNames)) externalDepIds
+    else externalDepIds;
   homeDepSlices = lib.filter (s: s != null)
-    (map homeDepSliceOf externalDepIds);
+    (map homeDepSliceOf homeStoreDepIds);
 
   # Complete set of this component's *direct library* `depends` slices —
   # the constraints scope.  `directDepSlices` alone (from
@@ -746,11 +890,46 @@ let
   # (build tools) are deliberately excluded here: they contribute source
   # (via the repo) but no constraints.
   homeLibDepSlices = lib.filter (s: s != null)
-    (map homeDepSliceOf (lib.filter (nv: nv.name != pkgName) homeDependIds));
+    (map homeDepSliceOf (lib.filter (nv: nv.name != pkgName) homeDependIdsInClosure));
   dependsSlices = haskellLib.uniqueWithName
     (directDepSlices
      ++ homeLibDepSlices
      ++ lib.optional (ownLibSlice != null) ownLibSlice);
+
+  # Custom-setup deps that plan-nix resolved to SOURCE packages need their
+  # slices composed in like library deps.  This happens when a package's
+  # `setup-depends` excludes the GHC-bundled Cabal (e.g. entropy's
+  # `Cabal < 3.17` against a compiler bundling 3.17): the plan picks a
+  # from-hackage Cabal, so the slice's per-package setup solver has the
+  # `<pkg>:setup.Cabal ==<ver>` pin (ownSetupConstraints) but — without
+  # the dep slice's repo fragment and store unit — no candidate that can
+  # satisfy it, failing with "rejecting: <pkg>:setup.Cabal-<bundled>
+  # /installed-inplace".  Installed (pre-existing) setup deps need
+  # nothing.  These go in `depSlices` (store + slicing repo) but NOT
+  # `dependsSlices`: a `Cabal source` constraint there would force
+  # from-source Cabal onto the slice's regular library scope, diverging
+  # from the plan.
+  # Resolved by the plan unit id directly (`hsPkgs.${id}` is keyed for
+  # every install-plan entry): a name+version lookup would go through
+  # the plan-`targets` name redirects, which for a package that ALSO has
+  # a pre-existing boot unit (Cabal!) point at that other, unbuildable
+  # unit — the id is exact.
+  #
+  # The whole setup CLOSURE (`setupDepClosureIds`, walked on the
+  # BUILD-twin index), not just the direct `setup-depends`: the setup
+  # solve needs every transitive setup dep's source in the slicing repo
+  # and its unit composable, including build-stage-only units no lib
+  # edge reaches (the gi-* codegen setups' haskell-gi-overloading-1.0,
+  # while the host libs use 0.0).  For ids whose slice is the HOST twin
+  # that's still the right compose — same name+version+source; the
+  # setup scope re-solves and builds its build-stage copy in-slice
+  # (tolerated by the unit-id checks) with the source it needs.
+  setupDepSlices = lib.filter (s: s != null) (map (id:
+    let q = planJsonByPlanIdBuild'.${id} or null;
+    in if q == null || (q.type or "") != "configured" || !(q ? pkg-name)
+       then null
+       else sliceOfPkgRecord (hsPkgs.${id} or null)
+  ) setupDepClosureIds);
 
   # The slice's *direct* dep slices.  Transitive closure is
   # reconstructed at build time from each slice's
@@ -758,8 +937,23 @@ let
   # `build-cabal-slice.nix`), so we deliberately don't expand it
   # here — keeping the nix-side eval cheap and the buildInputs list
   # short.
+  # v1's `additional-prebuilt-depends` mechanism (comp-builder.nix):
+  # extra component derivations whose registrations must be present in
+  # the package db even though the plan has no dependency edge — GHC
+  # 9.14's unit wiring demands every rts WAY sublib be resolvable as
+  # soon as ghc-internal.conf is in scope (see the
+  # `additional-prebuilt-depends` module in overlays/stable-haskell.nix,
+  # which sets it for the stage2 boot libs).  For v2, compose their
+  # slices into the starting store db.  They contribute no constraints
+  # and no `extra-packages:` entry — they are never solver goals, the
+  # db presence is all GHC needs.
+  additionalPrebuiltSlices = lib.filter
+    (d: d != null && (d.passthru.isSlice or false))
+    (component.additional-prebuilt-depends or []);
+
   depSlices = haskellLib.uniqueWithName
     (directDepSlices
+     ++ additionalPrebuiltSlices
      ++ lib.optional (ownLibSlice != null) ownLibSlice
      # On cross, `buildToolSlices` are the *build-build* (pkgsBuildBuild)
      # tool slices.  Propagating them would walk their `repo-frag`
@@ -775,13 +969,21 @@ let
      # build-build slices must stay out of `propagatedBuildInputs` here.
      ++ lib.optionals (!isCross) buildToolSlices
      ++ transitiveBuildToolSlices
-     ++ homeDepSlices);
+     ++ homeDepSlices
+     ++ setupDepSlices);
 
 
-  # native-build inputs from the target component's config
-  libs       = lib.flatten (component.libs or []);
-  frameworks = component.frameworks or [];
-  pkgconfig  = map pkgs.lib.getDev (builtins.concatLists (component.pkgconfig or []));
+  # native-build inputs from the target component's config.  The GHC
+  # JavaScript backend links no host C libraries (its cbits/RTS go through
+  # emscripten inside the toolchain) and nixpkgs gives the ghcjs platform no
+  # `stdenv.cc`, so *referencing* any of these from the target pkg-set throws
+  # "no C compiler provided for this platform".  Empty them for ghcjs at the
+  # source, so every downstream use (extraBuildInputs, the propagatedBuildInputs
+  # `propagated`, the cabal.project extra-lib-dirs emission) is native-free.
+  isJsTarget = stdenv.hostPlatform.isGhcjs;
+  libs       = lib.optionals (!isJsTarget) (lib.flatten (component.libs or []));
+  frameworks = lib.optionals (!isJsTarget) (component.frameworks or []);
+  pkgconfig  = lib.optionals (!isJsTarget) (map pkgs.lib.getDev (builtins.concatLists (component.pkgconfig or [])));
 
   # Paths post-injected into this lib slice's registered `.conf` so
   # GHC's runtime linker can dlopen each `extra-libraries:` entry
@@ -813,8 +1015,11 @@ let
   # Resolve a home-dep {name;version} (sibling-component from
   # plan-json, includes setup-depends) to the same "pkg record"
   # shape that component.depends gives us.
-  homeDepPkgOf = nv: lookupDepPkg hsPkgs nv.name (nv.version or null);
-  homeDepPkgs = lib.filter (p: p != null) (map homeDepPkgOf homeDependIds);
+  homeDepPkgOf = nv:
+    let byId = if (nv.id or null) != null then hsPkgs.${nv.id} or null else null;
+    in if byId != null then byId
+       else lookupDepPkg hsPkgs nv.name (nv.version or null);
+  homeDepPkgs = lib.filter (p: p != null) (map homeDepPkgOf homeDependIdsInClosure);
 
   # SysLibs of a component — the same shape we feed to
   # `extraBuildInputs` and `cabal.project`'s `extra-include-dirs:`.
@@ -835,6 +1040,19 @@ let
   # (e.g. a sublib's pkgconfig dep that the main lib's slice
   # doesn't propagate).
   transitiveDepLibs =
+    # The GHC JavaScript backend (javascript-unknown-ghcjs) has no C toolchain
+    # — nixpkgs gives that platform no `stdenv.cc` — so merely *realizing* a
+    # native C lib / framework / pkgconfig dep from the target pkg-set throws
+    # "no C compiler provided for this platform".  When cross-compiling to JS
+    # from a darwin build host this walk would drag every native C dep in the
+    # flattened plan closure (glib/gtk via gi-*, ncurses via terminfo,
+    # hfsevents via fsnotify, …) into the slice's `__impureHostDeps`, failing
+    # the whole eval.  A JS slice never links native C libs, and this walk is a
+    # redundant belt-and-braces backup anyway (see the note above), so skip it
+    # for ghcjs; the `depSlices` propagatedBuildInputs chain still covers the
+    # native platforms.  (`stdenv` here is the component's *target* stdenv —
+    # `pkgs.stdenv` would be the darwin build host and never match.)
+    if stdenv.hostPlatform.isGhcjs then [] else
     let
       go = acc: deps:
         lib.foldl' (acc: d:
@@ -873,6 +1091,22 @@ let
   extraBuildInputs = haskellLib.uniqueWithName
     (lib.filter (x: x != null)
       (libs ++ frameworks ++ pkgconfig ++ transitiveDepLibs ++ iservRuntimeLibs));
+
+  # Store paths named in this package's own `extra-lib-dirs:` /
+  # `extra-include-dirs:` (from `cabalProjectLocal`; re-emitted verbatim by
+  # `extraLibDirsBlockFor`).  They reach us through plan-nix's JSON, which
+  # carries no string context, so without this the slice's cabal.project
+  # names a path its sandbox does not contain — e.g. a vendored SDK's
+  # headers: "fatal error: WebView2.h: No such file or directory".
+  # Re-attach context to each path's store root so it becomes an input.
+  # Only this package's slice changes (and only if it names such a path).
+  extraDirInputs =
+    let
+      roots = lib.unique (lib.concatMap (d:
+        let m = builtins.match "(${builtins.storeDir}/[^/]+).*" d;
+        in if m == null then [] else m)
+        (extraLibDirsOf pkgName ++ extraIncludeDirsOf pkgName));
+    in map (r: builtins.appendContext r { ${r} = { path = true; }; }) roots;
 
   # Mirror v1's `make-config-files.nix:65-85`: emit cabal.project
   # `extra-include-dirs:` and `extra-lib-dirs:` for every C-lib /
@@ -935,8 +1169,12 @@ let
   # layout the cc wrapper expects, so cabal really does need
   # `extra-framework-dirs:` to find them.  The unit-id divergence
   # only affects Darwin host builds.
+  # Reads a *dependency's* frameworks straight from its component config, so
+  # (like the transitiveDepLibs walk) it must be skipped for ghcjs — the ghcjs
+  # pkg-set can't realize a darwin framework (e.g. hfsevents' Cocoa), and a JS
+  # build emits no `extra-framework-dirs:` anyway.
   pkgcfglessSysLibs = c:
-    (c.frameworks or []);
+    lib.optionals (!stdenv.hostPlatform.isGhcjs) (c.frameworks or []);
   perPkgForeignLibs =
     let
       go = acc: deps:
@@ -991,6 +1229,348 @@ let
   extraNativeBuildInputs = haskellLib.uniqueWithName (lib.filter
     (t: t != null)
     (resolvedBuildTools ++ homeDepExeSlices));
+
+  # Two-stage plans give consuming slices EMPTY `build-tools` (see
+  # load-cabal-plan): each slice's own cabal builds the build-tool
+  # BUILD-stage, against the BUILD compiler's installed boot libs.  For
+  # that solve to succeed the tool's SOURCE must be a candidate in the
+  # slice's slicing repo — but composing the tool's SLICE would pull its
+  # full drv, whose lib-deps point back at this package (host hsc2hs →
+  # host process → host Win32 → …), an eval-time infinite recursion.  So
+  # contribute only the tool's SOURCE frag (tarball + .cabal): it carries
+  # a drv edge to the tool's source tarball, not to the tool's build, so
+  # there is no cycle.
+  #
+  # The set is the EXE units of `allDepClosure` (which follows
+  # `exe-depends`), i.e. every build-tool this slice's build reaches,
+  # TRANSITIVELY: Cabal-syntax → alex, and alex's own build-tool happy, so
+  # the build-scope `build:Cabal-syntax:alex` (and its `…:alex:happy`)
+  # goals all resolve.  Resolved by PLAN ID (`hsPkgs.${id}`), not by
+  # host name, because these tools are BUILD-stage-only units with no host
+  # twin (alex/happy live only under `dist/build/build/…`) — a host-name
+  # lookup returns null for them (only hsc2hs happens to have a host
+  # twin).  `sliceOfPkgRecord` → the exe slice; reading
+  # `.passthru.v2SourceFrag` forces only the tool's source tarball, never
+  # its `drvPath`/`depSlices`, so no cycle.  Empty on native / single-stage
+  # cross (build tools flow through their normal paths).
+  buildToolSourceFrags =
+    lib.optionals isTwoStagePlan
+      (let
+        exeUnits = lib.filter (e:
+            lib.hasPrefix "exe:" (e.entry.component-name or "")
+            && (e.entry.pkg-name or "") != pkgName)
+          allDepClosure;
+        exeFrag = e:
+          let sl = sliceOfPkgRecord (hsPkgs.${e.key} or null);
+          in if sl == null then null else sl.passthru.v2SourceFrag or null;
+        # A build-tool exe built BUILD-stage from source inside this slice
+        # needs its own library deps in the slice index too — e.g. happy 2.x
+        # exe:happy `build-depends: happy-lib`, so staging only happy's own
+        # source leaves the solver with "unknown package happy-lib".  Walk
+        # each tool exe's dep closure and source-stage the CONFIGURED units.
+        #
+        # Crucially, walk it on the BUILD-twin-preferring index
+        # (`planJsonByPlanIdBuild'`): build tools are build-stage, and a boot
+        # library (array, base, containers, …) shows up in that stage as a
+        # `pre-existing` unit (installed from the build compiler), which the
+        # `type == "configured"` test drops.  Walking the default
+        # (HOST-twin-preferring) index would instead resolve the HOST array —
+        # `configured` and source-built for the JS target, but with a
+        # null-hash boot fetchurl for `src`; staging it makes
+        # `extraFragStaging` coerce null→string.  So the build index both
+        # picks the right stage AND keeps unrealizable boot sources out.
+        # What remains are genuine reinstallable source deps of the tool
+        # (happy-lib, …).  `nonReinstallablePkgs` is a cheap extra guard.
+        toolDepClosure = builtins.genericClosure {
+          startSet = lib.concatMap (e:
+            lib.concatMap (id:
+              let q = planJsonByPlanIdBuild'.${id} or null;
+              in if q == null then [] else [ { key = id; entry = q; } ]
+            ) (allDepsOf e.entry)) exeUnits;
+          operator = e:
+            lib.concatMap (id:
+              let q = planJsonByPlanIdBuild'.${id} or null;
+              in if q == null then [] else [ { key = id; entry = q; } ]
+            ) (allDepsOf e.entry);
+        };
+        # GHC boot libraries.  The stable-haskell two-stage plan lists them as
+        # `configured` (reinstalled from source) in BOTH stages, and
+        # `nonReinstallablePkgs` here is only the short builderVersion=2 list,
+        # so neither `type` nor that list tells them apart from a genuine
+        # source dep.  But the compiler provides them: their build-stage unit
+        # resolves to a null-hash boot `src` fetchurl that can't be realized,
+        # so staging one coerces null→string in `extraFragStaging`.  A build
+        # tool never needs them source-staged — it resolves them from the build
+        # compiler's installed db — so exclude the whole set by name.  What
+        # remains is the tool's genuine reinstallable lib deps (happy-lib, …).
+        ghcBootLibs = [
+          "rts" "ghc-prim" "integer-gmp" "integer-simple" "base" "ghc-bignum"
+          "system-cxx-std-lib" "ghc-internal" "ghc-boot" "ghc-boot-th" "ghc"
+          "ghci" "Cabal" "Cabal-syntax" "array" "binary" "bytestring"
+          "containers" "deepseq" "directory" "exceptions" "file-io" "filepath"
+          "ghc-compact" "ghc-heap" "ghc-platform" "ghc-experimental" "hpc"
+          "mtl" "os-string" "parsec" "pretty" "process" "semaphore-compat"
+          "stm" "template-haskell" "terminfo" "text" "time" "transformers"
+          "unix" "xhtml" "rts-fs" "rts-headers" "libffi-clib" "Win32"
+        ];
+        toolLibExclude = ghcBootLibs ++ nonReinstallablePkgs;
+        toolLibUnits = lib.filter
+          (e: (e.entry.type or "") == "configured"
+              && !(builtins.elem (e.entry.pkg-name or "") toolLibExclude))
+          toolDepClosure;
+        # Resolve on the HOST `hsPkgs` keyed by NAME-VERSION.  A multi-sublib
+        # lib (happy-lib) reaches the closure only through its SUBLIB unit ids
+        # (frontend, backend-lalr, …), which are not top-level keys; its bare
+        # `hsPkgs.happy-lib` / `pkgsBuildBuild.happy-lib` attrs are present but
+        # null, and the versioned key exists only on the host set
+        # (`hsPkgs."happy-lib-2.1.7"`).  So `lookupDepPkg hsPkgs name version`
+        # hits the `byNV` path and returns the real package; its `v2SourceFrag`
+        # is the one shared SOURCE tarball for every sublib (stage-independent,
+        # so the host set is fine for build-stage staging).  Boot libs — the
+        # only packages whose host record has an unrealizable null-hash `src` —
+        # are already dropped by `toolLibExclude` above, so they never reach
+        # here.
+        #
+        # Prefer the unit's own id, like `exeFrag` does: `config.packages` is
+        # keyed by plan id for every non-`pre-existing` unit, build-stage ones
+        # included, so an ordinary library dep of a build tool (c2hs's
+        # `language-c`) resolves exactly.  The name path stays as the fallback
+        # for the sublib case above, where there is no top-level id key.  It is
+        # only a fallback because `hsPkgs.<pkg-name>` is not a package at all —
+        # it is the by-name override alias (see
+        # modules/install-plan/override-package-by-name.nix), and reading it
+        # yields null for anything the plan did not key by that bare name.
+        libFrag = e:
+          let byId = hsPkgs.${e.key} or null;
+              sl = sliceOfPkgRecord (if byId != null then byId
+                     else lookupDepPkg hsPkgs
+                            (e.entry.pkg-name or "") (e.entry.pkg-version or null));
+          in if sl == null then null else sl.passthru.v2SourceFrag or null;
+        frags = lib.filter (f: f != null)
+          (map exeFrag exeUnits ++ map libFrag toolLibUnits);
+      # Dedup by package name (a tool/lib can be reached via several paths;
+      # a multi-sublib lib like happy-lib contributes one shared source).
+      in lib.attrValues (lib.listToAttrs
+           (map (f: lib.nameValuePair f.pkgName f) frags)));
+
+  # ---- metadata-only sibling sources ------------------------------
+  # `ourPlanUnits` seeds `allDepClosure` from THIS component's unit
+  # only, so composed slices, sysLibs and constraint pins cover exactly
+  # the target's dependency closure.  But cabal's solver works at
+  # PACKAGE granularity: elaborating `:pkg:<pkg>:exe:<name>` must still
+  # SOLVE the deps of the package's other components (leksah's
+  # exe:leksah needs gi-webkit even when the target is exe:leksah-warp,
+  # whose binary links none of it).  Those solver-only goals need INDEX
+  # candidates, not built slices: stage each out-of-closure dep's
+  # source (tarball + revised `.cabal`, via `passthru.v2SourceFrag` —
+  # no drv edge to the dep's build) into the slicing repo, exactly as
+  # two-stage build-tool sources are staged.  They contribute no store
+  # unit, no constraint pin, no sysLibs and no `extra-packages:` goal —
+  # if cabal unexpectedly tried to BUILD one it would fail loudly on
+  # its (absent) system deps rather than silently linking anything.
+  # pkg-config versions for these candidates come from
+  # `cabalPkgConfigWrapper`'s metadata fallback instead of a realized
+  # `.pc` (see overlays/cabal-pkg-config.nix).
+  metadataSourceFrags = metadataPartition.frags;
+  # Names of the DIRECT sibling deps that moved to the metadata path —
+  # the complement partition for `homeDependIdsInClosure`.
+  metadataStagedNames = metadataPartition.stagedNames;
+  metadataPartition =
+    let
+      closureKeys = lib.listToAttrs
+        (map (e: lib.nameValuePair e.key true) allDepClosure);
+      packagePlanUnits = lib.filter
+        (p: (p.pkg-name or null) == package.identifier.name
+            && (p.pkg-version or null) == package.identifier.version)
+        planJson;
+      # LIB dependencies only (no `exe-depends`, no setup): build-tool
+      # goals are BUILD-stage under two-stage plans and have their own
+      # staging machinery (`buildToolSourceFrags`); walking them here
+      # would stage build-twin sources (e.g. a tool's `text`) whose
+      # index entries then shadow the HOST stage's pre-existing boot
+      # instances in the solver.
+      metaDepsOf = q:
+        (q.depends or [])
+        ++ lib.concatMap (c: c.depends or [])
+             (lib.attrValues (builtins.removeAttrs (q.components or {}) ["setup"]));
+      # The candidate UNIVERSE walks all three edge kinds (lib, setup,
+      # exe): a staged candidate's custom-setup deps (xml-conduit's
+      # patched-local cabal-doctest) and build tools must be reachable
+      # for `subtreeOf`'s per-edge rules below to see them at all.
+      universeDepsOf = q:
+        metaDepsOf q ++ setupDepsOfEntry q ++ exeDepsOfEntry q;
+      packageDepClosure = mkClosureFrom packagePlanUnits universeDepsOf;
+      # Pre-existing units (the compiler's boot packages) are never
+      # out-of-closure work: the solver takes the installed instance.
+      # Counting them made every sibling whose subtree touches a boot
+      # package unstageable, so all of them fell back to BUILT slices
+      # (vector:lib built tasty, random, optparse-applicative, ... --
+      # ten slices nothing links -- for its sibling `benchmarks-O2`).
+      outEntries = lib.filter (e:
+          !(closureKeys ? ${e.key})
+          && (e.entry.pkg-name or "") != pkgName
+          && (e.entry.type or "") != "pre-existing")
+        packageDepClosure;
+      outByKey = lib.listToAttrs (map (e: lib.nameValuePair e.key e) outEntries);
+      # Only units with a fetchable, hash-stable hackage sdist
+      # (`pkg-src-sha256`) can be reproduced from metadata alone.
+      # Anything else — GHC-boot / source-repo units (`transformers`
+      # or a reinstalled `ghc-bignum` in bootstrap universes),
+      # pre-existing units, `nonReinstallablePkgs` — cannot: boot
+      # sources are null-hash fetchurls that throw on interpolation,
+      # and the solver could never close their goals from the index.
+      # Any configured non-boot unit can be staged: its slice's
+      # `pkgTarball` exists for every source shape — hackage sdist,
+      # packed source-repository-package (the fork's own `Cabal` in
+      # staged setup scopes), and packed LOCAL directories (the
+      # project's patched cabal-doctest).  The `nonReinstallablePkgs`
+      # guard keeps out GHC-boot units whose srcs can be null-hash
+      # fetchurls (throwing on interpolation) and which installed
+      # instances satisfy anyway.
+      stageable = e:
+        (e.entry.type or "") == "configured"
+        && !(lib.elem (e.entry.pkg-name or "") nonReinstallablePkgs);
+      # The out-of-closure subtree under one unit id.  A staged SOURCE
+      # candidate's solve opens more than lib deps: its custom-setup
+      # scope (gi-*'s haskell-gi/Cabal) and its build-tool goals
+      # (old-time's `build:old-time:hsc2hs:exe.hsc2hs`).  Walk all
+      # three edge kinds, never re-entering the in-closure set (those
+      # are composed):
+      #   * lib/setup edges to PRE-EXISTING units are skipped — the
+      #     compiler's installed instance satisfies those goals;
+      #   * an exe-depends edge to a pre-existing unit POISONS the
+      #     subtree instead: an installed lib registration cannot
+      #     provide the `exe:` component a build-tool goal demands,
+      #     so the sibling must fall back to a built slice (whose
+      #     composition pins everything `installed` and provides the
+      #     tool binary via the normal machinery).
+      setupDepsOfEntry = q: q.components.setup.depends or [];
+      exeDepsOfEntry = q:
+        (q.exe-depends or [])
+        ++ lib.concatMap (c: c.exe-depends or [])
+             (lib.attrValues (builtins.removeAttrs (q.components or {}) ["setup"]));
+      subtreeOf = id: map (x: x.key) (builtins.genericClosure {
+        startSet = lib.optional (outByKey ? ${id}) { key = id; };
+        operator = item:
+          if item.key == "POISON" then [] else
+          let q = outByKey.${item.key}.entry;
+              follow = d: lib.optional (outByKey ? ${d}) { key = d; };
+              # Setup goals must close from the index or the installed
+              # db: a pre-existing setup dep (the bundled Cabal) is
+              # satisfied installed; an out-of-closure configured one
+              # joins the subtree; anything else (in-closure ones are
+              # composed) is unreachable — poison.
+              followSetup = d:
+                if closureKeys ? ${d} then []
+                else if outByKey ? ${d} then follow d
+                else if ((planJsonByPlanId.${d} or {}).type or "") == "pre-existing" then []
+                else [ { key = "POISON"; } ];
+              # An exe-dep must either be satisfied in-closure (the
+              # build-tool slice machinery provides the binary), join
+              # the staged subtree, or POISON it — never be silently
+              # dropped: an unknown/pre-existing/build-stage tool id
+              # means the tool goal cannot close from the index.
+              followExe = d:
+                if closureKeys ? ${d} then []
+                else if outByKey ? ${d} then follow d
+                else [ { key = "POISON"; } ];
+          in lib.concatMap follow (metaDepsOf q)
+             ++ lib.concatMap followSetup (setupDepsOfEntry q)
+             ++ lib.concatMap followExe (exeDepsOfEntry q);
+      });
+      outSiblings = lib.filter
+        (nv: !(lib.elem nv.name componentClosureNames)) homeDependIds;
+      siblingUnitIdsOf = nv: map (e: e.key)
+        (lib.filter (e:
+            (e.entry.pkg-name or "") == nv.name
+            && (e.entry.pkg-version or "") == nv.version)
+          outEntries);
+      siblingSubtree = nv:
+        lib.unique (lib.concatMap subtreeOf (siblingUnitIdsOf nv));
+      # A sibling dep may leave the built-slice path only when its
+      # WHOLE out-of-closure subtree is stageable: a staged candidate
+      # is a SOURCE candidate, so the solver must be able to close
+      # every goal it opens (bitvec -> ghc-bignum, a configured-local
+      # boot unit, sinks the entire monad-logger subtree back to
+      # built slices).  Built slices compose their closure and pin it
+      # `installed`, so nothing below them is ever solved.
+      fullyStageable = nv:
+        let ids = siblingSubtree nv;
+        in ids != []
+           && !(lib.elem "POISON" ids)
+           && lib.all (id: stageable outByKey.${id}) ids;
+      stagedSiblings = lib.filter fullyStageable outSiblings;
+      stagedIds = lib.filter (id: id != "POISON")
+        (lib.unique (lib.concatMap siblingSubtree stagedSiblings));
+      # Units that are the TARGET of an exe-depends edge from another
+      # staged unit are build-TOOL candidates: the solver requires
+      # their `executable` stanza present in the index .cabal ("does
+      # not contain executable 'happy'"), so the staging strip must
+      # keep exes for exactly these.
+      toolIds =
+        let exeTargets = lib.unique (lib.concatMap
+              (id: exeDepsOfEntry outByKey.${id}.entry) stagedIds);
+        in lib.filter (id: lib.elem id exeTargets) stagedIds;
+      fragOf = id:
+        let e = outByKey.${id};
+            sl = sliceOfPkgRecord (hsPkgs.${id} or null);
+            frag = if sl == null then null else sl.passthru.v2SourceFrag or null;
+        # Carry the plan's flag assignment: the slice's solver
+        # re-solves a source candidate's flags — unpinned, it may
+        # diverge from the plan (text +simdutf wants system-cxx-std-lib
+        # where the plan's assignment avoided it) and fail on goals the
+        # plan never had.
+        in if frag == null then null
+           else frag // {
+             flags = e.entry.flags or {};
+             keepExes = lib.elem id toolIds;
+           };
+      frags = lib.filter (f: f != null) (map fragOf stagedIds);
+      # BUILD-stage setup closure of every staged unit: setup scopes
+      # re-solve their dep closures from SOURCE (composed host units
+      # are invisible to the build stage), so every configured unit a
+      # staged candidate's setup can reach needs a (stripped) index
+      # candidate — including packages that are IN-closure for the
+      # host (conduit/vector when the target's own lib uses them):
+      # the composed conf serves the host scope, the stripped index
+      # cabal serves the setup scope (extraFragStaging runs before the
+      # repo-frag walk, whose `cp -n` cannot clobber it).  Walked on
+      # the BUILD-twin-preferring index (same reasoning as
+      # `setupDepClosureIds`) so boot deps resolve to the build
+      # compiler's PRE-EXISTING units and drop out.
+      setupUniverseIds =
+        let byIdB = planJsonByPlanIdBuild';
+            cfgOnly = d:
+              let q = byIdB.${d} or null;
+              in if q == null || (q.type or "") != "configured" then []
+                 else [ { key = d; } ];
+        in map (x: x.key) (builtins.genericClosure {
+          startSet = lib.concatMap (id:
+            lib.concatMap cfgOnly (setupDepsOfEntry outByKey.${id}.entry))
+            stagedIds;
+          operator = item:
+            lib.concatMap cfgOnly (metaDepsOf (byIdB.${item.key} or {}));
+        });
+      setupFragOf = id:
+        let q = planJsonByPlanIdBuild'.${id} or null;
+            sl = sliceOfPkgRecord (hsPkgs.${id} or null);
+            frag = if sl == null then null else sl.passthru.v2SourceFrag or null;
+        in if q == null || frag == null
+              || lib.elem (q.pkg-name or "") nonReinstallablePkgs
+           then null
+           else frag // { flags = q.flags or {}; keepExes = false; };
+      setupFrags = lib.filter (f: f != null) (map setupFragOf setupUniverseIds);
+      # Dedup by name-version; a dep reachable through several siblings
+      # contributes one source.
+    in {
+      # Direct frags first: on a name-version collision listToAttrs
+      # keeps the FIRST entry, and the sibling-subtree frag (with the
+      # host twin's flags and keepExes) is the more specific one.
+      frags = lib.attrValues (lib.listToAttrs
+        (map (f: lib.nameValuePair "${f.pkgName}-${f.pkgVersion}" f)
+          (frags ++ setupFrags)));
+      stagedNames = map (nv: nv.name) stagedSiblings;
+    };
 
   # ---- componentKindLabel / componentName -----------------------
   # `componentId` is a set with `ctype` (e.g. "lib", "exe", "test",
@@ -1059,6 +1639,51 @@ let
   # build tests / benches for the project's own packages.
   isLocalTestOrBench = (package.isLocal or false) && (ctype == "test" || ctype == "bench");
 
+  # Local-`packages:` mode for LIBRARY slices of `style: "local"` plan
+  # units, when the project opts in via `v2LocalPackageSlices` (see the
+  # argument comment at the top of this file).  cabal elaborates a local
+  # package to the plan's deterministic unit id, so — unlike the
+  # extra-packages shape — the id the slice REGISTERS matches what the
+  # project plan (and a consumer's plan-time dummy `ghc-pkg dump`)
+  # predicts.  Test / bench slices are local for their own reason
+  # (cabal-7127) and keep their existing handling.
+  #
+  # Library components only: exe units never register a `.conf` (the
+  # compiler db carries libraries alone), and a LOCAL unit's
+  # deterministic id doesn't hash its dep ids, so a lib slice's id is
+  # unaffected by its build tools keeping hashed extra-packages slices.
+  # Mechanically an inplace exe also lands in the staged store's flat
+  # `bin/` — no per-unit dir, no store-install receipt — so the slice's
+  # unit capture / downstream tool-reuse machinery wouldn't see it.
+  # `style: "inplace"` covers the project's source-repository-packages
+  # (the stable-haskell Cabal / Cabal-syntax forks in stage2): the plan
+  # elaborates them to the same deterministic bare ids as `"local"`
+  # units, but a slice reproducing them through a
+  # `source-repository-package` block gets a BuildAndInstall (hashed)
+  # elaboration from the fork — so they take the local-`packages:`
+  # path too (their staged source replaces the srp block).
+  isLocalPackageSlice =
+    (v2LocalPackageSlices || builtins.elem pkgName v2LocalPackageSliceNames)
+    && !isLocalTestOrBench
+    && ctype == "lib"
+    && builtins.elem (thisPlanEntry.style or null) [ "local" "inplace" ];
+  # Either flavour of local-`packages:` slicing — drives source staging
+  # and the cabal.project `packages:` line.
+  useLocalPackagesMode = isLocalTestOrBench || isLocalPackageSlice;
+
+  # Whether this slice's SOLVER must see the compiler's real global
+  # package db in addition to the composed store units (see the
+  # merged-snapshot block in build-cabal-slice.nix).  Consumer-style
+  # slices resolve boot libs as `pre-existing` — installed only in the
+  # real global db — so hiding it makes them unknown to the solver.
+  # Stage-style slices (`v2LocalPackageSlices`, the stable-haskell
+  # stage2 boot-lib project) have no pre-existing deps — every dep is a
+  # configured unit composed into the staged store — and the project
+  # compiler's global db is the PREVIOUS stage's, whose unrelated
+  # registrations must stay out of the solver's view.
+  solverIncludesGlobalDb =
+    !v2LocalPackageSlices || (component.pre-existing or []) != [];
+
   # The slice targets the package's component directly via cabal's
   # `:pkg:` qualifier (`:pkg:foo:lib:bar`).  cabal-install bug #8684
   # makes the bare form fail with "unambiguous but matches the
@@ -1093,7 +1718,28 @@ let
           planJson;
         uid = package.identifier.unit-id or null;
         myUnit = if uid == null then null else planJsonByPlanId.${uid} or null;
-    in if isLibrary && myUnit != null then [ myUnit ] else allUnits;
+        # Exe / test / bench slices: narrow to the unit whose plan-json
+        # `component-name` matches this component, for the same reason
+        # the lib narrowing above exists — seeding from EVERY unit of
+        # the package drags sibling components' dep closures (leksah's
+        # exe:leksah gi-webkit stack) into this slice's composed store,
+        # sysLibs and constraint pins.  Sibling deps the SOLVER still
+        # needs are staged source-only via `metadataSourceFrags`.
+        # Custom-Build packages collapse to one entry with
+        # `component-name` unset, so `compUnits` comes up empty and the
+        # whole-package seed correctly remains (that single unit really
+        # does carry every component's deps).
+        planCompName =
+          if ctype == "exe" then "exe:${cname}"
+          else if ctype == "test" then "test:${cname}"
+          else if ctype == "bench" then "bench:${cname}"
+          else null;
+        compUnits =
+          if planCompName == null then []
+          else lib.filter (p: (p.component-name or null) == planCompName) allUnits;
+    in if isLibrary && myUnit != null then [ myUnit ]
+       else if compUnits != [] then compUnits
+       else allUnits;
 
   # `depends` + `exe-depends` — for the slicing repo's tarball set
   # and the slice's dep-slice composition.  cabal needs every
@@ -1151,11 +1797,6 @@ let
     then ":pkg:${pkgName}"
     else ":pkg:${pkgName}:${targetPrefix}${cname}";
 
-  # Sublib reachability seeds (for the `prune-unreachable-sublibs`
-  # patch) are composed at build time from the per-package fragments'
-  # `sublib-seeds` across the all-dep closure, plus this slice's own
-  # target sublib (`v2Fragment.selfTargetSublibSeed`) — see
-  # build-cabal-slice.nix.  No Nix-side closure walk.
 
   # The per-slice hackage-style slicing repo (00-index.tar.gz +
   # package/<pkg>-<ver>.tar.gz) is assembled at build time from the
@@ -1221,8 +1862,34 @@ let
   # implemented; it would be added here (and emitted per-fragment) if a
   # project with SRP deps needs the v2 build-time path.
   packagesLine =
-    lib.optionalString isLocalTestOrBench
-      "packages: ./src/${pkgName}-${pkgVersion}\n";
+    if useLocalPackagesMode
+    then "packages: ./src/${pkgName}-${pkgVersion}\n"
+    # The stable-haskell Cabal fork (3.17) rejects a project with neither
+    # `packages:` nor `optional-packages:` (Cabal-7168).  A dependency slice
+    # builds its target from the slicing repo's `extra-packages:`, not a local
+    # package, so give an `optional-packages:` glob that matches nothing here —
+    # it satisfies the check without adding any package (UnitId-neutral).
+    else "optional-packages: ./*\n";
+
+  # hsc2hs `--via-asm` for Windows cross.  The default `--cross-compile`
+  # mode (cabal adds it automatically for cross) validates each
+  # `#const`/`#enum` by sizing a C array with the value; Win32's
+  # pointer-cast enums (e.g. `(UINT_PTR)HWND_BOTTOM` = `(UINT_PTR)((HWND)-1)`)
+  # are not integer-constant-expressions, so gcc rejects them ("storage
+  # size of 'test_array' isn't constant").  `--via-asm` validates via a
+  # global `long long` initializer / assembler instead (hsc2hs
+  # CrossCodegen `validConstTestViaAsm`), which accepts pointer casts.
+  # Delivered through a `package *` stanza rather than a `cabal v2-build
+  # --hsc2hs-options` CLI flag: the CLI flag only reaches LOCAL `packages:`
+  # targets, but dependency slices build their target as a REMOTE
+  # extra-package.  Windows-gated (native/hadrian byte-identical); on
+  # native build-stage units hsc2hs ignores --via-asm (DirectCodegen).
+  # Mirrors v1's comp-builder.nix:398 (`--via-asm` for isWindows).
+  hsc2hsViaAsmProject =
+    lib.optionalString (stdenv.hostPlatform.isWindows or false) ''
+      package *
+        hsc2hs-options: --via-asm
+    '';
 
   # The *local / global* part of the cabal.project (everything that
   # doesn't depend on the dependency closure).  build-cabal-slice writes
@@ -1233,16 +1900,64 @@ let
   localCabalProject = ''
     with-compiler: ${withCompiler}
     active-repositories: hackage.haskell-nix
-    ${packagesLine}${solverRelaxations}${projectConfigPragmas}${extraProject}${extraIncludeAndLibDirs}'';
+    ${packagesLine}${solverRelaxations}${projectConfigPragmas}${hsc2hsViaAsmProject}${extraProject}${extraIncludeAndLibDirs}'';
 
-  # X-revised .cabal as a /nix/store path (or null if no override).
-  # Staged into this package's repo fragment (build-cabal-slice) so the
-  # slicing repo's index carries the right .cabal without extracting
-  # from the tarball when an override exists.
+  # Untouched packages keep their revised .cabal separately from the
+  # upstream tarball. Patches/hooks may change that metadata after the
+  # override was copied (as in v1), so publish the effective tarball's
+  # .cabal in every slicing index instead of restoring the old override.
   thisCabalFile =
-    if cabalFile != null
+    if cabalFile != null && resolvedPatches == [] && !pkgHasHook
     then builtins.toFile "${pkgName}.cabal" cabalFile
     else null;
+
+  # Two-stage (stable-haskell `-target` cross) plans.  The compiler is a
+  # wrapper around the native ghc whose target global db is empty
+  # (`emptyGlobalPackageDb`); its plan was made with
+  # `--with-build-compiler` (see call-cabal-project-to-nix.nix), so every
+  # unit carries a stage:
+  #
+  #   * "host" units target the cross platform.  Their slices must
+  #     re-plan the same two-stage way — without `--with-build-compiler`
+  #     cabal would default the build compiler to the host path (the
+  #     TARGET wrapper) and plan every build-stage goal for the target.
+  #   * "build" units (build-tool-depends subtrees, setup deps) run on
+  #     the build machine.  Their slices use the BUILD compiler in an
+  #     ordinary single-stage invocation: the stage does not enter
+  #     cabal's unit hash, so the plan unit id reproduces exactly (same
+  #     compiler id, native platform, same flags, deps installed from
+  #     the native compiler's db).  Captured under the store's
+  #     `host/<native-platform>/`, which a host slice's build-stage
+  #     lookups reach through the compose step's `build` → `host` link.
+  isTwoStagePlan = ghc.emptyGlobalPackageDb or false;
+  # plan.json carries no top-level stage key; the stage is the first path
+  # component under dist-newstyle/build/ in the unit's dist-dir
+  # (`./dist-newstyle/build/<stage>/<platform>/<unit>`).
+  planStage =
+    let dd = (planJsonByPlanId.${package.identifier.unit-id or ""} or {}).dist-dir or "";
+        m  = builtins.match "[.]/dist-newstyle/build/([a-z]+)/.*" dd;
+    in if m == null then null else builtins.head m;
+  isBuildStageUnit = isTwoStagePlan && planStage == "build";
+
+  # A `build-type: Custom` package's `setup` runs on the BUILD machine, so it
+  # must be compiled by the build compiler.  A single-stage cross slice
+  # (mainline GHC cross: ghc9124, ghc9141, ...) gives cabal only the cross
+  # compiler, and cabal compiles the setup with it -- a target binary that
+  # the build machine cannot run (android entropy: `setup: line 1: syntax
+  # error`).  It only ever worked where the builder happened to execute the
+  # target natively (aarch64 on the aarch64 `nix-linux-builder` VMs).  Give
+  # such slices the fork cabal's `--with-build-compiler` too: the setup
+  # scope then resolves against the native compiler, whose boot packages
+  # have the same versions the plan's `<pkg>:setup.*` pins name.
+  #
+  # The setup deps enter the Custom unit's hash, so every slice whose closure
+  # holds one must plan the same way or it would not recognise the composed
+  # unit (cross slices skip the unit-id check, `expectedUnitId` below).
+  crossCustomSetup =
+    isCross && !isTwoStagePlan && !isBuildStageUnit
+    && lib.any (p: (p.components or {}) ? setup)
+         (thisPkgUnits ++ map (e: e.entry) allDepClosure);
+  sliceTwoStage = (isTwoStagePlan && !isBuildStageUnit) || crossCustomSetup;
 
   # On targets that need a wrapped ghc (currently just windows
   # cross, where TH compiles route through the wineIservWrapper),
@@ -1251,14 +1966,105 @@ let
   # same compiler-id (UnitId hash unaffected) but every compile
   # silently picks up `-fexternal-interpreter -pgmi <wrapper>`.
   sliceGhc =
-    if templateHaskell != null && templateHaskell.wrapGhc or null != null
+    if isBuildStageUnit then ghc.buildGHC
+    else if templateHaskell != null && templateHaskell.wrapGhc or null != null
     then templateHaskell.wrapGhc ghc
+    else if projectIserv != null then withProjectIserv ghc
     else ghc;
 
-  # Stage the package source for local test / bench targets so
-  # `packages:` can reference it as a local directory (cabal-7127
-  # requires test / bench targets to be local to the project).
-  stageLocalTestBenchSrc = lib.optionalString isLocalTestOrBench ''
+  # A stable-haskell cross compiler for a target the build machine can run
+  # (musl64 / static on x86_64-linux) has no `templateHaskell` wrapper --
+  # haskell.nix counts same-arch musl as native -- so `-fexternal-interpreter`
+  # makes GHC look for `targets/<triple>/bin/ghc-iserv` inside the compiler:
+  #   .../targets/x86_64-unknown-linux-musl/lib/../bin/ghc-iserv:
+  #   createProcess: posix_spawnp: does not exist
+  # A cross compiler cannot ship that binary (the target's boot libraries
+  # are built by each project), so the project builds it instead
+  # (`utils/ghc-iserv` in the boot injection, modules/cabal-project.nix).
+  # Point GHC at that one with `-pgmi`, through a ghc wrapper as
+  # `templateHaskell.wrapGhc` does, so the unit-id is unaffected.
+  #
+  # Only for a package that asks for the external interpreter in its own
+  # `ghcOptions`, or -- on a dynamically linked musl host -- a component
+  # declared `usesTemplateHaskell`: that keeps the wrapper (and with it the
+  # ghc-iserv exe) out of every slice in ghc-iserv's own dependency closure.
+  #
+  # The second case is because the in-process interpreter cannot work
+  # there.  The compiler is a glibc process, and a splice that reaches a C
+  # library makes it dlopen the musl shared object
+  # (libsodium / openssl for th-dlls):
+  #   Failed to build th-dlls-0.1.0.0-... The build process segfaulted
+  # Static targets link those libraries as archives, which the RTS linker
+  # loads itself, so the same splices run in-process there.
+  forceExternalInterpreter =
+    (pkgs.stdenv.hostPlatform.isMusl or false)
+    && !(pkgs.stdenv.hostPlatform.isStatic or false)
+    && (component.usesTemplateHaskell or false);
+  projectIserv =
+    if isTwoStageCross
+       && pkgName != "ghc-iserv"
+       && (lib.elem "-fexternal-interpreter" (ghcOptionsOf pkgName)
+           || forceExternalInterpreter)
+    then hsPkgs.ghc-iserv.components.exes.ghc-iserv or null
+    else null;
+  # GHC runs `<-pgmi path>-prof` when the splice is compiled -prof (and
+  # `-dyn` with -dynamic), so `-pgmi` names a directory holding both
+  # flavours.  The project builds only the vanilla ghc-iserv: adding the
+  # prof one as a boot package would make every musl project build
+  # profiled boot libraries.  For a profiled slice, run the profiled
+  # iserv-proxy-interpreter -- which the iserv-proxy project already
+  # builds, against its own profiled closure -- behind iserv-proxy, with
+  # no emulator (the build machine runs the target).  That is the
+  # linux-cross wrapper (overlays/linux-cross.nix) with `env` for qemu.
+  sliceProfiled = lib.any (u:
+      lib.any (a: a == "--enable-profiling" || a == "--enable-library-profiling"
+                  || a == "--enable-executable-profiling")
+        (u.configure-args or []))
+    thisPkgUnits;
+  projectIservDir =
+    pkgs.buildPackages.runCommand "project-iserv" { } (''
+      mkdir -p $out/bin
+      ln -s ${projectIserv}/bin/ghc-iserv $out/bin/ghc-iserv
+    '' + lib.optionalString (sliceProfiled && iservProxyExes != null) (
+      let interp = iservProxyExes.iserv-proxy-interpreter-prof; in ''
+      cat > $out/bin/ghc-iserv-prof <<EOF
+      #!${pkgs.buildPackages.runtimeShell}
+      exec ${iservProxyExes.iserv-proxy}/bin/iserv-proxy "\$@" \\
+        --pipe ${pkgs.buildPackages.coreutils}/bin/env \\
+        ${interp}/bin/${interp.exeName} tmp --stdio
+      EOF
+      chmod +x $out/bin/ghc-iserv-prof
+    ''));
+  withProjectIserv = ghc:
+    pkgs.buildPackages.runCommand "${ghc.name}-with-project-iserv"
+      { nativeBuildInputs = [ pkgs.buildPackages.makeWrapper ];
+        passthru = {
+          inherit (ghc) version meta;
+          targetPrefix = ghc.targetPrefix or "";
+        };
+      } ''
+        mkdir -p $out/bin
+        prefix="${ghc.targetPrefix or ""}"
+        for prog in ghc ghci ghc-${ghc.version} ghci-${ghc.version}; do
+          if [ -x ${ghc}/bin/$prefix$prog ]; then
+            makeWrapper ${ghc}/bin/$prefix$prog $out/bin/$prefix$prog \
+              --add-flags "${lib.optionalString forceExternalInterpreter "-fexternal-interpreter "}-pgmi ${projectIservDir}/bin/ghc-iserv"
+          fi
+        done
+        for f in ${ghc}/bin/$prefix*; do
+          base=$(basename "$f")
+          [ -e "$out/bin/$base" ] || ln -s "$f" "$out/bin/$base"
+        done
+        for d in lib share; do
+          if [ -d ${ghc}/$d ]; then ln -s ${ghc}/$d $out/$d; fi
+        done
+      '';
+
+  # Stage the package source for local-`packages:` targets so
+  # `packages:` can reference it as a local directory — test / bench
+  # slices (cabal-7127 requires test / bench targets to be local to the
+  # project) and `isLocalPackageSlice` lib / exe slices alike.
+  stageLocalTestBenchSrc = lib.optionalString useLocalPackagesMode ''
     mkdir -p src
     tar -xzf ${pkgTarball} -C src
   '';
@@ -1270,7 +2076,30 @@ let
   # — that's what keeps the per-slice dependency-closure walk (the six
   # `sliceCanonicalNames` block-assemblies, `depConstraints`,
   # `slicingRepo`, …) out of the evaluator.
-  slicePreBuildV2 = stageLocalTestBenchSrc;
+  slicePreBuildV2 = stageLocalTestBenchSrc + lib.optionalString iservDynamicLibc ''
+
+    # See `iservDynamicLibc`: link this slice's executables against libc.so.
+    export NIX_CFLAGS_LINK_${staticHostSalt}="''${NIX_CFLAGS_LINK_${staticHostSalt}//-static/}"
+  '';
+  # ghc-iserv is the project's external interpreter (see `projectIserv`),
+  # and iserv-proxy-interpreter the one for profiled splices: they run on
+  # the build machine and resolve libc symbols for the code they load
+  # through dlsym.  A fully static musl executable has no dlsym, so
+  # on pkgsStatic (`static`) every splice failed with
+  #   ghc-iserv: Failed to lookup symbol: memcmp
+  # `executable-static: False` (modules/cabal-project.nix) is not enough
+  # there: the pkgsStatic stdenv adds `-static` to every host link, which
+  # build-cabal-slice.nix keeps in the host-salted NIX_CFLAGS_LINK.  Drop it
+  # for these packages only.  musl-static still ships libc.so and ld-musl, and
+  # this is how hadrian's static cross ghc-iserv is linked too (NEEDED
+  # libc.so, RUNPATH musl-static/lib).
+  iservDynamicLibc =
+    lib.elem pkgName [ "ghc-iserv" "iserv-proxy" ]
+    && isTwoStageCross
+    && (pkgs.stdenv.hostPlatform.isMusl or false)
+    && (pkgs.stdenv.hostPlatform.isStatic or false);
+  staticHostSalt = lib.replaceStrings [ "-" "." ] [ "_" "_" ]
+    pkgs.stdenv.hostPlatform.config;
 
   # ---- Per-package fragment for build-time composition -------------
   # Each slice writes its OWN contribution into `$out` (source tarball +
@@ -1289,19 +2118,6 @@ let
       (map (id: planJsonByPlanId.${id})
         (lib.filter (id: planJsonByPlanId ? ${id})
           (packageIdsByName.${pkgName} or [])));
-  # Sublib reachability seeds contributed by THIS package: the `lib:<n>`
-  # component deps among its own plan units' `depends`.  (The whole-repo
-  # union is reconstructed at build time across the all-dep closure.)
-  ownSublibSeeds =
-    let prefix = "lib:"; prefixLen = builtins.stringLength prefix; in
-    lib.concatMap (id:
-      let q  = planJsonByPlanId.${id} or null;
-          pn = if q == null then "" else q.pkg-name or "";
-          cn = if q == null then "" else q.component-name or "";
-      in if pn != "" && lib.hasPrefix prefix cn
-         then [ "${pn}/${builtins.substring prefixLen (builtins.stringLength cn - prefixLen) cn}" ]
-         else []
-    ) (lib.concatMap (u: u.depends or []) thisPkgUnits);
   # Per-package custom-setup dependency pins.  A `build-type: Custom`
   # package's unit-id hashes its setup configuration, so the slice must
   # solve its setup against the SAME deps plan-nix recorded — notably
@@ -1314,36 +2130,81 @@ let
   # per-package `pkg:setup.dep` qualifier).  No `source` flag: setup
   # `Cabal` is disambiguated by version (bundled 3.10.x vs reinstalled
   # 3.16.x), and the bundled one isn't in the slicing repo anyway.
+  #
+  # The pins cover the TRANSITIVE closure of the setup scope, not just
+  # the direct `setup-depends`: the slice solves under blanket
+  # allow-newer/allow-older relaxations, so a source setup `Cabal`
+  # (e.g. `Cabal-3.16.1.0` when the package's `setup-depends` excludes
+  # the GHC-bundled 3.17) would otherwise pair with the INSTALLED
+  # Cabal-syntax — whose module set no longer matches the re-exports
+  # that Cabal version declares ("Problem with module re-exports:
+  # Distribution.Compat.MonadFail is not exported...").  A
+  # `<pkg>:setup.<dep>` constraint applies to the whole setup
+  # qualifier scope, so pinning the closure reproduces plan-nix's
+  # setup resolution exactly; pins for packages that never become
+  # setup-scope goals (rts etc.) are ignored by the solver.
+  # Walked on the BUILD-twin-preferring index: setup scopes are
+  # build-stage under the fork, so where a package has host+build twins
+  # under one bare id the BUILD twin's dep set is the plan's real setup
+  # resolution (the haskell-gi codegen setups run against
+  # haskell-gi-overloading-1.0 while the host libs use 0.0).
+  planJsonByPlanIdBuild' =
+    if planJsonByPlanIdBuild == null then planJsonByPlanId else planJsonByPlanIdBuild;
+  setupDepClosureIds = map (x: x.key) (builtins.genericClosure {
+    startSet = map (id: { key = id; })
+      (lib.concatMap (u: u.components.setup.depends or []) thisPkgUnits);
+    operator = item:
+      let q = planJsonByPlanIdBuild'.${item.key} or null;
+          # Not a dep's own `setup` component: that is a separate setup
+          # scope (`<dep>:setup.*`), solved on its own.  Pinning its deps
+          # under THIS package's `setup.` qualifier merges two resolutions,
+          # and when they disagree the slice cannot solve at all — e.g.
+          # gi-gdk4 pinned `setup.gi-glib` to both 2.0.30 (its own setup)
+          # and 2.0.29 (gi-gio's setup), and so on down the haskell-gi
+          # family, once Hackage carried both versions.
+          deps = if q == null then []
+                 else (q.depends or [])
+                      ++ lib.concatMap (c: c.depends or [])
+                           (lib.attrValues
+                             (removeAttrs (q.components or {}) [ "setup" ]));
+      in map (id: { key = id; }) deps;
+  });
   ownSetupConstraints =
-    lib.filter (x: x != null) (map (id:
-      let q = planJsonByPlanId.${id} or null;
+    lib.unique (lib.filter (x: x != null) (map (id:
+      let q = planJsonByPlanIdBuild'.${id} or null;
       in if q == null || !(q ? pkg-name) then null
          else "${pkgName}:setup.${q.pkg-name} ==${q.pkg-version}"
-    ) (lib.concatMap (u: u.components.setup.depends or []) thisPkgUnits));
+    ) setupDepClosureIds));
   v2Fragment = {
     inherit pkgName pkgVersion;
     tarball = pkgTarball;
-    cabalFile = thisCabalFile;            # nullable (revision-0 → extract from tarball)
+    cabalFile = thisCabalFile;            # null → extract effective tarball metadata
     flagsBlock            = flagBlockFor             pkgName;
     ghcOptionsBlock       = ghcOptionsBlockFor       pkgName;
     configureOptionsBlock = configureOptionsBlockFor pkgName;
     programOptionsBlock   = programOptionsBlockFor   pkgName;
     docBlock              = documentationBlockFor    pkgName;
     extraLibDirsBlock     = extraLibDirsBlockFor     pkgName;
+    # This package's `package <name>` configuration-pragma delta against
+    # the `package *` baseline in `projectConfigPragmas`.
+    configBlock           = perPkgConfigBlocks.${pkgName} or "";
     # Consumer-side constraint pin.  Slices are never `pre-existing`,
-    # so always `source`.  The composer prefixes `constraints: `.
-    constraintLine = "${pkgName} ==${pkgVersion}, ${pkgName} source";
-    sublibSeeds = ownSublibSeeds;
+    # so normally `source` — it forces cabal off a GHC-bundled unit when
+    # a boot library is reinstalled at the same version.  A local-mode
+    # slice is the opposite case: its composed store unit carries the
+    # plan's deterministic LOCAL id, and a `source` pin would make the
+    # consumer's solver re-plan the dep extra-packages-style (hashed id
+    # ≠ composed unit) and rebuild it inside the consuming slice.  Pin
+    # only the version so the solver picks the composed installed unit.
+    constraintLine =
+      if isLocalPackageSlice
+      then "${pkgName} ==${pkgVersion}"
+      else "${pkgName} ==${pkgVersion}, ${pkgName} source";
     setupConstraints = ownSetupConstraints;
     # `source-repository-package` block (non-empty only for source-repo
     # packages).  Composed across the closure at build time; such
     # packages are also skipped from `extra-packages:`.
     sourceRepoBlock = ownSourceRepoBlock;
-    # When this slice's *target* is itself a sublib, it must be kept as
-    # a reachability seed too (the `prune-unreachable-sublibs` patch
-    # otherwise drops it).  Composed into HASKELLNIX_EXTRA_SUBLIB_SEEDS
-    # at build time alongside the closure's sublib seeds.
-    selfTargetSublibSeed = lib.optionalString isSublib "${pkgName}/${cname}";
     # Direct library-`depends` slices — the seed for the build-time
     # depends-closure walk (constraints scope; see `dependsSlices`).
     # The source + blocks scope rides the existing `transitive-deps`
@@ -1358,8 +2219,13 @@ let
     # test/bench targets and source-repo packages, which cabal must
     # build from `packages:` / a `source-repository-package` block,
     # not the index).
+    # Local-`packages:` targets (either flavour) are cabal's own project
+    # packages, not index candidates — and for `isLocalPackageSlice`
+    # units an `extra-packages:` entry in a CONSUMER's project would
+    # promote the dep to a source goal, re-planning it extra-packages
+    # style (hashed id) instead of using the composed installed unit.
     selfExtraPackage =
-      lib.optionalString (!isLocalTestOrBench && !isSourceRepoPkg) "${pkgName} ==${pkgVersion}";
+      lib.optionalString (!useLocalPackagesMode && !isSourceRepoPkg) "${pkgName} ==${pkgVersion}";
   };
 
   baseSlice = buildCabalStoreSlice {
@@ -1376,14 +2242,18 @@ let
     version = pkgVersion;
     inherit depSlices;
     inherit v2Fragment;
+    inherit buildToolSourceFrags;
+    inherit metadataSourceFrags;
     ghc = sliceGhc;
+    twoStage = sliceTwoStage;
     # Repo + cabal.project are composed at build time from `v2Fragment`;
     # `localRepo`/the full Nix `cabalProject` are intentionally NOT
     # referenced here so the per-slice closure walk stays out of eval.
     localRepo = null;
     preBuild = slicePreBuildV2;
     target = targetSelector;
-    inherit extraBuildInputs extraNativeBuildInputs withProgFlags
+    extraBuildInputs = extraBuildInputs ++ extraDirInputs;
+    inherit extraNativeBuildInputs withProgFlags
             allowedBuildToolPackages confLibraryDirs
             buildToolBinOverlays;
     # Per-component stdenv hardeningDisable (set via haskell.nix
@@ -1428,38 +2298,69 @@ let
     # `modules/install-plan/planned.nix` to the plan-id of the
     # specific install-plan entry this slice was built from.
     #
-    # Skip the unit-id check when plan-nix recorded `style: "local"`
-    # for this component: local packages are listed in cabal.project's
-    # `packages:` block, so plan-nix's unit-id was hashed with a
-    # `pkg-src: { type: local, ... }`.  The slice serves the same
-    # source through the slicing repo and `extra-packages:`, which
-    # cabal treats as `style: "global"` / `pkg-src: { type: repo-tar }`
-    # — same source bytes, different `pkgHashSourceHash` inputs,
-    # different unit-id.  The unit-id check would always fail; the
-    # plan diff at `.checkAgainstPlan` is the right tool for spotting
-    # real divergence here.
+    # Skip the unit-id check when plan-nix built this component
+    # in-place rather than for the store.  cabal's `style2str` reports
+    # two such cases: `"local"` (a package in cabal.project's
+    # `packages:` block) and `"inplace"` (a *non*-local package cabal
+    # still elaborated `BuildInplaceOnly` — e.g. the generated
+    # haskell-gi `gi-*` family under the stable-haskell GHC, whose
+    # boot-lib deps carry `-inplace` ids).  BuildInplaceOnly packages
+    # get the fixed unit-id suffix `<pkgid>-inplace`, whereas the slice
+    # serves the identical source through its slicing repo and cabal
+    # builds it `BuildAndInstall` → `style: "global"` with a hashed
+    # `<pkgid>-<hash>` id.  The suffix differs by construction (same
+    # source bytes either way), so the unit-id equality check can never
+    # hold; the plan diff at `.checkAgainstPlan` is the right tool for
+    # spotting real divergence here.  Downstream slices re-solve against
+    # the same repo and agree on the hashed id, so composition is
+    # consistent.
+    # Local-mode slices are the exception to the `style == "local"` skip
+    # below: cabal elaborates the target as a project-local package (the
+    # same shape the plan used), so the slice's unit id is deterministic
+    # and MUST equal the plan's — this check is what guards the
+    # stable-haskell compiler's global-db ids staying predictable for
+    # consumer plan-time dummy dumps.
     expectedUnitId =
       let uid = package.identifier.unit-id or null;
           entry = if uid == null then null else planJsonByPlanId.${uid} or null;
           style = if entry == null then null else entry.style or null;
-      in if isCross || style == "local" || isCustomBuild then null else uid;
-    # Plan-json entry for this slice's expected unit-id, written to
-    # disk so the unit-id-mismatch diagnostic can diff what plan-nix
-    # said this component should look like against what cabal actually
-    # built (the matching entry in the slice's
-    # `dist-newstyle/cache/plan.json`).
-    expectedPlanEntries =
-      let uid = package.identifier.unit-id or null;
-      in if uid == null || (planJsonByPlanId.${uid} or null) == null
-         then null
-         else { ${uid} = planJsonByPlanId.${uid}; };
+      in if isCross || isCustomBuild then null
+         else if isLocalPackageSlice then uid
+         else if style == "local" || style == "inplace" then null
+         else if isTwoStageCross then null
+         else uid;
+    # Local-mode slices necessarily also build required SIBLING
+    # components of their (local) package in-slice — tolerated by the
+    # unit-id check via this prefix (see build-cabal-slice.nix).
+    allowedSiblingUnitPrefix =
+      if isLocalPackageSlice then "${pkgName}-${pkgVersion}" else null;
+    inherit solverIncludesGlobalDb;
     passthru = {
       inherit pkgTarball;
+      # Source-only frag (tarball + revised .cabal + name/version).  A
+      # two-stage consumer places a build-tool's SOURCE into its slicing
+      # repo through this WITHOUT composing the tool's full slice — the
+      # latter would form an eval cycle (host tool slice → host lib dep →
+      # back to the consuming package).  It carries no drv edge to the
+      # tool's build, only to the tool's source tarball.
+      v2SourceFrag = {
+        inherit pkgName pkgVersion;
+        tarball = pkgTarball;
+        cabalFile = thisCabalFile;
+      };
       # Mirror v1's `.config` passthru so downstream code that walks
       # the dep graph via flatLibDepends (see shell-for-v2.nix,
       # haskellLib.flatLibDepends) can traverse v2 components the
       # same way as v1.
       config = component;
+      # v1 puts the package source in the component derivation's own
+      # `src` attribute (`commonAttrs.src = cleanSrc.root` in
+      # comp-builder.nix), so callers read it back as `component.src` --
+      # `test/cabal-project-nix-path` untars a `haskell-nix.tool` result's
+      # `.src` to get hello's sources.  A v2 slice builds several packages
+      # at once and so has no `src` derivation attribute at all; expose the
+      # same value here to keep the two builders interchangeable.
+      src = (haskellLib.rootAndSubDir src).root;
       # `lib/cover.nix` (HPC coverage report) reads `srcSubDirPath`
       # off each mix library to know where the .hs sources live for
       # `hpc markup --srcdir=...`.  v1 plumbs this from `cleanSrc`;
@@ -1492,25 +2393,42 @@ let
   # When `coverage: True` is set, cabal stores per-package HPC
   # artifacts under `$out/store/<ghc>/<unit-id>/lib/extra-compilation-artifacts/hpc/`
   # (mangled cabal unit-id name, e.g. `pkg-0.1.0.0-f77c657f`).
-  # The .mix file *content* is derived from source, not unit-id —
-  # so a sibling test slice that rebuilds the lib inplace
-  # (UnitId `<pkg>-<ver>-inplace`) produces byte-identical .mix
-  # files.  Surface the lib slice's mixes under
-  # `$out/share/hpc/<way>/mix/<pkg>-<ver>-inplace/` so HPC matches
-  # the path against `<pkg>-<ver>-inplace/<Module>` references in
-  # tix files dropped by inplace-built test exes.  Tix files don't
-  # land here (they're produced at test-run time by `lib/check.nix`).
+  # The .mix file *content* is derived from source, not unit-id, so the
+  # lib slice's mixes answer for any name a tix file might use.  Surface
+  # them under every such name, because which one it is depends on how
+  # the test exe that dropped the tix saw this library:
+  #
+  #   * `<pkg>-<ver>-inplace` -- an inplace rebuild in a sibling test
+  #     slice, the case this block was originally written for;
+  #   * the real unit-id (`<pkg>-<ver>-<hash>`), cabal's own directory
+  #     name for the installed unit;
+  #   * `<pkg>-<ver>`, which is what the stable-haskell fork's two-stage
+  #     build records -- and the one that was missing:
+  #       hpc: can not find pkgb-0.1.0.0/ConduitExample in
+  #         .../share/hpc/vanilla/mix
+  #     which is where `tests.coverage.run` on ghc914-sh failed once
+  #     `hpc` itself was on PATH.
+  #
+  # Duplicating is safe precisely because the content is source-derived;
+  # a wrong guess is a hard error at report time, a spare copy is a few
+  # kB.  Tix files don't land here (they're produced at test-run time by
+  # `lib/check.nix`).
   hpcCopyForLibrary = lib.optionalString isLibrary ''
-    for src_hpc in $out/store/ghc-*/*/lib/extra-compilation-artifacts/hpc; do
+    for src_hpc in $out/store/ghc-*/*/lib/extra-compilation-artifacts/hpc \
+                   $out/store/host/*/lib/*/extra-compilation-artifacts/hpc; do
       [ -d "$src_hpc" ] || continue
       for way_dir in "$src_hpc"/*/; do
         [ -d "$way_dir" ] || continue
         way=$(basename "$way_dir")
         if [ -d "$way_dir/mix" ]; then
-          mkdir -p "$out/share/hpc/$way/mix/${pkgName}-${pkgVersion}-inplace"
           for unit_dir in "$way_dir/mix"/*/; do
             [ -d "$unit_dir" ] || continue
-            cp -r "$unit_dir"/. "$out/share/hpc/$way/mix/${pkgName}-${pkgVersion}-inplace/"
+            for mixAlias in "${pkgName}-${pkgVersion}-inplace" \
+                            "${pkgName}-${pkgVersion}" \
+                            "$(basename "$unit_dir")"; do
+              mkdir -p "$out/share/hpc/$way/mix/$mixAlias"
+              cp -r "$unit_dir"/. "$out/share/hpc/$way/mix/$mixAlias/"
+            done
           done
         fi
       done
@@ -1531,7 +2449,22 @@ let
         cp $out/dist-newstyle/cache/plan.json $out/plan.json
       fi
       chmod -R u+w $out/dist-newstyle 2>/dev/null || true
-      rm -rf $out/dist-newstyle
+      # Keep the `store` symlink: the slice ran cabal with
+      # `--builddir=$out/dist-newstyle`, so with the stable-haskell
+      # cabal fork every baked path (Paths_ datadir, RPATHs, .conf
+      # fields) is spelled through `$out/dist-newstyle/store` and the
+      # link must stay resolvable forever (see build-cabal-slice.nix's
+      # "Staged store layout" comment).  Everything else is build-tree
+      # bulk no downstream consumer reads.
+      shopt -s nullglob dotglob
+      for entry in $out/dist-newstyle/*; do
+        [ "$(basename "$entry")" = store ] && continue
+        rm -rf "$entry"
+      done
+      shopt -u nullglob dotglob
+      if [ ! -d $out/store ]; then
+        rm -rf $out/dist-newstyle
+      fi
     fi
   '';
 
@@ -1616,13 +2549,16 @@ let
     version = pkgVersion;
     inherit depSlices;
     inherit v2Fragment;
+    inherit buildToolSourceFrags metadataSourceFrags;
     ghc = sliceGhc;
+    twoStage = sliceTwoStage;
     localRepo = null;
     preBuild = slicePreBuildV2;
     target = targetSelector;
-    inherit extraBuildInputs extraNativeBuildInputs withProgFlags
+    extraBuildInputs = extraBuildInputs ++ extraDirInputs;
+    inherit extraNativeBuildInputs withProgFlags
             allowedBuildToolPackages confLibraryDirs
-            buildToolBinOverlays;
+            buildToolBinOverlays solverIncludesGlobalDb;
     # Per-component stdenv hardeningDisable (set via haskell.nix
     # `packages.<pkg>.components.<kind>.<name>.hardeningDisable =
     # ["fortify"]`).  Drives `NIX_HARDENING_ENABLE` for the slice's
@@ -1649,11 +2585,17 @@ let
   # for that package in the slice's cabal.project (see
   # `documentationBlockFor` below) so the slice's elaboration sets
   # the same haddock booleans plan-nix did and the UnitIds match.
+  # The marker alone is ambiguous (a plain `ghc-options: -haddock`
+  # leaves the same arg without setting the haddock booleans), so it
+  # is additionally gated on the project-text scan behind
+  # `docEnabledNames` — see `projectSetsDocumentation` in
+  # `builder/v2-project-globals.nix`.
   docEnabled =
     let uid   = package.identifier.unit-id or null;
         entry = if uid == null then null else planJsonByPlanId.${uid} or null;
         args  = if entry == null then [] else (entry.configure-args or []);
-    in lib.elem "--ghc-option=-haddock" args;
+    in lib.elem "--ghc-option=-haddock" args
+       && docEnabledNames ? ${pkgName};
 
   # Sibling slice that runs `cabal v2-haddock` and surfaces
   # haddock html in cabal's native unit-dir layout
@@ -1688,13 +2630,18 @@ let
                      (d: (d.passthru.docEnabled or false))
                      depSlices);
     inherit v2Fragment;
+    # Haddock re-solves the package, including sibling components whose
+    # dependencies are staged as source metadata by the normal slice.
+    inherit buildToolSourceFrags metadataSourceFrags;
     ghc = sliceGhc;
+    twoStage = sliceTwoStage;
     localRepo = null;
     preBuild = slicePreBuildV2;
     target = targetSelector;
-    inherit extraBuildInputs extraNativeBuildInputs withProgFlags
+    extraBuildInputs = extraBuildInputs ++ extraDirInputs;
+    inherit extraNativeBuildInputs withProgFlags
             allowedBuildToolPackages confLibraryDirs
-            buildToolBinOverlays;
+            buildToolBinOverlays solverIncludesGlobalDb;
     # Per-component stdenv hardeningDisable (set via haskell.nix
     # `packages.<pkg>.components.<kind>.<name>.hardeningDisable =
     # ["fortify"]`).  Drives `NIX_HARDENING_ENABLE` for the slice's

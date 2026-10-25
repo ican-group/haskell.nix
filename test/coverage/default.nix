@@ -1,10 +1,10 @@
-{ stdenv, lib, cabal-install, cabalProject', stackProject', runCommand, testSrc, compiler-nix-name, evalPackages, buildPackages }:
+{ stdenv, lib, cabal-install, cabalProject', stackProject', runCommand, testSrc, compiler-nix-name, evalPackages, evalSystem, buildPackages, testCabalProjectLocal, testInputMap }:
 
 with lib;
 
 let
   projectArgs = {
-    inherit evalPackages;
+    inherit evalSystem;
     src = testSrc "coverage";
     modules = [{
       # Coverage
@@ -27,7 +27,8 @@ let
   # but for stack we would need a different resolver to be used..
   cabalProj = (cabalProject' (projectArgs // {
     inherit compiler-nix-name;
-    cabalProjectLocal = builtins.readFile ../cabal.project.local + coverageProjectLocal;
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal + coverageProjectLocal;
   }));
   stackProj = (stackProject' projectArgs);
 
@@ -62,13 +63,20 @@ in lib.recurseIntoAttrs ({
         fi
       }
       findFileExistsNonEmpty() {
-        local searchDir=$1
-        local filePattern=$2
+        # Last argument is the file pattern, everything before it a directory
+        # to search.  Callers pass an unquoted glob (`.../mix/pkgb-0.1.0.0*`),
+        # and under the v2 builder that glob matches MORE than one directory:
+        # a library slice publishes its mix files under every unit-id name a
+        # tix file might spell them with (`hpcCopyForLibrary` in
+        # builder/comp-v2-builder.nix), so `mix/` holds `pkgb-0.1.0.0`,
+        # `pkgb-0.1.0.0-inplace` and `pkgb-0.1.0.0-<cabal hash>` side by side.
+        local filePattern="''${!#}"
+        local searchDirs=( "''${@:1:$#-1}" )
 
-        local file="$(find $searchDir -name $filePattern -print -quit)"
+        local file="$(find "''${searchDirs[@]}" -name "$filePattern" -print -quit)"
 
-        if [ -z $file ]; then
-          echo "Couldn't find file \"$filePattern\" in directory \"$searchDir\"."
+        if [ -z "$file" ]; then
+          echo "Couldn't find file \"$filePattern\" in directories \"''${searchDirs[*]}\"."
           exit 1
         fi
 
@@ -97,7 +105,17 @@ in lib.recurseIntoAttrs ({
         fi
       }
 
-      ${let check = project: inplaceSuffix: ''
+      ${let
+        # cabal elaborates a `packages:` entry BuildInplaceOnly, so its unit
+        # id -- and hence the plan id `projectCoverageReport` names its
+        # per-package html/tix directories after -- is `<pkgid>-inplace`.
+        # The stable-haskell cabal fork installs project packages into the
+        # store instead and their plan ids are a plain `<pkgid>`, which is
+        # also what stack projects get.  Read it off the project rather than
+        # hard-coding one of the two.
+        inplaceSuffixOf = project:
+          if project.hsPkgs ? "pkga-0.1.0.0-inplace" then "-inplace" else "";
+        check = project: let inplaceSuffix = inplaceSuffixOf project; in ''
         pkga_basedir="${project.hsPkgs.pkga.coverageReport}/share/hpc/vanilla"
         findFileExistsNonEmpty $pkga_basedir/mix/pkga-0.1.0.0* "PkgA.mix"
         dirExists "$pkga_basedir/tix/pkga-0.1.0.0"
@@ -135,8 +153,8 @@ in lib.recurseIntoAttrs ({
         fileExistsNonEmpty "$project_basedir/tix/pkgb-test-tests${crossSuffix'}-0.1.0.0-check${crossSuffix}/tests${exeExt}.tix"
       '';
       in ''
-        ${check cabalProj "-inplace"}
-        ${optionalString (compiler-nix-name == "ghc984") (check stackProj "")}
+        ${check cabalProj}
+        ${optionalString (compiler-nix-name == "ghc984") (check stackProj)}
       ''}
 
       touch $out

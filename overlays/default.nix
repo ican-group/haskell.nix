@@ -3,6 +3,7 @@ let
   overlays = {
     wine = import ./wine.nix;
     haskell = import ./haskell.nix { inherit sources; };
+    head-hackage = import ./head-hackage.nix { inherit sources; };
 
     # Here is where we import nix-tools into the overlays that haskell.nix is
     # going to use. To cut the evaluation time of nix-tools (which would itself
@@ -51,6 +52,19 @@ let
         # full rebuild.
         static-nix-tools-for-default-setup = static-nix-tools' ../nix-tools-static-for-default-setup.nix;
 
+        # The stable-haskell variant, built from ../nix-tools-sh and pinned
+        # separately for the same reason `default-setup` is: so it can move
+        # without dragging anything else with it.
+        #
+        # NOTHING SELECTS THIS BY DEFAULT.  plan-to-nix and make-install-plan
+        # generate plan-nix for whatever compiler they are pointed at, so making
+        # these the shared default would move every existing GHC onto the
+        # stable-haskell Cabal fork.  It is opt-in per project through the
+        # `nix-tools` option in modules/cabal-project.nix, resolved in
+        # lib/call-cabal-project-to-nix.nix; ghc9.6 .. ghc9.14 continue to use
+        # ../nix-tools-static.nix.  See ../nix-tools-static-sh.nix.
+        static-nix-tools-sh = static-nix-tools' ../nix-tools-static-sh.nix;
+
         # Version of nix-tools built with a pinned version of haskell.nix.
         pinned-nix-tools-lib = (import final.haskell-nix.sources.flake-compat {
             pkgs = final;
@@ -67,8 +81,30 @@ let
           prev.haskell-nix // {
             inherit (nix-tools-pkgs) nix-tools nix-tools-set;
             # either nix-tools from its overlay or from the tarball.
+            #
+            # Keep these prebuilt bundles.  plan-nix is the universal IFD, so a
+            # from-source nix-tools turns one prebuilt bundle into three
+            # per-component builds in every plan-nix derivation across the
+            # whole compiler x platform matrix -- measured at 6x-89x the
+            # per-job eval time on the mainline compilers (ghc967 124.8s/job
+            # vs 1.4s).
+            #
+            # v2 projects (and every stable-haskell compiler's) plan with
+            # `nix-tools-unchecked-sh`, the stable-haskell cabal fork, to match
+            # the v2 builder's cabal; v1 projects keep this mainline 3.16
+            # bundle.  See modules/cabal-project.nix.
             nix-tools-unchecked = static-nix-tools // {
               exes =  static-nix-tools.exes // {
+                inherit (static-nix-tools-for-default-setup.exes) default-setup default-setup-ghcjs;
+              };
+            };
+            # As above, with the stable-haskell tools.  `default-setup` still
+            # comes from the shared pin on purpose: it is the one whose hash
+            # rebuilds everything, and the fork has no reason to differ there,
+            # so opting a project into these tools must not fork the setup used
+            # to build the world.
+            nix-tools-unchecked-sh = static-nix-tools-sh // {
+              exes = static-nix-tools-sh.exes // {
                 inherit (static-nix-tools-for-default-setup.exes) default-setup default-setup-ghcjs;
               };
             };
@@ -82,8 +118,10 @@ let
     compiler-llvm = import ./compiler-llvm.nix;
     ghc-packages = import ./ghc-packages.nix;
     darwin = import ./darwin.nix;
+    mingw-stdio = import ./mingw-stdio.nix;
     windows = import ./windows.nix;
     armv6l-linux = import ./armv6l-linux.nix;
+    hyper-linux = import ./hyper-linux.nix { inherit sources; };
     musl = import ./musl.nix;
     android = import ./android.nix;
     tools = import ./tools.nix;
@@ -97,6 +135,8 @@ let
     lazy-inputs = import ../lazy-inputs;
     rcodesign = import ./rcodesign.nix;
     wasm = import ./wasm.nix;
+    stable-haskell = import ./stable-haskell.nix;
+    hsc2hs = import ./hsc2hs.nix;
   };
 
   composeExtensions = f: g: final: prev:
@@ -120,11 +160,14 @@ let
     compiler-llvm
     ghc-packages
     darwin
+    mingw-stdio
     windows
     armv6l-linux
+    hyper-linux
     musl
     android
     tools
+    head-hackage
     emscripten
     nix-prefetch-git-minimal
     ghcjs
@@ -134,8 +177,11 @@ let
     wasm
     # Restore nixpkgs haskell and haskellPackages
     (_: prev: { inherit (prev.haskell-nix-prev) haskell haskellPackages; })
-    cacheCompilerDeps
     lazy-inputs
+    # After lazy-inputs (its source), before stable-haskell (a user of it).
+    hsc2hs
+    stable-haskell
+    cacheCompilerDeps
     rcodesign
   ];
   combined = builtins.foldl' composeExtensions (_: _: { }) ordered;

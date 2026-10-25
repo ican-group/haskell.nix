@@ -24,6 +24,11 @@ let
 in
 # -- linux
 { crypto = [ openssl ];
+  # libc, librt, libdl — provided implicitly by the toolchain.
+  # GHC 9.14's rts.cabal lists these as extra-libraries on Linux.
+  c = [];
+  rt = [];
+  dl = [];
   "c++" = [ libcxx ];
   # at some point this happened:
   #
@@ -136,6 +141,10 @@ in
      ole32 = null; rpcrt4 = null;
      winmm = null; userenv = null;
      kernel32 = null; ws2_32 = null;
+     # GHC 9.14's rts.cabal / ghc-internal.cabal extra-libraries on
+     # Windows; all provided implicitly by the mingw toolchain.
+     wsock32 = null; dbghelp = null; psapi = null;
+     ntdll = null; ucrt = null;
      opengl32 = null; glu32 = null;
      # this should be bundled with gcc.
      # if it's not we have more severe
@@ -143,6 +152,8 @@ in
      ssl32 = null; eay32 = [ openssl ];
      iphlpapi = null; # IP Help API
      msvcrt = null; # this is the libc
+     # MinGW import-library names are lowercase; retain the legacy alias.
+     crypt32 = null;
      Crypt32 = null;
      mswsock = null;
      bcrypt = null;
@@ -150,6 +161,9 @@ in
    }
 # -- mingw32
 // { mingwex = null;
+     # GHC 9.14's ghc-internal lists mingw32 in extra-libraries on Windows;
+     # provided implicitly by the mingw toolchain.
+     mingw32 = null;
 }
 # -- os x
 # TODO remove once planner code is updated not to output frameworks

@@ -122,7 +122,19 @@ let
 in rec {
   inherit combineAndMaterialize;
   ghc-boot-packages-src-and-nix = builtins.mapAttrs
-    (ghcName: ghc: builtins.mapAttrs
+    (ghcName: ghc:
+      # stable-haskell compilers are built with `cabalProject` rather than
+      # hadrian, so their boot packages are not present in the GHC source tree
+      # (`ghc-extra-pkgs` locations don't exist).  They are provided via
+      # `source-repository-package` blocks and discovered through the installed
+      # package dump instead, so the whole source-tree boot-package mechanism
+      # does not apply -- skip it entirely for these compilers.
+      if ghc.isStableHaskell or false then {} else
+      # Prefer the lightweight `generated` derivation (hadrian's generated
+      # sources built without compiling all of GHC); fall back to the full
+      # `generated` output for compilers that don't provide it.
+      let gen = ghc.generated-light or ghc.generated; in
+      builtins.mapAttrs
       (pkgName: subDir: rec {
         src =
           # TODO remove once nix >=2.4 is widely adopted (will trigger rebuilds of everything).
@@ -133,33 +145,33 @@ in rec {
             then nix24srcFix (final.buildPackages.runCommand "ghc-boot-src" { nativeBuildInputs = [(final.buildPackages.lndir or final.buildPackages.xorg.lndir)]; } ''
               mkdir $out
               lndir -silent ${ghc.passthru.configured-src}/${subDir} $out
-              lndir -silent ${ghc.generated}/libraries/ghc-boot/dist-install/build/GHC $out/GHC
+              lndir -silent ${gen}/libraries/ghc-boot/dist-install/build/GHC $out/GHC
             '') // { srcForCabal2Nix = ghc.passthru.configured-src + "/${subDir}"; }
           else if subDir == "compiler"
             then final.haskell-nix.haskellLib.cleanSourceWith {
               src = nix24srcFix (final.buildPackages.runCommand "ghc-src" { nativeBuildInputs = [(final.buildPackages.lndir or final.buildPackages.xorg.lndir)]; } ''
                 mkdir $out
                 lndir -silent ${ghc.passthru.configured-src} $out
-                if [[ -f ${ghc.generated}/libraries/ghc-boot/dist-install/build/GHC/Version.hs ]]; then
-                  ln -s ${ghc.generated}/libraries/ghc-boot/dist-install/build/GHC/Version.hs $out/libraries/ghc-boot/GHC
+                if [[ -f ${gen}/libraries/ghc-boot/dist-install/build/GHC/Version.hs ]]; then
+                  ln -s ${gen}/libraries/ghc-boot/dist-install/build/GHC/Version.hs $out/libraries/ghc-boot/GHC
                 fi
-                if [[ -f ${ghc.generated}/libraries/ghc-boot/dist-install/build/GHC/Platform/Host.hs ]]; then
-                  ln -s ${ghc.generated}/libraries/ghc-boot/dist-install/build/GHC/Platform/Host.hs $out/libraries/ghc-boot/GHC/Platform
+                if [[ -f ${gen}/libraries/ghc-boot/dist-install/build/GHC/Platform/Host.hs ]]; then
+                  ln -s ${gen}/libraries/ghc-boot/dist-install/build/GHC/Platform/Host.hs $out/libraries/ghc-boot/GHC/Platform
                 fi
-                if [[ -f ${ghc.generated}/compiler/stage2/build/Config.hs ]]; then
-                  ln -s ${ghc.generated}/compiler/stage2/build/Config.hs $out/compiler
+                if [[ -f ${gen}/compiler/stage2/build/Config.hs ]]; then
+                  ln -s ${gen}/compiler/stage2/build/Config.hs $out/compiler
                 fi
-                if [[ -f ${ghc.generated}/compiler/stage2/build/GHC/Platform/Constants.hs ]]; then
-                  ln -s ${ghc.generated}/compiler/stage2/build/GHC/Platform/Constants.hs $out/compiler/GHC/Platform
+                if [[ -f ${gen}/compiler/stage2/build/GHC/Platform/Constants.hs ]]; then
+                  ln -s ${gen}/compiler/stage2/build/GHC/Platform/Constants.hs $out/compiler/GHC/Platform
                 fi
-                if [[ -f ${ghc.generated}/compiler/stage2/build/GHC/Settings/Config.hs ]]; then
-                  ln -s ${ghc.generated}/compiler/stage2/build/GHC/Settings/Config.hs $out/compiler/GHC/Settings
+                if [[ -f ${gen}/compiler/stage2/build/GHC/Settings/Config.hs ]]; then
+                  ln -s ${gen}/compiler/stage2/build/GHC/Settings/Config.hs $out/compiler/GHC/Settings
                 fi
-                if [[ -f ${ghc.generated}/compiler/GHC/CmmToLlvm/Version/Bounds.hs ]]; then
-                  ln -s ${ghc.generated}/compiler/GHC/CmmToLlvm/Version/Bounds.hs $out/compiler/GHC/CmmToLlvm/Version
+                if [[ -f ${gen}/compiler/GHC/CmmToLlvm/Version/Bounds.hs ]]; then
+                  ln -s ${gen}/compiler/GHC/CmmToLlvm/Version/Bounds.hs $out/compiler/GHC/CmmToLlvm/Version
                 fi
-                ln -s ${ghc.generated}/includes/dist-derivedconstants/header/* $out/compiler
-                ln -s ${ghc.generated}/compiler/stage2/build/*.hs-incl $out/compiler
+                ln -s ${gen}/includes/dist-derivedconstants/header/* $out/compiler
+                ln -s ${gen}/compiler/stage2/build/*.hs-incl $out/compiler
               '');
               inherit subDir;
               includeSiblings = true;
@@ -231,7 +243,7 @@ in rec {
   # A `cabalProject'` project for each ghc
   ghc-extra-projects = builtins.mapAttrs (ghcName: proj:
     final.haskell-nix.cabalProject' ({pkgs, ...}: {
-      evalPackages = pkgs.buildPackages;
+      evalSystem = pkgs.buildPackages.stdenv.hostPlatform.system;
       name = "ghc-extra-projects-${ghc-extra-projects-type proj.ghc}-${ghcName}";
       src = proj;
       inherit (proj) cabalProject;

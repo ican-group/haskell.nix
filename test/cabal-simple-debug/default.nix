@@ -1,11 +1,11 @@
 # Test a package set
-{ stdenv, lib, util, cabalProject', haskellLib, testSrc, compiler-nix-name, evalPackages, buildPackages, dwarfdump }:
+{ stdenv, lib, util, cabalProject', haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem, buildPackages, dwarfdump, testCabalProjectLocal, testInputMap }:
 
 with lib;
 
 let
   project = cabalProject' {
-    inherit compiler-nix-name evalPackages;
+    inherit compiler-nix-name evalSystem;
     src = testSrc "cabal-simple-debug";
     # v2 bakes DWARF in at slice build time when cabal.project
     # records `debug-info:`, and uses the `.dwarf` GHC variant
@@ -17,7 +17,8 @@ let
     # GHC, dummy-ghc, ...) on the same DWARF variant; per-slice
     # overrides via `.dwarf` would diverge from plan-nix's UnitId.
     compilerSelection = p: lib.mapAttrs (_: c: c.dwarf) p.haskell-nix.compiler;
-    cabalProjectLocal = builtins.readFile ../cabal.project.local + ''
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal + ''
       package *
         debug-info: 2
     '';
@@ -30,7 +31,12 @@ in lib.recurseIntoAttrs {
   # GHC 9.2.1 disabled because of https://github.com/input-output-hk/haskell.nix/issues/1332
   meta.disabled = __elem compiler-nix-name ["ghc921" "ghc922" "ghc923" "ghc924" "ghc925" "ghc926" "ghc927"]
     || !stdenv.hostPlatform.isLinux || haskellLib.isCrossHost || stdenv.hostPlatform.isMusl || stdenv.hostPlatform.isAarch64
-    || lib.hasSuffix "llvm" compiler-nix-name;
+    || lib.hasSuffix "llvm" compiler-nix-name
+    # `compilerSelection` above swaps in the `.dwarf` variant, which only
+    # hadrian-built compilers have -- a cabalProject-built one (ghc914-sh)
+    # has no DWARF twin to select.  Keyed on the capability rather than the
+    # name so the next such compiler does not have to be listed here.
+    || !(buildPackages.haskell-nix.compiler.${compiler-nix-name} ? dwarf);
   ifdInputs = {
     inherit (project) plan-nix;
   };

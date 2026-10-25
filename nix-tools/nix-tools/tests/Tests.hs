@@ -9,8 +9,9 @@ import System.Exit (ExitCode (..))
 import System.FilePath (replaceExtension, takeBaseName, takeExtensions, (</>))
 import System.IO.Extra (newTempDir)
 import System.Process (callCommand, readProcessWithExitCode)
-import Test.Tasty (TestTree, defaultMain, testGroup, withResource)
+import Test.Tasty (defaultMain, testGroup, withResource)
 import Test.Tasty.Golden.Advanced (goldenTest2)
+-- Also re-exports `TestTree`, hence not importing it from `Test.Tasty` above.
 import Test.Tasty.Providers
 
 main :: IO ()
