@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-ce363c2b.js";
+            window.path_to_searchindex_js = "searchindex-9f35ad04.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-8e5f1025.js"></script>
@@ -176,6 +176,18 @@
                     <main>
                         <p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="october-25-2026"><a class="header" href="#october-25-2026">October 25, 2026</a></h2>
+<ul>
+<li>Removed the <code>haskell-nix</code> knobs <code>emulatorNativeBuilderPackages</code> and
+<code>emulatorNativeBuilderTH</code>.  Template Haskell slices, the <code>base</code> and
+<code>th-orphans</code> slices and the native GHC 9.14 library no longer get
+<code>emulatorSystemFeatures</code>: built on emulated (<code>nix-linux-builder</code>)
+hosts they all passed.  <code>emulatorSystemFeatures</code> now applies only to
+checks for hosts matching <code>emulatorNativeBuilderCheck</code>, by default
+32-bit x86 Linux, whose exes cannot run under Rosetta.
+<code>usesTemplateHaskell</code> stays: it still selects <code>-fexternal-interpreter</code>
+for dynamically linked musl hosts.</li>
+</ul>
 <h2 id="october-16-2026"><a class="header" href="#october-16-2026">October 16, 2026</a></h2>
 <p>New compiler: <code>ghc914-sh</code>, GHC 9.14 from the stable-haskell fork, built
 with the stable-haskell Makefile rather than hadrian, and its boot
