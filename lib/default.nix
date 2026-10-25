@@ -542,14 +542,16 @@ in {
   # Only library/test components with `doHaddock` enabled expose a `doc` output
   # (see `builder/comp-builder.nix`), so guarding on `component ? doc` selects
   # exactly those and skips exes, benchmarks and haddock-disabled components —
-  # no null or broken jobs (see #1932).
+  # no null or broken jobs (see #1932).  v2 slices (`builderVersion = 2`)
+  # differ: every library has a `doc` attr, which throws unless the plan built
+  # it with documentation, and `docEnabled` says which.
   mkFlakeHaddock =
     foldrAttrVals
       (package: acc:
         foldComponents
           subComponentTypes
           (component: a:
-            if component ? doc
+            if component ? doc && (component.docEnabled or true)
               then a // { ${component.passthru.identifier.component-id} = component.doc; }
               else a)
           acc

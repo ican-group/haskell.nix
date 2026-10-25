@@ -62,8 +62,12 @@ lib.runTests {
       expr = haskellLib.mkFlakeHaddock {
         pkgA.components = {
           library = mkComp "pkgA:lib:pkgA" { doc = "DOC-libA"; };
-          sublibs.s = mkComp "pkgA:lib:s" { doc = "DOC-subA"; };
           exes.e = mkComp "pkgA:exe:e" { };            # no doc -> skipped
+          # v2 slice without documentation: `doc` throws, `docEnabled` is false.
+          sublibs.v2 = mkComp "pkgA:lib:v2" { doc = throw "no docs"; docEnabled = false; };
+          # v2 slice with documentation.
+          sublibs.v2doc = mkComp "pkgA:lib:v2doc" { doc = "DOC-v2"; docEnabled = true; };
+          sublibs.s = mkComp "pkgA:lib:s" { doc = "DOC-subA"; };
           tests.t = mkComp "pkgA:test:t" { doc = "DOC-testA"; };
           foreignlibs = { };
           benchmarks = { };
@@ -77,6 +81,7 @@ lib.runTests {
       expected = {
         "pkgA:lib:pkgA" = "DOC-libA";
         "pkgA:lib:s" = "DOC-subA";
+        "pkgA:lib:v2doc" = "DOC-v2";
         "pkgA:test:t" = "DOC-testA";
       };
     };
