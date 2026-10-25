@@ -1,0 +1,42 @@
+Fix a self-referential `toolchains'` knot that hangs `v2-haddock`.
+
+`CmdHaddock.haddockAction` rebuilds the `Staged Toolchain` so that the
+Host toolchain carries the reconfigured haddock program db.  Both
+branches of that rebuild referred to `toolchains'` — the value being
+defined — instead of `toolchains`, the original:
+
+    let toolchains' = Staged $ \case
+          Host -> (getStage toolchains' Host){toolchainProgramDb = progs}
+          Build -> getStage toolchains' Build
+
+Forcing either stage therefore re-enters its own thunk.  The thread
+blocks on its own blackhole and never makes progress: 0% CPU, no
+syscalls, no child processes, and — because lazy blackholing in the
+threaded RTS does not reliably turn a self-referential blackhole into
+`<<loop>>` — no exception either.  `cabal v2-haddock` simply stops,
+forever, and the build step has to be killed.
+
+It only bites when something actually forces a stage's toolchain, which
+is why it looks intermittent: a `v2-haddock` run with nothing to do
+returns in milliseconds, while one that has to configure a unit (e.g.
+because the `--haddock-*` flags shift the unit id, as they do for every
+doc-enabled slice) wedges in the Configure phase, right after cabal
+prints "Using in-library setup method with build-type Simple".
+
+Use `toolchains` on the right-hand side, which is what was meant.
+
+diff --git a/src/Distribution/Client/CmdHaddock.hs b/src/Distribution/Client/CmdHaddock.hs
+index d741211..3706a1d 100644
+--- a/src/Distribution/Client/CmdHaddock.hs
++++ b/src/Distribution/Client/CmdHaddock.hs
+@@ -217,8 +217,8 @@ haddockAction relFlags targetStrings globalFlags = do
+       $ getStage toolchains Host
+ 
+   let toolchains' = Staged $ \case
+-        Host -> (getStage toolchains' Host){toolchainProgramDb = progs}
+-        Build -> getStage toolchains' Build
++        Host -> (getStage toolchains Host){toolchainProgramDb = progs}
++        Build -> getStage toolchains Build
+ 
+   let buildCtx' =
+         buildCtx

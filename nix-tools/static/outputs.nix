@@ -2,9 +2,6 @@ inputs@{ nixpkgs, haskellNix, ... }:
 
 let
 
-  inherit (nixpkgs) lib;
-
-
   supported-systems = [
     "x86_64-linux"
     "x86_64-darwin"
@@ -13,7 +10,7 @@ let
   ];
 
 
-  static-gmp-overlay = final: prev: {
+  static-gmp-overlay = final: _prev: {
     static-gmp = (final.gmp.override { withStatic = true; }).overrideDerivation (old: {
       configureFlags = old.configureFlags ++ [ "--enable-static" "--disable-shared" ];
     });

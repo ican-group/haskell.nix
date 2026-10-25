@@ -25,10 +25,23 @@ let
   # Construct the dummy-ghc the same way `lib/call-cabal-project-to-nix.nix`
   # does at plan-to-nix time.  Using the same function ensures the
   # test exercises the actual code path.
-  dummyGhc = import ../../lib/dummy-ghc.nix {
-    inherit pkgs evalPackages;
+  # lib/dummy-ghc.nix now returns the { dummy-ghc, dummy-ghc-pkg } pair; this
+  # test exercises the `ghc` half.
+  #
+  # One deliberate difference: plan-to-nix runs the dummy on the EVAL
+  # platform, but this test runs it here, at build time, on the BUILD
+  # platform.  With `evalPackages` the script's shebang is the eval
+  # platform's bash -- on Hydra an x86_64-linux ELF -- which darwin cannot
+  # exec.  Most darwin jobs got away with it only because the calling bash
+  # falls back to interpreting an ENOEXEC file itself; the ghc914-sh ghcjs
+  # one crashed instead (`Segmentation fault: 11` on `--info`, build
+  # 2153544).  The `--info` text under test does not depend on whose bash
+  # prints it, so build the dummy with the test's own build packages.
+  dummyGhc = (import ../../lib/dummy-ghc.nix {
+    inherit pkgs;
+    evalPackages = buildPackages;
     ghc = realGhc;
-  };
+  }).dummy-ghc;
 
   ghcCmd = "${realGhc.targetPrefix}ghc";
 
@@ -46,6 +59,7 @@ let
     "JavaScript CPP command" "JavaScript CPP flags"
     "C-- CPP command" "C-- CPP flags" "C-- CPP supports -g0"
     "ld supports compact unwind" "ld supports filelist" "ld supports single module"
+    "ld supports verbatim namespace"
     "ld is GNU ld"
     "Merge objects command" "Merge objects flags" "Merge objects supports response files"
     "ar command" "ar flags" "ar supports at file" "ar supports -L"

@@ -1,9 +1,9 @@
-{ lib, project', testSrc, compiler-nix-name, evalPackages }:
+{ lib, project', testSrc, compiler-nix-name, evalPackages, evalSystem }:
 
 let
   project = project' {
     src = testSrc "stack-local-resolver-subdir";
-    inherit evalPackages;
+    inherit evalSystem;
   };
   packages = project.hsPkgs;
 
