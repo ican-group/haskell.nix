@@ -35,7 +35,10 @@ let
       explicit list that omits '${name}'.  The option replaces rather than merges (the
       last definition wins), so a plain assignment is enough — but do not derive the
       new list from `config.nonReinstallablePkgs`, that is self-referential and will
-      loop.  Otherwise drop the override to keep using the compiler's copy.'' acc)
+      loop.${lib.optionalString (lib.elem name config.bootPkgs) ''
+          '${name}' is also in `bootPkgs`, which shadows it the same way, so
+        set `bootPkgs` to an explicit list that omits it too.''}  Otherwise drop the
+      override to keep using the compiler's copy.'' acc)
     value shadowedNonReinstallable;
 
 in
