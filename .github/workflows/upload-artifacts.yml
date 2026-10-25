@@ -6,19 +6,43 @@ on:
       - master
     tags:
       - "nix-tools-*"
+      # `nix-tools-sh-*` matches `nix-tools-*`, so without this exclusion every
+      # stable-haskell release would start this workflow too.  It could only
+      # fail: the stable-haskell zips are different jobs
+      # (`<system>.nix-tools-sh.static.zipped.*`), so the wait below would sit
+      # out its full 240m timeout looking for mainline jobs that the tag did not
+      # change.  The mainline pin would survive -- `release` needs
+      # `wait-for-hydra` -- but every stable-haskell release would carry a
+      # four-hour red run beside the green one.  Negations are evaluated in order
+      # and must follow the positive pattern.  See upload-artifacts-sh.yml.
+      - "!nix-tools-sh-*"
   pull_request:
+  # README status updates use GITHUB_TOKEN and [skip ci]; dispatch on current
+  # master to qualify that exact revision without relaxing Hydra artifact checks.
+  workflow_dispatch:
+
+# Hydra can skip intermediate revisions when a branch advances during an
+# evaluation. Only the latest branch/PR waiter can still qualify that head.
+# Isolate tags and explicit reruns: retrying an older commit must not cancel
+# the current head's waiter, and tagged release execution stays unchanged.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ (startsWith(github.ref, 'refs/tags/') || github.run_attempt > 1) && github.run_id || 'latest' }}
+  cancel-in-progress: true
 
 env:
-  FLAKE_REF: github:${{ github.repository }}?ref=${{ github.head_ref || github.ref }}
   GH_TOKEN: ${{ github.token }}
 
-# PR-triggered runs evaluate pull request code (`nix build --impure` on the
-# PR's flake), so the default token must stay read-only.  The tag-only
-# `release` job below elevates its own permissions.
+# The default token stays read-only; the tag-only `release` job below elevates
+# its own permissions.  PR-triggered runs no longer evaluate pull request code
+# at all -- they read build metadata from the Hydra API and download the
+# artifacts Hydra built -- but the split is still worth keeping: nothing on the
+# PR path has any reason to write.
+#
+# `checks: read` and `statuses: read` used to be needed to find the `nix-tools`
+# aggregate's check-run.  Nothing reads GitHub check state any more; the job
+# list and the evaluation both come from the Hydra API.
 permissions:
   contents: read
-  checks: read
-  statuses: read
 
 jobs:
   wait-for-hydra:
@@ -28,34 +52,124 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Nix with good defaults
-        uses: input-output-hk/install-nix-action@v20
-        with:
-          extra_nix_config: |
-            trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=
-            substituters = https://cache.nixos.org/ https://cache.iog.io/ https://cache.zw3rk.com
-          nix_path: nixpkgs=channel:nixos-unstable
-
-      - name: Display flake metadata
-        id: flake-metadata
+      # Take the zips from Hydra, which built them, rather than reconstructing
+      # our way back to them with nix.
+      #
+      # The previous form ran `nix build` on the job attributes.  That worked
+      # only while it pointed at the `*-no-ifd` wrappers, which are cheap to
+      # instantiate; the real attributes make a linux runner evaluate the whole
+      # haskell.nix project, and with `--builders "" --max-jobs 0` every path
+      # evaluation wants must already be substitutable.  It is not: cache.zw3rk.com
+      # is an Attic cache fed by `hydra-attic-bridge`, which publishes job
+      # outputs only, and even those are unreliable -- the bridge spent the last
+      # 24h logging "Path not available on any peer, deferring" for hundreds of
+      # paths it never managed to push.  Substituting is therefore a race
+      # against whether a path made it off the build machine in time.
+      #
+      # Hydra always has the artifacts it built, so ask it directly.  No
+      # evaluation, no cache, no nix.  Integrity still holds: Hydra publishes a
+      # sha256 per build product and we check the download against it.
+      #
+      # We wait on the four zip jobs themselves rather than on an aggregate.
+      # There used to be a `hydraJobs.nix-tools` aggregate and a
+      # `wait-for-hydra` step keyed on its check-run; both are gone.  The
+      # aggregate cost 476MB of zip closures copied onto one agent (see
+      # flake.nix), and keying off a check-run meant depending on Hydra's
+      # GitHub status sync, which strands this workflow whenever that sync
+      # backs up.  Polling Hydra directly needs strictly less to be true: just
+      # the evaluation, no check-run and no aggregate build.
+      - name: "Wait for and pull nix-tools"
+        env:
+          # On pull_request, github.sha is the merge commit; Hydra evaluates the
+          # head, so that is the revision to match.
+          COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          # Which Hydra jobset evaluated $COMMIT.  PRs get their own jobset;
+          # master pushes and `nix-tools-*` tags (which are cut from master
+          # commits) are covered by `master`.  Old evaluations do age out
+          # eventually, so a long-forgotten revision may not be resolvable --
+          # the step then fails loudly, listing what Hydra does have, rather
+          # than silently reaching for a neighbouring revision.
+          JOBSET: ${{ github.event.pull_request.number && format('pullrequest-{0}', github.event.pull_request.number) || 'master' }}
+          # Generous: these zips are cross-built and the queue can be deep.  It
+          # only has to beat the job actually finishing, and a stuck build now
+          # shows up as this timeout rather than as a run that hangs all day.
+          TIMEOUT_MIN: 240
         run: |
-          echo $PWD
-          ls -lah .
-          nix flake metadata ${{ env.FLAKE_REF }}
-          nix flake metadata ${{ env.FLAKE_REF }} --json | jq -r '"LOCKED_URL=\(.url)"' >> "$GITHUB_OUTPUT"
+          set -euo pipefail
+          hydra=https://ci.zw3rk.com
+          project=input-output-hk-haskell-nix
 
-      - name: Wait for nix-tools meta job
-        uses: input-output-hk/actions/wait-for-hydra@angerman/support-prs
-        with:
-          check: 'nix-tools'
+          jobs="aarch64-darwin.nix-tools.static.zipped.nix-tools-static
+          x86_64-darwin.nix-tools.static.zipped.nix-tools-static
+          x86_64-linux.nix-tools.static.zipped.nix-tools-static
+          x86_64-linux.nix-tools.static.zipped.nix-tools-static-arm64"
 
-      - name: "Pull nix-tools"
-        run: |
-          ls -lah .
-          cp $(nix build --impure --builders "" --max-jobs 0 ${{ steps.flake-metadata.outputs.LOCKED_URL }}#hydraJobs.aarch64-darwin.nix-tools.static.zipped.nix-tools-static-no-ifd --no-link --print-out-paths)/*.zip .
-          cp $(nix build --impure --builders "" --max-jobs 0 ${{ steps.flake-metadata.outputs.LOCKED_URL }}#hydraJobs.x86_64-darwin.nix-tools.static.zipped.nix-tools-static-no-ifd --no-link --print-out-paths)/*.zip .
-          cp $(nix build --impure --builders "" --max-jobs 0 ${{ steps.flake-metadata.outputs.LOCKED_URL }}#hydraJobs.x86_64-linux.nix-tools.static.zipped.nix-tools-static-no-ifd --no-link --print-out-paths)/*.zip .
-          cp $(nix build --impure --builders "" --max-jobs 0 ${{ steps.flake-metadata.outputs.LOCKED_URL }}#hydraJobs.x86_64-linux.nix-tools.static.zipped.nix-tools-static-arm64-no-ifd --no-link --print-out-paths)/*.zip .
+          deadline=$(( $(date +%s) + TIMEOUT_MIN * 60 ))
+
+          # Wait for Hydra to evaluate this revision, then find that evaluation.
+          # The wait is the point: the push and this workflow start at the same
+          # moment, so on a new commit Hydra has not evaluated yet -- it still
+          # has to notice the push and then spend ~30-50min evaluating.  The
+          # `wait-for-hydra` action this replaced waited for a check-run to
+          # appear, which covered the same gap.
+          #
+          # `.flake` carries the full ref, e.g. github:owner/repo/<rev>?narHash=...,
+          # so match the revision as a substring.  Every step is guarded so a
+          # transient API failure or a jq miss retries instead of tripping
+          # `set -e`/`pipefail`; only the deadline ends the loop unsuccessfully.
+          evalid=""
+          while :; do
+            # `--max-time` matters here: without it a hung request blocks the
+            # loop indefinitely and the deadline below is never reached.  This
+            # endpoint routinely takes several seconds when the queue is busy.
+            evals=$(curl -sf --max-time 120 -H 'Accept: application/json' "$hydra/jobset/$project/$JOBSET/evals") || evals=""
+            evalid=$(printf '%s' "$evals" \
+                       | jq -r --arg r "$COMMIT" 'first(.evals[]? | select((.flake // "") | contains($r)) | .id) // empty' 2>/dev/null) \
+              || evalid=""
+            if [ -n "$evalid" ]; then break; fi
+            [ "$(date +%s)" -lt "$deadline" ] || {
+              echo "::error::timed out after ${TIMEOUT_MIN}m waiting for Hydra to evaluate $COMMIT in jobset $JOBSET"
+              echo "evaluations Hydra does have for that jobset:"
+              printf '%s' "$evals" | jq -r '.evals[]? | "  eval \(.id): \(.flake // "?")"' || true
+              exit 1
+            }
+            echo "waiting for Hydra to evaluate $COMMIT in jobset $JOBSET"
+            sleep 60
+          done
+          echo "Hydra eval $evalid for $COMMIT (jobset $JOBSET)"
+
+          for job in $jobs; do
+            # Wait for this job to finish.  `finished` flips to 1 once Hydra is
+            # done with the build, whatever the outcome; buildstatus is only
+            # meaningful after that.  `--retry` so a transient 5xx from Hydra
+            # (a 504 showed up while testing this) does not fail the run; a job
+            # that is genuinely absent from the eval still fails fast.
+            while :; do
+              meta=$(curl -sfL --retry 3 --retry-delay 5 --max-time 120 -H 'Accept: application/json' "$hydra/eval/$evalid/job/$job") \
+                || { echo "::error::$job is not in eval $evalid"; exit 1; }
+              [ "$(echo "$meta" | jq -r '.finished')" = "1" ] && break
+              [ "$(date +%s)" -lt "$deadline" ] \
+                || { echo "::error::timed out after ${TIMEOUT_MIN}m waiting for $job"; exit 1; }
+              echo "waiting for $job (build $(echo "$meta" | jq -r '.id'))"
+              sleep 60
+            done
+
+            status=$(echo "$meta" | jq -r '.buildstatus')
+            [ "$status" = "0" ] || { echo "::error::$job did not succeed (buildstatus $status)"; exit 1; }
+
+            bid=$(echo "$meta" | jq -er '.id')
+            # Pick the first file product rather than assuming it is numbered 1.
+            prod=$(echo "$meta" | jq -er '[.buildproducts | to_entries[] | select(.value.type == "file")] | first')
+            nr=$(echo "$prod"  | jq -er '.key')
+            name=$(echo "$prod" | jq -er '.value.name')
+            want=$(echo "$prod" | jq -er '.value.sha256hash')
+
+            echo "$job -> build $bid product $nr ($name)"
+            curl -fsSL --retry 3 --retry-delay 5 -o "$name" "$hydra/build/$bid/download/$nr"
+            got=$(sha256sum "$name" | cut -d' ' -f1)
+            [ "$got" = "$want" ] || { echo "::error::$name sha256 mismatch: got $got, Hydra says $want"; exit 1; }
+          done
+          ls -l ./*-nix-tools-static.zip
 
       # Hand the zips to the `release` job so it publishes exactly the
       # binaries this hydra-gated job pulled.

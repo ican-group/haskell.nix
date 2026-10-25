@@ -39,30 +39,26 @@ let
         ] ++ strippedNixToolsComponents;
       };
 
-  
-  zippedToolsNoIfdFor = fragment-name: 
-    let 
-      stringifyInputs = inputs: pkgs.lib.mapAttrsToList (name: value: pkgs.lib.trace "${name}=${value}" "${value}") inputs;
-      # stringifyInputs = inputs: map (x: "${x}") (builtins.attrValues inputs);
-
-      fragment-drv = "static-nix-tools-outputs.hydraJobs.${pkgs.stdenv.hostPlatform.system}.zipped.${fragment-name}";
-    in
-      pkgs.runCommand "${pkgs.stdenv.hostPlatform.system}-all-nix-tools" {
-        requiredSystemFeatures = [ "recursive-nix" ];
-        nativeBuildInputs = 
-          # [ inputs.nixpkgs-unstable.legacyPackages.${pkgs.stdenv.hostPlatform.system}.nix pkgs.gitMinimal ]
-          [ (pkgs.lib.trace pkgs.nix.version pkgs.nix) pkgs.gitMinimal ]
-          ++ stringifyInputs inputs
-          ++ stringifyInputs inputs.haskellNix.inputs;
-      } ''
-        export HOME=$(mktemp -d)
-        mkdir $out
-        cp $(nix --offline --extra-experimental-features "flakes nix-command" \
-          build --accept-flake-config --no-link --print-out-paths --no-allow-import-from-derivation \
-          --system ${pkgs.stdenv.hostPlatform.system} \
-          ${../.}#${fragment-drv})/*.zip $out/
-      '';
- 
+  # There used to be a `*-no-ifd` variant of each zip here: a `runCommand` with
+  # `requiredSystemFeatures = [ "recursive-nix" ]` that re-entered nix to build
+  # the same fragment with `--no-allow-import-from-derivation`, meaning to prove
+  # the static tools need no IFD.  It never proved that.  A flake's `nixConfig`
+  # overrides the command line, and nix-tools/flake.nix sets
+  # `allow-import-from-derivation = "true"`, so the flag was ignored -- the build
+  # logs show plan-to-nix running inside it (ci.zw3rk.com/build/1811419).  The
+  # nested build also resolved to the same derivation as the plain job above
+  # (flake.nix loads ./nix-tools through its own lock, exactly as `${../.}` did),
+  # so all it added was a second realisation and a copy.
+  #
+  # What it did cost was real: recursive-nix is unsupported by nix's external
+  # derivation builders, and when it did get scheduled somewhere it could run,
+  # nothing substituted, so darwin rebuilt ~470 derivations from source and hit
+  # the 7200s timeout.
+  #
+  # Reinstating the check means removing that `nixConfig` line and running the
+  # build at the top level -- no nesting, hence no recursive-nix.  Note it will
+  # fail until ./project.nix is materialized: the static project genuinely does
+  # use IFD today.
 
   zippedToolsForDarwin = makeZippedTools {
     customPkgs = pkgs;
@@ -83,15 +79,11 @@ let
   allZippedTools = 
     pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-darwin" || pkgs.stdenv.hostPlatform.system == "aarch64-darwin") {
       "nix-tools-static" = zippedToolsForDarwin;
-      "nix-tools-static-no-ifd" = zippedToolsNoIfdFor "nix-tools-static";
-    } 
-    // 
+    }
+    //
     pkgs.lib.optionalAttrs (pkgs.stdenv.hostPlatform.system == "x86_64-linux") {
       "nix-tools-static" = zippedToolsForLinux;
       "nix-tools-static-arm64" = zippedToolsForLinuxArm64;
-
-      "nix-tools-static-no-ifd" = zippedToolsNoIfdFor "nix-tools-static";
-      "nix-tools-static-arm64-no-ifd" = zippedToolsNoIfdFor "nix-tools-static-arm64";
     };
 
 in

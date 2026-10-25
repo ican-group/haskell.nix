@@ -282,3 +282,18 @@ test-suite tests
                      , cabal-install:cabal
   hs-source-dirs:      tests
   default-language:    Haskell2010
+
+-- Pure parser tests (no external programs / network), kept separate from the
+-- golden `tests` suite above so they can run standalone.
+test-suite stack-parser-tests
+  import:              warnings
+  type:                exitcode-stdio-1.0
+  main-is:             StackParserTests.hs
+  build-depends:       base
+                     , bytestring
+                     , nix-tools
+                     , tasty
+                     , tasty-hunit
+                     , yaml
+  hs-source-dirs:      tests
+  default-language:    Haskell2010

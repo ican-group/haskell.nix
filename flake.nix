@@ -9,6 +9,9 @@
     nixpkgs-2411 = { url = "github:NixOS/nixpkgs/nixpkgs-24.11-darwin"; };
     nixpkgs-2505 = { url = "github:NixOS/nixpkgs/nixpkgs-25.05-darwin"; };
     nixpkgs-2511 = { url = "github:NixOS/nixpkgs/nixpkgs-25.11-darwin"; };
+    # nixpkgs 26.05 is the last release supporting x86_64-darwin (unstable /
+    # 26.11 dropped it), so the CI matrix uses this pin for x86_64-darwin.
+    nixpkgs-2605 = { url = "github:NixOS/nixpkgs/nixpkgs-26.05-darwin"; };
     nixpkgs-unstable = { url = "github:NixOS/nixpkgs/nixpkgs-unstable"; };
     flake-compat = { url = "github:input-output-hk/flake-compat/hkm/gitlab-fix"; flake = false; };
     "hls-1.10" = { url = "github:haskell/haskell-language-server/1.10.0.0"; flake = false; };
@@ -69,18 +72,54 @@
       url = "github:stable-haskell/iserv-proxy?ref=iserv-syms";
       flake = false;
     };
+    # hyper-linux (`hl`, github:zw3rk/hyper-linux) runs Linux ELFs on Apple
+    # Silicon macOS via Hypervisor.framework.  It fills the qemu-user-mode slot
+    # (which doesn't exist on macOS) when cross-compiling darwin -> linux, so
+    # Template Haskell / tests can run the target binary.  This is a real flake
+    # (we want its `hl` package); keep its nixpkgs on ours.
+    hyper-linux = {
+      url = "github:zw3rk/hyper-linux";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+    # head.hackage's patches, plus the tool its CI uses to turn them into a
+    # package repository.  We build the repository ourselves rather than
+    # downloading the published one -- see overlays/head-hackage.nix.
+    head-hackage = {
+      url = "gitlab:ghc/head.hackage?host=gitlab.haskell.org";
+      flake = false;
+    };
+    hackage-overlay-repo-tool = {
+      url = "github:bgamari/hackage-overlay-repo-tool";
+      flake = false;
+    };
+
+    # cabal-doctest 1.0.12 (the newest release on hackage) does not build
+    # against Cabal 3.17: that release split Verbosity into VerbosityFlags and
+    # VerbosityHandles, so `buildVerbosity`'s result no longer typechecks where
+    # the Simple.Utils helpers want a Verbosity.  haskell-gi's custom Setup.hs
+    # depends on it, so the gi-gtk test needs the fixed fork.
+    #
+    # Pinned to the rev rather than the branch on purpose: the same rev is
+    # named as the `tag:` of the source-repository-package in
+    # test/gi-gtk/default.nix, and lib/call-cabal-project-to-nix.nix checks
+    # `inputMap.<url>.rev` against that tag.  Pinning keeps `nix flake update`
+    # from moving one half of that pair.
+    cabal-doctest = {
+      url = "github:stable-haskell/cabal-doctest/641cda5a4590f2384568a9598713f3039b99258d";
+      flake = false;
+    };
   };
 
   outputs =
     { self
     , nixpkgs
     , nixpkgs-unstable
+    , nixpkgs-2605
     , flake-compat
     , ...
     }@inputs:
     let
       callFlake = import flake-compat;
-
       ifdLevel = 3;
       runningHydraEvalTest = false;
       # The system that evaluation-time derivations (plan-to-nix, dummy-ghc,
@@ -96,7 +135,13 @@
       # but leaves any evaluator without darwin builders unable to evaluate
       # *anything* -- including the linux jobs.  CI on GitHub-hosted runners
       # overrides this to "x86_64-linux" (see .github/workflows/pipeline.yml).
-      evalSystem = "aarch64-darwin";
+      #
+      # Keep the `or` fallback so an IMPURE evaluation (`nix build --impure`)
+      # picks the evaluator's own system: that makes the linux jobs buildable
+      # on a machine with no darwin builders, which is how they get tested
+      # outside CI.  Pure evaluation is unaffected -- `currentSystem` is not in
+      # scope there, so it still resolves to the "aarch64-darwin" literal.
+      evalSystem = builtins.currentSystem or "aarch64-darwin";
       defaultCompiler = "ghc967";
       config = import ./config.nix;
 
@@ -112,6 +157,12 @@
       traceHydraJobs = x: x // { inherit (traceNames "" x) hydraJobs; };
 
       # systems supported by haskell.nix
+      # NB: x86_64-darwin is still supported, but ONLY via the 26.05 nixpkgs pin
+      # — nixpkgs unstable (26.11) dropped x86_64-darwin ("Nixpkgs 26.11 has
+      # dropped support for x86_64-darwin").  So every unstable-based output
+      # (legacyPackages, the `unstable` ci dimension, the nix-tools subflake)
+      # falls back to / excludes x86_64-darwin accordingly; see the pin fallback
+      # in `legacyPackages*` below and the `nixpkgsVersions` gate in ci.nix.
       systems = [
         "x86_64-linux"
       ] ++ (if runningHydraEvalTest then [ ] else [
@@ -170,15 +221,19 @@
               (import ./default.nix);
         };
 
+        # nixpkgs unstable (26.11) dropped x86_64-darwin, so on that platform
+        # the "unstable" pkgs fall back to the 26.05 pin (the last release that
+        # supports it).  Everywhere else these track the unstable nixpkgs as
+        # before.
         legacyPackages = forEachSystem (system:
-          import nixpkgs {
+          import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs) {
             inherit config;
             overlays = [ self.overlay ];
             localSystem = { inherit system; };
           });
 
         legacyPackagesUnstable = forEachSystem (system:
-          import nixpkgs-unstable {
+          import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs-unstable) {
             inherit config;
             overlays = [ self.overlay ];
             localSystem = { inherit system; };
@@ -276,6 +331,28 @@
               in
               cf.defaultNix.hydraJobs;
 
+            # And the stable-haskell variant, from ./nix-tools-sh.  Same
+            # independence as above: its own flake, its own lock, no dependency
+            # on the haskell.nix in ./.
+            #
+            # It is a second copy of the subflake rather than a build variant of
+            # the first because the two cannot share a source tree -- the fork
+            # changes the Haskell sources (Cabal2Nix, MakeInstallPlan,
+            # ProjectPlanOutput, Freeze, setup-ghcjs) to suit the stable-haskell
+            # Cabal fork at 3.17, not only cabal.project.  Carrying both trees
+            # here, instead of keeping the fork on an unmerged branch, is what
+            # lets `nix-tools-sh-*` tags be cut from master commits exactly like
+            # mainline ones; see .github/workflows/upload-artifacts-sh.yml.
+            nix-tools-sh-hydraJobs =
+              let
+                cf = callFlake {
+                  inherit system;
+                  pkgs = self.legacyPackages.${system};
+                  src = ./nix-tools-sh;
+                };
+              in
+              cf.defaultNix.hydraJobs;
+
             # The GHC compilers present in the CI matrix (the keys of the "GHC
             # version" dimension, under each nixpkgs pin).  Used by the
             # ci-status-matrix guard test below.
@@ -287,7 +364,9 @@
           in
           self.allJobs.${system}
           // lib.optionalAttrs (ifdLevel > 2)
-            { nix-tools = nix-tools-hydraJobs.${system} or { }; }
+            { nix-tools = nix-tools-hydraJobs.${system} or { };
+              nix-tools-sh = nix-tools-sh-hydraJobs.${system} or { };
+            }
           # Fail CI if a compiler enters/leaves the matrix without the README
           # CI-status table's generator being updated to match.  Only needs to
           # run on one system (the compiler dimension is system-independent).
@@ -327,27 +406,23 @@
       };
 
     in
-    traceHydraJobs (lib.recursiveUpdate flake (lib.optionalAttrs (ifdLevel > 2)
-      (
-        let pkgs = nixpkgs.legacyPackages."x86_64-linux"; in
-        {
-          hydraJobs.nix-tools = pkgs.releaseTools.aggregate {
-            name = "nix-tools";
-            constituents = (if runningHydraEvalTest then [ ] else [
-              "aarch64-darwin.nix-tools.static.zipped.nix-tools-static"
-              "x86_64-darwin.nix-tools.static.zipped.nix-tools-static"
-              "aarch64-darwin.nix-tools.static.zipped.nix-tools-static-no-ifd"
-              "x86_64-darwin.nix-tools.static.zipped.nix-tools-static-no-ifd"
-            ]) ++ [
-              "x86_64-linux.nix-tools.static.zipped.nix-tools-static"
-              "x86_64-linux.nix-tools.static.zipped.nix-tools-static-arm64"
-              "x86_64-linux.nix-tools.static.zipped.nix-tools-static-no-ifd"
-              "x86_64-linux.nix-tools.static.zipped.nix-tools-static-arm64-no-ifd"
-              (pkgs.writeText "gitrev" (self.rev or "0000000000000000000000000000000000000000"))
-            ];
-          };
-        }
-      )));
+    # There used to be a `hydraJobs.nix-tools` aggregate here, grouping the four
+    # `<system>.nix-tools.static.zipped.*` zips so `upload-artifacts.yml` had a
+    # single check to wait on.  It was expensive out of proportion to that.
+    #
+    # `releaseTools.aggregate` takes its constituents as job-name strings, which
+    # are Hydra metadata and create no nix dependency -- but nix-eval-jobs
+    # resolves named constituents and rewrites the derivation to depend on them,
+    # so the built `nix-tools.drv` really did list all four zips in `inputDrvs`.
+    # nix realises every input on the build machine whether the builder script
+    # reads it or not, so the aggregate dragged 476MB of zip closures onto
+    # whichever single agent Hydra happened to pick.  On the darwin-hosted linux
+    # builders, where import already dominates step time, that regularly hit the
+    # one-hour wall and failed, then retried elsewhere and copied it all again.
+    #
+    # The workflow now asks the Hydra API for the eval matching the commit and
+    # reads those four jobs from it directly, so nothing has to co-locate them.
+    traceHydraJobs flake;
 
   # --- Flake Local Nix Configuration ----------------------------
   nixConfig = {

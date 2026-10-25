@@ -1,5 +1,5 @@
 # Test building with the reinstallable GHC library (cabal)
-{ stdenv, lib, haskell-nix, haskellLib, testSrc, compiler-nix-name, evalPackages, buildPackages }:
+{ stdenv, lib, haskell-nix, haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem, buildPackages }:
 
 with lib;
 
@@ -7,7 +7,7 @@ let
   ghcVersion = buildPackages.haskell-nix.compiler.${compiler-nix-name}.version;
 
   project = haskell-nix.cabalProject {
-    inherit compiler-nix-name evalPackages;
+    inherit compiler-nix-name evalSystem;
     src = testSrc "ghc-lib-reinstallable";
     # Expose the GHC compiler tree as a `source-repository-package`
     # so cabal can install `lib:ghc` like any other reinstallable

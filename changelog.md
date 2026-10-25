@@ -1,6 +1,126 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## October 25, 2026
+
+  * Removed the `haskell-nix` knobs `emulatorNativeBuilderPackages` and
+    `emulatorNativeBuilderTH`.  Template Haskell slices, the `base` and
+    `th-orphans` slices and the native GHC 9.14 library no longer get
+    `emulatorSystemFeatures`: built on emulated (`nix-linux-builder`)
+    hosts they all passed.  `emulatorSystemFeatures` now applies only to
+    checks for hosts matching `emulatorNativeBuilderCheck`, by default
+    32-bit x86 Linux, whose exes cannot run under Rosetta.
+    `usesTemplateHaskell` stays: it still selects `-fexternal-interpreter`
+    for dynamically linked musl hosts.
+
+## October 16, 2026
+
+New compiler: `ghc914-sh`, GHC 9.14 from the stable-haskell fork, built
+with the stable-haskell Makefile rather than hadrian, and its boot
+libraries built by haskell.nix's v2 builder.  Projects using it get
+`builderVersion = 2` by default (v1 cannot build against the fork's boot
+packages).  It ships no shared libraries (`enableShared = false`), no
+haddock for cross targets and no DWARF build, and the tests that need
+those are skipped for it.
+
+Breaking changes around the eval platform (the platform `cabal` /
+`nix-tools` run on during plan construction).  Everything that used to
+take a nixpkgs for this now takes a system string, `evalSystem`, and
+reuses one memoised nixpkgs per system:
+
+  * The project option `evalPackages` is deprecated: set
+    `evalSystem = "<system>"` instead.  Setting `evalPackages` still works
+    for now (its system becomes the eval system) but warns.
+  * `haskell-nix.tool'` / `tools'` take an `evalSystem` string as their
+    first argument.  A nixpkgs is still accepted, with a warning.
+  * `haskell-nix.roots` takes `evalSystem`; its `evalPackages` argument is
+    still accepted, with a warning.
+  * The compiler override argument `ghcEvalPackages` is gone.  Compilers
+    now carry memoised per-eval-system variants: select
+    `ghc.evalWith.${evalSystem}` (or `ghc.override { evalSystem = ...; }`).
+  * `haskellLib.isNativeMusl` no longer classifies darwin → linux-musl
+    (same CPU architecture) as *native* musl; it now additionally requires
+    the build platform to be Linux, so those darwin-hosted builds take the
+    cross-compilation path.
+
+`haskell-nix.roots` (and `p.roots`) now also link the plan-nix
+derivations behind the compiler (hadrian, or stage1/stage2 for the
+stable-haskell GHCs; `hadrian-plan` is now `plan-hadrian`), the
+iserv-proxy projects, the v2 builder's `cabal-install`, and the eval-time
+dummy ghc/ghc-pkg pair — each for the build system and, when
+`evalSystem` differs, an `-eval` twin.  Building `roots` in CI therefore
+caches everything a later evaluation needs to realise via IFD, so
+evaluators (e.g. hydra's) substitute the plans instead of building them
+mid-eval.
+
+`builderVersion = 2`:
+
+  * Slices are now built with the stable-haskell fork of cabal-install
+    (3.17.0.1, `haskell-nix.v2-cabal-install`) for every compiler, not
+    mainline 3.16.1.0, and v2 projects' plans are made with the matching
+    fork nix-tools (`nix-tools-unchecked-sh`), so the plan's UnitIds are
+    the ones the slices compute.  UnitIds change, so every slice rebuilds
+    once.  v1 projects' plans are unchanged.
+  * That cabal keeps a project-local store, `dist-newstyle/store`, and the
+    v2 shell now seeds it there (under the project root, found as cabal
+    finds it) rather than `~/.cabal/store`.  The shell's generated
+    `cabal.project.local` also goes to the project root, and names the
+    build compiler, without which the fork cabal resolves its build stage
+    (`base` and all) from hackage.
+  * `shellFor`'s `tools.cabal = "latest"` now means the slice builder's
+    cabal-install, like `{}` already did: the newest one on hackage cannot
+    reuse the slices.  The same derivation is `project.v2-cabal-install`,
+    for shells not built with `shellFor`.
+
+Cross compilation:
+
+  * New component option `usesTemplateHaskell`, and new `haskell-nix`
+    knobs `emulatorSystemFeatures`, `emulatorNativeBuilderPackages`,
+    `emulatorNativeBuilderCheck` and `emulatorNativeBuilderTH` (plus
+    `haskellLib.emulatorRunAttrs`), for build farms that need to keep
+    emulator-run derivations (TH splices, test runs) off builders where
+    the emulator is itself emulated.  `emulatorSystemFeatures` is empty
+    by default, which turns the whole mechanism off.
+  * x86_64-linux cross builds use a user-mode-only qemu (9.1 – 11) with a
+    patch for running under Rosetta, and the iserv-proxy input now
+    follows `stable-haskell/iserv-proxy`.
+  * New `hyper-linux` flake input (`pkgs.hyper-linux`): on Apple Silicon
+    it is the emulator for darwin → linux cross builds, running Template
+    Haskell splices and cross-built test exes, where qemu-user does not
+    exist.
+  * The linux-cross and mingw test wrappers now quote their arguments
+    (`"$@"`), so arguments containing spaces reach the test exe intact.
+
+## August 17, 2026
+
+`builderVersion = 2`: `shellFor`'s `tools.cabal` now defaults to the same
+cabal-install the slice builder uses, instead of solving for the newest one
+in the project's hackage index.
+
+A UnitId is a hash of cabal-install's own rendering of a package's build
+inputs, so two cabal-install versions give the same package two different
+UnitIds.  When the shell's `cabal` was not the one that built the slices it
+missed every unit in the composed cabal store and rebuilt the whole
+dependency tree from source — no error, just a shell that had quietly
+stopped doing the one thing it exists for.  That is what happened when
+cabal-install 3.18.1.0 reached hackage on August 15 while the slice builder
+stayed pinned to 3.16.1.0.
+
+Only projects that ask for `shell.tools.cabal` are affected, and only when
+they do not pin a version.  An explicit pin still wins; you now get a
+warning when it isn't the version the slices were built with.
+
+The flakes we hand to users keep working on x86_64-darwin.  `hix init`, the
+`haskell-nix` flake template, the boilerplate behind `hix
+develop`/`build`/`run`, and the getting-started-flakes tutorial all follow
+`nixpkgs-unstable`, and nixpkgs 26.11 dropped that platform.  Because
+`flake-utils`' `eachSystem` evaluates every listed system in order to
+collect its output names, the one unimportable system broke `nix develop`
+and `nix build` on *all* of them — not just on Intel macOS.  Generated
+flakes now take a `nixpkgs-2605` input and import it for x86_64-darwin
+only, the same per-system selection haskell.nix's own `flake.nix` and
+`ci.nix` already make.
+
 ## June 12, 2026
 
 `builderVersion = 2`: test `checks` now run with more of the environment

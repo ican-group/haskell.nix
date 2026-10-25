@@ -26,10 +26,10 @@ semantics — the `Installed` entries were already in `completedSet`.
 
 --- a/src/Distribution/Client/InstallPlan.hs
 +++ b/src/Distribution/Client/InstallPlan.hs
-@@ -727,10 +727,21 @@
+@@ -776,10 +776,21 @@
    where
      completedSet' = Set.insert pkgid completedSet
-
+ 
 -    -- each direct reverse dep where all direct deps are completed
 +    -- each direct reverse dep where all direct deps are completed.
 +    --

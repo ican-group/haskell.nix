@@ -111,7 +111,7 @@ with types;
       ({ config, lib, pkgs, ... }: {
         packages.ghc.src = lib.mkForce ((pkgs.symlinkJoin {
           name = config.ghc.package.name + "-full-src";
-          paths = [ config.ghc.package.configured-src config.ghc.package.generated ];
+          paths = [ config.ghc.package.configured-src (config.ghc.package.generated-light or config.ghc.package.generated) ];
         }) + "/compiler");
         packages.ghc.package-description-override = lib.mkForce null;
       })

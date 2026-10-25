@@ -40,7 +40,7 @@ PARALLEL="${PARALLEL:-12}"
 # Compiler columns, in the resolved names Hydra uses (left to right).
 # Keep this on a single line: test/ci-status-matrix.nix parses it to check that
 # it matches the GHCs actually built in hydraJobs.
-COMPILERS=(ghc967 ghc984 ghc9103 ghc9124 ghc9141 ghc9141llvm)
+COMPILERS=(ghc967 ghc984 ghc9103 ghc9124 ghc9141 ghc9141llvm ghc914-sh)
 
 # Table rows, one per "<nixpkgs-pin> <build-host-system> <target>".  `native`
 # means "no cross compilation".  All other targets are cross targets built on
@@ -62,6 +62,8 @@ PLATFORMS=(
   "unstable aarch64-darwin native"
   "unstable aarch64-darwin ghcjs"
   "unstable aarch64-darwin wasi32"
+  "unstable aarch64-darwin aarch64-multiplatform-musl"
+  "unstable aarch64-darwin musl64"
   "unstable x86_64-darwin native"
   "unstable x86_64-darwin ghcjs"
   # nixpkgs `R2511`: native only

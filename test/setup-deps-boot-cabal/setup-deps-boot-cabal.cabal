@@ -1,0 +1,11 @@
+cabal-version: 2.4
+name:          setup-deps-boot-cabal
+version:       0.1.0.0
+-- See ./default.nix.  `Cabal` resolves to the compiler-provided boot
+-- unit; `entropy` (build-type: Custom, `setup-depends: Cabal < 3.17`)
+-- forces a second, configured `Cabal` into the plan when the bundled
+-- Cabal is >= 3.17.  Pinned so the dual-Cabal shape doesn't silently
+-- degrade when a future entropy release widens its setup bounds.
+library
+  build-depends:    base, Cabal, entropy == 0.4.1.11
+  default-language: Haskell2010

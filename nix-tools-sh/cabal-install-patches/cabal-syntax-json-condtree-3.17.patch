@@ -1,0 +1,159 @@
+Port Cabal-syntax-json to the Cabal-syntax 3.17 API (stable-haskell fork).
+
+3.17 dropped the constraint type parameter from CondTree/CondBranch
+(CondTree v c a -> CondTree v a; CondNode lost its middle field), turned the
+*Sources build-info fields into [ExtraSource Pkg], and split Verbosity
+(silent/normal are now VerbosityFlags).  Update all upstream CondTree uses,
+add ToJSON for ExtraSource, and wrap the verbosity for readGenericPackageDescription.
+
+--- a/src/Cabal/Syntax/Json.hs
++++ b/src/Cabal/Syntax/Json.hs
+@@ -35,6 +35,11 @@
+ import Distribution.Types.BuildType (BuildType)
+ import Distribution.Types.CondTree (CondBranch (..), CondTree (..))
+ import Distribution.Types.Condition (Condition (..))
++-- Cabal-syntax 3.17: the *Sources build-info fields became [ExtraSource Pkg]
++-- (was [SymbolicPath ...]).  Serialize as the underlying path string so the
++-- JSON matches the old SymbolicPath output.
++import Distribution.Types.ExtraSource (ExtraSource, ExtraSourceClass (extraSourceFile))
++import Distribution.Utils.Path (Build, Pkg)
+ import Distribution.Types.ConfVar (ConfVar (..))
+ import Distribution.Types.Dependency (Dependency (..))
+ import Distribution.Types.ExeDependency (ExeDependency (..))
+@@ -211,13 +216,22 @@
+     toJSON (COr l r) = JsonObject ["or" .= JsonArray [toJSON l, toJSON r]]
+     toJSON (CAnd l r) = JsonObject ["and" .= JsonArray [toJSON l, toJSON r]]
+ 
+-instance (ToJSON v, ToJSON c, ToJSON a) => ToJSON (CondTree v c a) where
+-    toJSON (CondNode a _ []) =
++instance ToJSON (ExtraSource Pkg) where
++    toJSON = JsonString . prettyShow . extraSourceFile
++
++instance ToJSON (ExtraSource Build) where
++    toJSON = JsonString . prettyShow . extraSourceFile
++
++-- Cabal-syntax 3.17 dropped the constraint type parameter from CondTree /
++-- CondBranch (CondTree v c a -> CondTree v a) and CondNode lost its middle
++-- (constraints) field.
++instance (ToJSON v, ToJSON a) => ToJSON (CondTree v a) where
++    toJSON (CondNode a []) =
+         toJSON a
+-    toJSON (CondNode a _ bs) =
++    toJSON (CondNode a bs) =
+         JsonArray $ toJSON a : map toJSON bs
+ 
+-instance (ToJSON v, ToJSON c, ToJSON a) => ToJSON (CondBranch v c a) where
++instance (ToJSON v, ToJSON a) => ToJSON (CondBranch v a) where
+     toJSON (CondBranch a t Nothing) =
+         JsonObject
+             [ ("_if", toJSON a)
+--- a/src/Cabal/Syntax/Pretty.hs
++++ b/src/Cabal/Syntax/Pretty.hs
+@@ -24,10 +24,10 @@
+ class PrettyFieldClass a where
+     prettyField :: a -> [PrettyField ()]
+ 
+-instance PrettyFieldClass a => PrettyFieldClass (CondTree ConfVar c a) where
+-    prettyField (CondNode a _ bs) = prettyField a <> concatMap prettyField bs
++instance PrettyFieldClass a => PrettyFieldClass (CondTree ConfVar a) where
++    prettyField (CondNode a bs) = prettyField a <> concatMap prettyField bs
+ 
+-instance PrettyFieldClass a => PrettyFieldClass (CondBranch ConfVar c a) where
++instance PrettyFieldClass a => PrettyFieldClass (CondBranch ConfVar a) where
+     prettyField (CondBranch c thenTree Nothing) =
+         [ prettySection "if" [ppCondition c] (prettyField thenTree)
+         ]
+--- a/src/Cabal/Syntax/Simplify.hs
++++ b/src/Cabal/Syntax/Simplify.hs
+@@ -34,13 +34,13 @@
+ 
+ -- | Simplifies a CondTree using a partial flag assignment. Conditions that cannot be evaluated are left untouched.
+ simplifyCondTree
+-    :: forall v c a
+-     . (Monoid a, Monoid c)
++    :: forall v a
++     . (Monoid a)
+     => (v -> Either v Bool)
+-    -> CondTree v c a
+-    -> CondTree v c a
+-simplifyCondTree eval (CondNode a c ifs) =
+-    CondNode a c branches <> mconcat trees
++    -> CondTree v a
++    -> CondTree v a
++simplifyCondTree eval (CondNode a ifs) =
++    CondNode a branches <> mconcat trees
+   where
+     (trees, branches) = partitionEithers $ map (simplifyCondBranch eval) ifs
+ 
+@@ -49,10 +49,10 @@
+ -- transforming the CondBranch into a CondTree. Therefore this function returns either a CondTree or
+ -- a CondBranch.
+ simplifyCondBranch
+-    :: (Monoid a, Monoid c)
++    :: (Monoid a)
+     => (v -> Either v Bool)
+-    -> CondBranch v c a
+-    -> Either (CondTree v c a) (CondBranch v c a)
++    -> CondBranch v a
++    -> Either (CondTree v a) (CondBranch v a)
+ simplifyCondBranch eval (CondBranch cv t me) =
+     case fst (simplifyCondition cv eval) of
+         Lit True -> Left $ simplifyCondTree eval t
+--- a/src/Cabal/Syntax/GenericPackageDescription.hs
++++ b/src/Cabal/Syntax/GenericPackageDescription.hs
+@@ -53,7 +53,7 @@
+ import Cabal.Syntax.Pretty (PrettyFieldClass (..), prettySection)
+ import Cabal.Syntax.Utils (FoldableWithIndex (..), Semialign (..))
+ 
+-type CondTree' a = CondTree ConfVar [Dependency] a
++type CondTree' a = CondTree ConfVar a
+ 
+ data GPD a b = GPD (FieldMap a) (ComponentMap b)
+     deriving (Show, Eq)
+@@ -108,7 +108,7 @@
+     -> GenericPackageDescription
+     -> GPD
+         (Fragment Json)
+-        (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
++        (CondTree ConfVar (FieldMap (Fragment Json)))
+ runGenericPackageDescription v gpd =
+     GPD (FieldMap meta) (ComponentMap components)
+   where
+--- a/src/Cabal/Syntax/CondTree.hs
++++ b/src/Cabal/Syntax/CondTree.hs
+@@ -139,11 +139,11 @@
+                 Just ts' -> [CondIfThen c' (CondTree ts')]
+ 
+ -- | Convert 'Distribution.Types.CondTree.CondTree' from Cabal-syntax into our 'CondTree'.
+-convertCondTree :: C.CondTree v c a -> CondTree v a
+-convertCondTree (C.CondNode a _ ifs) =
++convertCondTree :: C.CondTree v a -> CondTree v a
++convertCondTree (C.CondNode a ifs) =
+     CondTree (CondNode a :| map convertCondBranch ifs)
+ 
+-convertCondBranch :: C.CondBranch v c a -> CondNode v a
++convertCondBranch :: C.CondBranch v a -> CondNode v a
+ convertCondBranch (C.CondBranch c thenTree Nothing) =
+     CondIfThen
+         c
+--- a/app/Main.hs
++++ b/app/Main.hs
+@@ -184,7 +184,8 @@
+         Just (OtherOS os) -> putWarn $ "Specialising to unknown operating system: " ++ os ++ "."
+         _ -> pure ()
+ 
+-    gpd <- readGenericPackageDescription Verbosity.silent Nothing (makeSymbolicPath fn)
++    -- Cabal-syntax 3.17: `silent` is a VerbosityFlags; readGenericPackageDescription wants a Verbosity.
++    gpd <- readGenericPackageDescription (Verbosity.mkVerbosity Verbosity.defaultVerbosityHandles Verbosity.silent) Nothing (makeSymbolicPath fn)
+ 
+     let env = Env optsOs optsArch optsCompiler optsFlags
+         GPD top components0 =
+@@ -214,7 +215,7 @@
+     renderJson . toJSON
+ 
+ process
+-    :: ComponentMap (C.CondTree ConfVar c (FieldMap (Fragment Json)))
++    :: ComponentMap (C.CondTree ConfVar (FieldMap (Fragment Json)))
+     -> ComponentMap (FieldMap (Fragment Json))
+ process components0 = components4
+   where
