@@ -8,7 +8,7 @@ isolated, pre-populated **cabal store** and capturing the new entries
 that invocation produced.
 
 The unit of output is a *slice* — a directory laid out exactly the
-way cabal's `~/.cabal/store/ghc-X.Y.Z/` is, holding only the units
+way cabal's store is (`host/<platform>/`), holding only the units
 this component caused cabal to install.  Composing a downstream
 slice's starting store from upstream slices' `$out/store/` (via
 `lndir`) lets cabal reuse those units instead of rebuilding.
@@ -30,7 +30,7 @@ Switch builders at the project level by setting `builderVersion = 2;`
 - **Match what users see in development.**  `cabal v2-build` is the
   command users run interactively.  Producing a slice with the same
   command (and the same UnitId hash inputs) means the units we
-  pre-populate in `~/.cabal/store/` *can* be reused by a plain
+  pre-populate in the project's cabal store *can* be reused by a plain
   `cabal v2-build` inside the shell.
 
 ## What v2 produces
@@ -105,6 +105,14 @@ The captured set in `$out/store/` must equal exactly
    consumers can follow the closure the same way.  The
    `expectedUnitId` check at the end requires the captured set
    to equal `[expectedUnitId]` exactly.
+
+   Cabal-file overrides are copied before package patches and hooks, matching
+   V1. For patched or hooked sources, every slice index uses the resulting
+   tarball's Cabal file; it must not restore the unpatched override during
+   Cabal's revision update. Untouched Hackage sources retain their original
+   tarball and separate revised Cabal file. Run the source-only regression with
+   `make test-v2-cabal-overrides SYSTEM=aarch64-darwin TIMEOUT=300` (or your native
+   system); it does not build a Haskell compiler or package.
 
 5. **`builder/compose-store.nix`** is a tiny helper that lndirs
    slices into a single cabal-store layout, walking
@@ -231,12 +239,14 @@ and avoids the O(N²) heap blow-up the previous nix-side
 
 ## UnitId stability
 
-`cabal v2-build` hashes a fixed set of inputs to compute each
-component's UnitId (`pkgHashConfigInputs`):
+`cabal v2-build` hashes `PackageHashInputs` to compute each
+component's UnitId, including:
 
+- Source archive hash (`pkgHashSourceHash`),
+- Dependency component IDs,
 - `pkgHashCompilerId` (`with-compiler:` text in cabal.project),
 - `pkgHashFlagAssignment` (per-package `flags:`),
-- `pkgHashProgramArgs` (`--with-PROG=` flags + per-package
+- `pkgHashProgramArgs` (program option arguments, including per-package
   `ghc-options:`),
 - `pkgHashConfigureScriptArgs` (per-package `configure-options:`),
 - `pkgHashExtra(Include|Lib)Dirs` (per-package
@@ -290,6 +300,15 @@ build any package other than the slice's target — that almost
 always means a hash input has drifted.  After the build, the
 captured unit-ids must equal `[expectedUnitId]` exactly.
 
+Patching a Hackage archive after project planning can still violate this
+check: the slice uses a repacked archive while the project plan records the
+upstream archive's hash. A native AArch64 Darwin/GHC 9.14 build of patched
+`crypton-x509-system-1.6.8` reproduces this failure both before and after the
+Cabal-override ordering fix, with identical direct dependency IDs. Keeping
+the effective Cabal file in the slice's indexes does not resolve this
+planning/source consistency limit. Supply consistent sources before project
+planning; do not disable the unit-ID check to accept a different result.
+
 ## `checkAgainstPlan` — diagnosing divergence
 
 Each slice has a sibling derivation at
@@ -337,28 +356,41 @@ implementation in `builder/shell-for-v2.nix` (see the dispatch in
 to change their shell call site.
 
 Where the v1 shell wraps GHC with a pre-populated package db, the
-v2 shell pre-populates the user's cabal store
-(`~/.cabal/store/<ghcDir>/`) so a plain `cabal v2-build` inside
-the shell reuses our slices instead of rebuilding from source —
-and so public sublibs that the v1 GHC-package-db approach can't
-expose to cabal show up correctly.
+v2 shell pre-populates the project's cabal store so a plain
+`cabal v2-build` inside the shell reuses our slices instead of
+rebuilding from source — and so public sublibs that the v1
+GHC-package-db approach can't expose to cabal show up correctly.
+
+The v2 builder's cabal-install (`haskell-nix.v2-cabal-install`, the
+stable-haskell fork) keeps a project-local store under the build dir,
+`<project root>/dist-newstyle/store/`, with units under
+`host/<platform>/` (and a `build -> host` link for build-stage
+units).  The project root is found the way cabal finds it: the
+nearest directory at or above `$PWD` with a `cabal.project`, else
+`$PWD`.  A project built with `--builddir DIR` re-runs
+`haskell-nix-cabal-store-sync DIR`.
+
+The shell's `cabal` has to be that same cabal-install: a different
+one computes different UnitIds (and may not read the `host/`
+layout), misses every unit, and rebuilds the world.
+`tools.cabal = {}` or `"latest"` selects it; it is also available
+as `project.v2-cabal-install` for shells built without `shellFor`.
 
 The hook (`haskell-nix-cabal-store-sync`):
 
 1. Writes a `nix-store --add-root --indirect` gcroot for the
-   composed dep store under `~/.cabal/store/.haskell-nix-gcroots/`
+   composed dep store under `<store>/.haskell-nix-gcroots/`
    so `nix-collect-garbage` can't drop the slices our links point
    at.
 2. Scans every `<unit-id>.conf` / unit-dir / lib file in the
-   composed store against the user's existing
-   `~/.cabal/store/<ghcDir>/`, classifying each as new, same, or
-   conflict.
+   composed store against the project's existing store,
+   classifying each as new, same, or conflict.
 3. If conflicts exist and `--force` wasn't passed, errors out with
    a summary (and instructions to re-run with `--force`).
 4. Symlinks new (and, with `--force`, conflicting) entries from
-   composedStore into the user's store via `ln -s` (single files)
+   composedStore into the project's store via `ln -s` (single files)
    or `lndir` (unit dirs).
-5. Runs `ghc-pkg recache` on each touched `<ghcDir>/package.db`.
+5. Runs `ghc-pkg recache` on each touched package db.
 
 The script is exposed standalone as `haskell-nix-cabal-store-sync`,
 so a user can re-run it with `--force` from inside the shell.
@@ -385,7 +417,7 @@ overlay adds the cross project's shell to the main shell's
   `ghc-pkg`.
 - Merges `passthru.depSlices` from every `inputsFrom` shell into
   this shell's `composedStore` so cross + native slices both seed
-  `~/.cabal/store`.
+  the project's cabal store.
 
 ## How configure-args.nix integrates
 

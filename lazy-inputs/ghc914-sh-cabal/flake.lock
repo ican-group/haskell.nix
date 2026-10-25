@@ -1,0 +1,28 @@
+{
+  "nodes": {
+    "root": {
+      "inputs": {
+        "ghc914-sh-cabal": "ghc914-sh-cabal"
+      }
+    },
+    "ghc914-sh-cabal": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781708022,
+        "narHash": "sha256-Dm3rLwzbhJ8hRe1wewkPxqqSPuG5yHmC2ueb6r3TLw0=",
+        "ref": "feat/wasm-cross-ghcup-stack-next",
+        "rev": "f2e0a89e15cf6604cec9d93e26a4b3caf459b076",
+        "revCount": 15592,
+        "type": "git",
+        "url": "https://github.com/stable-haskell/Cabal.git"
+      },
+      "original": {
+        "ref": "feat/wasm-cross-ghcup-stack-next",
+        "type": "git",
+        "url": "https://github.com/stable-haskell/Cabal.git"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

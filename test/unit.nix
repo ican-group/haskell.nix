@@ -195,6 +195,38 @@ lib.runTests {
       expected = sourceRepos lf;
     };
 
+  # The `package *` baseline is in every v2 slice's cabal.project, so a
+  # local package configured differently (here `coverage: True`) must not
+  # change it, nor add blocks for the other packages.
+  testV2ProjectGlobalsOutlierStaysLocal =
+    let
+      unit = name: args: {
+        type = "configured";
+        pkg-name = name;
+        configure-args = [ "--prefix=./dist-newstyle/store/host/x86_64-unknown-linux"
+                           "--disable-shared" "--enable-optimization" ] ++ args;
+      };
+      deps = [ (unit "primitive" [ "--disable-coverage" ])
+               (unit "deepseq-extra" [ "--disable-coverage" ]) ];
+      globals = planJson: import ../builder/v2-project-globals.nix { inherit lib; } {
+        inherit planJson;
+        inherit (haskellLib) planUnitStage;
+      };
+      plain = globals (deps ++ [ (unit "local-a" [ "--disable-coverage" ]) ]);
+      cov   = globals (deps ++ [ (unit "local-b" [ "--enable-coverage" ]) ]);
+    in {
+      expr = {
+        sameBaseline = plain.projectConfigPragmas == cov.projectConfigPragmas;
+        plainBlocks = plain.perPkgConfigBlocks;
+        covBlocks = cov.perPkgConfigBlocks;
+      };
+      expected = {
+        sameBaseline = true;
+        plainBlocks = {};
+        covBlocks = { local-b = "package local-b\n  coverage: True\n"; };
+      };
+    };
+
   testParseRepositoryBlock =
     let
       # The Cabal2Nix output in hackage-to-nix is imported into a lambda

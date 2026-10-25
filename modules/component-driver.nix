@@ -4,7 +4,7 @@ let
     inherit haskellLib;
     ghc = config.ghc.package;
     compiler-nix-name = config.compiler.nix-name;
-    inherit (config) nonReinstallablePkgs hsPkgs compiler evalPackages builderVersion crossTemplateHaskellSupport cabalProjectLocal;
+    inherit (config) nonReinstallablePkgs hsPkgs compiler evalPackages builderVersion crossTemplateHaskellSupport v2LocalPackageSlices v2LocalPackageSliceNames cabalProjectLocal withBuildCompiler;
   };
 
 in
@@ -25,12 +25,48 @@ in
     type = lib.types.bool;
     default = true;
   };
+  # Propagated from the project-level `withBuildCompiler`: the project
+  # is planned as a two-stage build (the fork's `--with-build-compiler`
+  # / `--with-build-hc-pkg`).  The v2 shell needs to know so it can put
+  # the matching `with-build-compiler:` / `with-build-hc-pkg:` fields in
+  # the `cabal.project.local` it writes -- otherwise a `cabal build` in
+  # the shell has no build-stage compiler and resolves that stage out of
+  # hackage instead of the native compiler's installed packages.
+  options.withBuildCompiler = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+  };
+  # Propagated from the project-level `v2LocalPackageSlices`: build v2
+  # slices for `style: "local"` plan units in cabal `packages:` mode so
+  # each slice registers the plan's deterministic local unit id (see
+  # modules/project-common.nix and builder/comp-v2-builder.nix).
+  options.v2LocalPackageSlices = lib.mkOption {
+    type = lib.types.bool;
+    default = false;
+  };
+  # Propagated from the project-level `v2LocalPackageSliceNames`: the same
+  # local-`packages:` slicing, for the named packages only.
+  options.v2LocalPackageSliceNames = lib.mkOption {
+    type = lib.types.listOf lib.types.str;
+    default = [];
+  };
   # Project-level `cabalProjectLocal`, threaded into pkg-set's
   # module config so the v2 shell can write it out as a
   # `cabal.project.local` (or `cabal.project.<prefix>local` for
   # cross) at shell startup.  Set in `overlays/haskell.nix` by
   # inheriting from the project module's `config.cabalProjectLocal`.
   options.cabalProjectLocal = lib.mkOption {
+    type = lib.types.nullOr lib.types.lines;
+    default = null;
+  };
+  # Project-level `cabalProject` (the cabal.project text, read from
+  # the project src when not set explicitly), threaded like
+  # `cabalProjectLocal` above.  Only consumed (together with
+  # `cabalProjectLocal`) by `builder/v2-project-globals.nix` to tell a
+  # project-wide `documentation: True` apart from a plain
+  # `ghc-options: -haddock`; null means "text unknown" there, not
+  # "empty project".
+  options.cabalProject = lib.mkOption {
     type = lib.types.nullOr lib.types.lines;
     default = null;
   };
@@ -93,6 +129,14 @@ in
 
   config.nonReinstallablePkgs = if config.preExistingPkgs != []
    then ["rts"] ++ config.preExistingPkgs
+    # GHC 9.14+ rts.conf depends on libffi-clib at the ghc-pkg level, but
+    # cabal doesn't include it in preExistingPkgs (it's a C library wrapper
+    # that cabal doesn't track as a Haskell dependency).  Adding it here
+    # ensures make-config-files.nix copies its .conf from the compiler's
+    # package DB so the per-component DB is consistent.  Harmless for
+    # compilers that don't have libffi-clib (the find glob matches nothing).
+    ++ lib.optionals (builtins.compareVersions config.compiler.version "9.14" >= 0) [
+      "libffi-clib"]
     ++ lib.optionals (builtins.compareVersions config.compiler.version "8.11" < 0 && pkgs.stdenv.hostPlatform.isGhcjs) [
       "ghcjs-prim" "ghcjs-th"]
    else
@@ -153,6 +197,15 @@ in
       pkgsBuildBuild = buildModules.config.hsPkgs;
     } //
     lib.mapAttrs
-      (name: pkg: if !(options.packages.${name}.isDefined or true) || pkg == null then null else builder.build-package config pkg)
+      # `hasPackageDefinition` (see modules/package.nix) separates a real
+      # package from a `packages.<pkg-name>` record that exists only to carry
+      # by-name overrides onto the plan's UnitID-keyed packages.  Callers
+      # already null-check every by-name lookup -- e.g. `lookupDepPkg` in
+      # builder/comp-v2-builder.nix, whose own comment notes that a
+      # multi-sublib library's bare `hsPkgs.happy-lib` is "present but null"
+      # -- so null is what they expect here.  Without it they get a record
+      # that throws on first use, and the throw names an option
+      # (`packages.alex.package.identifier.version'), not the lookup.
+      (name: pkg: if !(options.packages.${name}.isDefined or true) || pkg == null || !(pkg.hasPackageDefinition or true) then null else builder.build-package config pkg)
       (config.packages // lib.genAttrs (config.nonReinstallablePkgs ++ config.bootPkgs) (_: null));
 }

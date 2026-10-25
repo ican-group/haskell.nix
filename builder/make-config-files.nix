@@ -52,17 +52,27 @@ let
   docDir         = ghc.docDir or "share/doc/ghc/html";
   packageCfgDir  = "${libDir}/package.conf.d";
 
+  # Regular library dependencies (from component.depends).
   # Fused single-pass: dependToLib → profiled → dwarf → chooseDrv.
   # Nix does not perform list fusion, so chaining four `map` calls
   # allocates four intermediate lists.  A single `map` avoids this.
-  libDeps = haskellLib.uniqueWithName (
+  regularLibDeps = haskellLib.uniqueWithName (
     map (d:
       let base = haskellLib.dependToLib d;
           prof = if needsProfiling then base.profiled or base else base;
           dw   = if enableDWARF then prof.dwarf or prof else prof;
       in chooseDrv dw
     ) component.depends
-  ) ++ prebuilt-depends;
+  );
+  # All library deps including prebuilt-depends.  Used for the config-files
+  # derivation (which needs all deps in the package DB) but NOT for
+  # propagation to downstream packages.  This prevents prebuilt-depends
+  # from leaking into the setup package DBs of packages that depend on
+  # this library.
+  # Deduplicate: a prebuilt-depend may already be in regularLibDeps when
+  # the plan also lists it as a regular dependency (e.g. rts:threaded-debug
+  # is both a plan dep and a prebuilt-depend for ghc-bin).
+  libDeps = haskellLib.uniqueWithName (regularLibDeps ++ prebuilt-depends);
   script = ''
     ${target-pkg} init $configFiles/${packageCfgDir}
 
@@ -98,13 +108,18 @@ let
     ${ # Copy over the nonReinstallablePkgs from the global package db.
     ''
       for p in ${lib.concatStringsSep " " nonReinstallablePkgs'}; do
-        find $unwrappedGhc/${packageCfgDir} -name $p'*.conf' -exec cp -f {} $configFiles/${packageCfgDir} \;
+        find $unwrappedGhc/${packageCfgDir} -name "$p-[0-9]*.conf" -exec cp -f {} $configFiles/${packageCfgDir} \;
       done
     ''}
     ${ # From GHC 9.6 the nixpkgs ghc derviations now use ${pkgroot} in their `.conf` files.
+       # Use `find -exec … {} +` rather than a bare glob so that this is a no-op
+       # (rather than an error) when the package DB is intentionally empty (e.g.
+       # bootstrap compilers that have no pre-installed packages).
     ''
-      sed -i 's|''${pkgroot}/../../../../|/nix/store/|' $configFiles/${packageCfgDir}/*.conf
-      sed -i 's|''${pkgroot}|${ghc}/${packageCfgDir}/..|' $configFiles/${packageCfgDir}/*.conf
+      find $configFiles/${packageCfgDir} -name '*.conf' \
+        -exec sed -i 's|''${pkgroot}/../../../../|/nix/store/|' {} +
+      find $configFiles/${packageCfgDir} -name '*.conf' \
+        -exec sed -i 's|''${pkgroot}|${ghc}/${packageCfgDir}/..|' {} +
     ''}
 
     for l in "''${pkgsHostTarget[@]}"; do
@@ -225,6 +240,7 @@ let
     # Enumerate dynamic-library-dirs with ''${pkgroot} expanded.
     local dirsToLink=$(
       for f in "$configFiles/${packageCfgDir}/"*.conf; do
+        [ -e "$f" ] || continue
         (cat $f; echo) | sed -En '/^ ./{H;$!d} ; x ; /^dynamic-library-dirs:/ {s/^dynamic-library-dirs:// ; s/ /\n/g ; s/\n\n*/\n/g; s/^\n//; p}'
       done | sed 's|''${pkgroot}/../../../|/nix/store/|' | sort -u
     )
@@ -233,6 +249,7 @@ let
     done
     # Edit the local package DB to reference the links directory.
     for f in "$configFiles/${packageCfgDir}/"*.conf; do
+      [ -e "$f" ] || continue
       chmod +w $f
       echo >> $f
       sed -i -E "/^ ./{H;$!d} ; x ; s,^dynamic-library-dirs:.*,dynamic-library-dirs: $dynamicLinksDir," $f
@@ -245,7 +262,7 @@ let
       propagatedBuildInputs = libDeps;
       passthru = {
         inherit (ghc) targetPrefix;
-        inherit script libDeps ghcCommand ghcCommandCaps libDir docDir packageCfgDir component;
+        inherit script libDeps regularLibDeps ghcCommand ghcCommandCaps libDir docDir packageCfgDir component prebuilt-depends;
       };
     } (''
     mkdir -p $out
@@ -254,7 +271,7 @@ let
   '');
 in {
   inherit (ghc) targetPrefix;
-  inherit script libDeps drv ghcCommand ghcCommandCaps libDir docDir packageCfgDir component;
+  inherit script libDeps regularLibDeps drv ghcCommand ghcCommandCaps libDir docDir packageCfgDir component prebuilt-depends;
   # Use ''${pkgroot} relative paths so that we can relocate the package database
   # along with referenced packages and still have it work on systems with
   # or without nix installed.

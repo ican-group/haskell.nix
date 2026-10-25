@@ -108,8 +108,15 @@ let self =
 #
 # We use this instead of `buildPackages` so that plan evaluation
 # can work on platforms other than the `buildPlatform`.
-, ghcEvalPackages ? pkgsBuildBuild
+, evalSystem ? pkgsBuildBuild.stdenv.hostPlatform.system
 }@args:
+
+# The eval platform is threaded as a system string (`evalSystem`).  Internal
+# cabalProject'/tool calls pass `evalSystem` (from which the project derives its
+# read-only `evalPackages` option, see modules/project-common.nix) rather than
+# setting `evalPackages` directly.  Per-eval-system variants are selected via
+# the compiler's `evalWith.${evalSystem}` attrset (built from `override` in the
+# stable-haskell final block), not by calling `.override` at each site.
 
 assert !(enableIntegerSimple || enableNativeBignum) -> gmp != null;
 
@@ -126,7 +133,7 @@ let
   inherit (haskell-nix.haskellLib) isCrossTarget;
 
   ghc = if bootPkgs.ghc.isHaskellNixCompiler or false
-    then bootPkgs.ghc.override { inherit ghcEvalPackages; }
+    then bootPkgs.ghc.evalWith.${evalSystem} or (bootPkgs.ghc.override { inherit evalSystem; })
     else bootPkgs.ghc;
 
   ghcHasNativeBignum = builtins.compareVersions ghc-version "9.0" >= 0;
@@ -147,7 +154,7 @@ let
       nativeBuildInputs = [
         (pkgsBuildBuild.haskell-nix.tool "ghc912" "libffi-wasm" {
           src = pkgsBuildBuild.haskell-nix.sources.libffi-wasm;
-          evalPackages = ghcEvalPackages;
+          inherit evalSystem;
         })
         targetPackages.buildPackages.llvmPackages.clang
         targetPackages.buildPackages.llvmPackages.llvm
@@ -172,10 +179,25 @@ let
       wasm-opt --low-memory-unused --debuginfo -Os libffi.so -o $out/lib/libffi.so
     '';
 
-  lib-wasm = pkgsBuildBuild.symlinkJoin {
-    name = "lib-wasm";
-    paths = [ targetPackages.wasilibc libffi-wasm ];
-  };
+  # The `node` wrapper below hands GHC's wasm dyld exactly ONE search directory,
+  # and the dyld resolves bare names (`libdl.so`, `libc.so`, …) inside it.  Our
+  # wasilibc installs its libraries per target, in `lib/wasm32-wasi/`, because
+  # that is the sysroot layout clang expects — so a plain join leaves `lib/`
+  # holding nothing but that subdirectory and Template Haskell dies with
+  # `findSystemLibrary(libdl.so): not found`.  Flatten instead, covering both
+  # layouts (wasilibc used to install straight into `lib/`), and leave the
+  # sysroot itself alone so the compile and link paths keep working.
+  lib-wasm = pkgsBuildBuild.runCommand "lib-wasm" { } ''
+    mkdir -p $out/lib
+    for d in ${targetPackages.wasilibc}/lib ${targetPackages.wasilibc}/lib/wasm32-wasi ${libffi-wasm}/lib; do
+      [ -d "$d" ] || continue
+      for f in "$d"/*; do
+        # -f skips the per-target subdirectory and its `wasm32-wasip1` alias.
+        [ -f "$f" ] || continue
+        ln -sfn "$f" "$out/lib/$(basename "$f")"
+      done
+    done
+  '';
 
   # TODO check if this possible fix for segfaults works or not.
   targetLibffi =
@@ -188,6 +210,25 @@ let
     else if stdenv.targetPlatform.isWasm
       then libffi-wasm
     else targetLibffi;
+
+  # Directory passed to --with-ffi-libraries.  hadrian configures the
+  # stage0 (build platform) in-tree libraries with the same TARGET
+  # --with-ffi-libraries dir as stage1 (the same hadrian bug class as the
+  # --with-curses-libraries one noted at `enableTerminfo` above).  On
+  # Linux build hosts the same-arch ELF libffi happens to satisfy the
+  # stage0 link, but when cross-compiling from darwin, ld64 finds the ELF
+  # libffi.so, ignores it as wrong-format, and stops searching — leaving
+  # ffi_call & co undefined in stage0 executables linked against the
+  # in-tree rts/ghci.  Joining the build-platform libffi.dylib into the
+  # same directory fixes both sides: ld64 prefers the .dylib, while the
+  # target's GNU ld only ever looks for libffi.so/libffi.a.
+  targetLibffiLibDir =
+    if haskell-nix.haskellLib.isCrossTarget && stdenv.buildPlatform.isDarwin && libffi != null
+    then pkgsBuildBuild.symlinkJoin {
+        name = "libffi-${targetPlatform.config}-with-build-dylib";
+        paths = [ (lib.getLib targetLibffi) (lib.getLib libffi) ];
+      } + "/lib"
+    else "${lib.getLib targetLibffi}/lib";
 
   targetGmp = targetPackages.gmp or gmp;
 
@@ -258,7 +299,7 @@ let
   configureFlags = [
         "--datadir=$doc/share/doc/ghc"
     ] ++ lib.optionals (enableTerminfo && !targetPlatform.isGhcjs && !targetPlatform.isWasm && !targetPlatform.isAndroid) ["--with-curses-includes=${lib.getDev targetPackages.ncurses}/include" "--with-curses-libraries=${lib.getLib targetPackages.ncurses}/lib"
-    ] ++ lib.optionals (targetLibffi != null && !targetPlatform.isGhcjs && !targetPlatform.isWasm) ["--with-system-libffi" "--with-ffi-includes=${lib.getDev targetLibffi}/include" "--with-ffi-libraries=${lib.getLib targetLibffi}/lib"
+    ] ++ lib.optionals (targetLibffi != null && !targetPlatform.isGhcjs && !targetPlatform.isWasm) ["--with-system-libffi" "--with-ffi-includes=${lib.getDev targetLibffi}/include" "--with-ffi-libraries=${targetLibffiLibDir}"
     ] ++ lib.optionals (targetPlatform.isWasm) [
         "--with-system-libffi"
     ] ++ lib.optionals (!enableIntegerSimple && !targetPlatform.isGhcjs && !targetPlatform.isWasm) [
@@ -344,7 +385,7 @@ let
       inherit compiler-nix-name;
       name = "hadrian";
       compilerSelection = p: p.haskell.compiler;
-      evalPackages = ghcEvalPackages;
+      inherit evalSystem;
       # TODO remove: keeps GHC rebuilds from being triggered every
       # time the v2 code path changes while v2 is still evolving.
       builderVersion = 1;
@@ -786,6 +827,13 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
             cp _build/stage1/compiler/build/*.hs-incl $generated/compiler/stage2/build || true
           ''
           # Save generated files for needed when building ghc-boot
+          # NB: the `Version.hss` guard below is a long-standing typo — it
+          # never matches, so this output ships without ghc-boot's
+          # `Version.hs`.  Left un-fixed deliberately: this string is part
+          # of the GHC derivation, so correcting it would rebuild every
+          # hadrian GHC.  All consumers prefer `generated-light` (which
+          # copies `Version.hs` correctly) via
+          # `ghc.generated-light or ghc.generated`.
           + ''
             mkdir -p $generated/libraries/ghc-boot/dist-install/build/GHC/Platform
             if [[ -f _build/stage1/libraries/ghc-boot/build/GHC/Version.hss ]]; then
@@ -860,6 +908,13 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
   passthru = {
     inherit bootPkgs targetPrefix libDir llvmPackages enableShared enableTerminfo useLLVM useLdLld hadrian hadrianProject;
 
+    # The plan-nix derivations that must be realised (via IFD) to evaluate
+    # this compiler.  `haskell-nix.roots` links them (and, when the eval
+    # system differs from the build system, the `evalWith` variant's) so CI
+    # pushes them to the binary cache and later evaluations substitute the
+    # plans instead of building them mid-eval.
+    plan-nixes = lib.optionalAttrs useHadrian { hadrian = hadrianProject.plan-nix; };
+
     # Our Cabal compiler name
     haskellCompilerName = "ghc-${version}";
 
@@ -867,7 +922,13 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     # We could add `configured-src` as an output of the ghc derivation, but
     # having it as its own derivation means it can be accessed quickly without
     # building GHC.
-    raw-src = evalPackages: evalPackages.stdenv.mkDerivation {
+    # Plain value for THIS compiler's eval platform (its `evalSystem`): the
+    # source tree built on the eval host, from which plan-to-nix reads bundled
+    # `.cabal` files.  Consumers select `ghc.evalWith.${evalSystem}.raw-src`
+    # (attribute selection is memoised) rather than calling a function; the eval
+    # nixpkgs comes from the memoised per-system `haskell-nix.evalPackages`.
+    raw-src = let evalPackages = pkgsBuildBuild.haskell-nix.evalPackages.${evalSystem};
+      in evalPackages.stdenv.mkDerivation {
       name = name + "-raw-src";
       inherit
         version
@@ -934,6 +995,128 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
       '';
     });
 
+    # Lightweight replacement for the `generated` *output*.
+    #
+    # The `generated` output above is harvested from `_build/stage1` *after a
+    # full GHC build*, so anything that consumes `ghc.generated` at evaluation
+    # time (e.g. `useLocalGhcLib = true` / the `ghc-lib-reinstallable` test,
+    # whose source-repository-package is `configured-src + generated` and must
+    # be realised during plan-to-nix to compute the v2 UnitId) forces the whole
+    # compiler to be built via IFD.
+    #
+    # None of the files we actually keep need the built compiler: they are
+    # exactly hadrian's `compilerDependencies` (hadrian/src/Rules/Generate.hs),
+    # whose generators (`genprimopcode`, `deriveConstants`, template
+    # substitution) run in `stage0Boot` — i.e. with the *boot* compiler.  So we
+    # ask hadrian to build only those file targets, which skips the stage1
+    # library compile entirely (minutes instead of hours) and is independently
+    # cacheable.
+    generated-light = stdenv.mkDerivation ({
+      name = name + "-generated";
+      inherit
+        buildInputs
+        version
+        patches
+        src
+        strictDeps
+        depsBuildTarget
+        depsTargetTarget
+        depsTargetTargetPropagated
+        nativeBuildInputs
+        postPatch
+        preConfigure
+        configurePlatforms
+        configureFlags
+        ;
+      # The main GHC derivation sets these at its top level, but this is a
+      # separate `mkDerivation` that inherits an explicit list of attributes,
+      # so it has to ask for them again.  Without them `LANG` is unset in the
+      # sandbox, glibc reports the ASCII codeset, and hadrian's locale-encoded
+      # `readFile'` of `primops.txt` dies on the `“safe”` in the
+      # `keepAlive#` docs:
+      #
+      #   primops.txt: hGetContents: invalid argument
+      #     (cannot decode byte sequence starting from 226)
+      #
+      # Narrow in practice, which is why it took a while to show up: only a
+      # hadrian older than 9.8 decodes the file in-process at all (9.8's
+      # `Builder.hs` swapped `readFile'` + `Stdin` for `FileStdin`, handing
+      # the subprocess a raw fd), and only 9.6/9.8 still have non-ASCII in
+      # `primops.txt.pp` (9.10 spells the quotes with ASCII).  So it hit
+      # exactly ghc96x on Linux; Darwin passed because its locale encoding is
+      # UTF-8 even with `LANG` unset.
+      LANG = "en_US.UTF-8";
+      LC_ALL = "en_US.UTF-8";
+      phases = [ "unpackPhase" "patchPhase" "autoreconfPhase"
+                 "configurePhase" "buildPhase" "installPhase" ];
+      # Same as `configured-src`: generate the `.cabal` files from the
+      # `.cabal.in` templates so hadrian can set the packages up.
+      postConfigure = ''
+        for a in libraries/*/*.cabal.in utils/*/*.cabal.in compiler/ghc.cabal.in; do
+          ${hadrian}/bin/hadrian ${hadrianArgs} "''${a%.*}"
+        done
+      '';
+      buildPhase = ''
+        runHook preBuild
+        # Only the generated-source targets — hadrian builds their prerequisites
+        # (genprimopcode / deriveConstants, both stage0Boot) but NOT lib:ghc.
+        #
+        # The set of `primop-*.hs-incl` files differs between GHC versions (GHC
+        # 9.14.1 dropped them entirely; older GHCs have ~20).  Rather than
+        # hardcode a version-specific list, read the authoritative set from
+        # hadrian's own `compilerDependencies` (Rules/Generate.hs), so this
+        # works for every GHC we build.
+        primopIncls=$(grep -oE 'primop-[A-Za-z0-9-]+\.hs-incl' hadrian/src/Rules/Generate.hs 2>/dev/null | sort -u)
+        echo "generated-light: primop includes:"; echo "$primopIncls" | sed 's/^/  /'
+        # NB: `-j1`.  genprimopcode is occasionally invoked without its mode
+        # argument under hadrian's parallel scheduler; serialising is reliable
+        # and cheap (each genprimopcode/deriveConstants run is sub-second).
+        ${hadrian}/bin/hadrian ${hadrianArgs} -j1 \
+          _build/stage1/compiler/build/GHC/Platform/Constants.hs \
+          _build/stage1/compiler/build/GHC/Settings/Config.hs \
+          _build/stage1/libraries/ghc-boot/build/GHC/Version.hs \
+          _build/stage1/libraries/ghc-boot/build/GHC/Platform/Host.hs \
+          $(for f in $primopIncls; do echo "_build/stage1/compiler/build/$f"; done)
+        runHook postBuild
+      '';
+      # Same layout as the `generated` output's population block above, but
+      # written to `$out`.  (The `.hss` typo in that block means the output
+      # never actually contained ghc-boot's `Version.hs`; this copies it.)
+      installPhase = ''
+        mkdir -p $out/includes
+        if [[ -f _build/stage1/lib/ghcplatform.h ]]; then
+          cp _build/stage1/lib/ghcplatform.h $out/includes
+        fi
+        mkdir -p $out/compiler/stage2/build/GHC/Platform
+        if [[ -f _build/stage1/compiler/build/GHC/Platform/Constants.hs ]]; then
+          cp _build/stage1/compiler/build/GHC/Platform/Constants.hs $out/compiler/stage2/build/GHC/Platform
+        fi
+        if [[ -f _build/stage1/compiler/build/GHC/Settings/Config.hs ]]; then
+          mkdir -p $out/compiler/stage2/build/GHC/Settings
+          cp _build/stage1/compiler/build/GHC/Settings/Config.hs $out/compiler/stage2/build/GHC/Settings
+        fi
+        if [[ -f compiler/GHC/CmmToLlvm/Version/Bounds.hs ]]; then
+          mkdir -p $out/compiler/GHC/CmmToLlvm/Version
+          cp compiler/GHC/CmmToLlvm/Version/Bounds.hs $out/compiler/GHC/CmmToLlvm/Version/Bounds.hs
+        fi
+        cp _build/stage1/compiler/build/*.hs-incl $out/compiler/stage2/build || true
+        mkdir -p $out/libraries/ghc-boot/dist-install/build/GHC/Platform
+        if [[ -f _build/stage1/libraries/ghc-boot/build/GHC/Version.hs ]]; then
+          cp _build/stage1/libraries/ghc-boot/build/GHC/Version.hs $out/libraries/ghc-boot/dist-install/build/GHC/Version.hs
+        fi
+        if [[ -f _build/stage1/libraries/ghc-boot/build/GHC/Platform/Host.hs ]]; then
+          cp _build/stage1/libraries/ghc-boot/build/GHC/Platform/Host.hs $out/libraries/ghc-boot/dist-install/build/GHC/Platform/Host.hs
+        fi
+      '';
+    } // lib.optionalAttrs (stdenv.buildPlatform.libc == "glibc") {
+      # `en_US.UTF-8` only resolves if the locale archive is on hand.
+      LOCALE_ARCHIVE = "${buildPackages.glibcLocales}/lib/locale/locale-archive";
+    } // lib.optionalAttrs targetPlatform.isGhcjs {
+      postPatch = ''
+        cp config.sub config.sub.ghcjs
+      '';
+    });
+
     # Used to detect non haskell-nix compilers (accidental use of nixpkgs compilers can lead to unexpected errors)
     isHaskellNixCompiler = true;
 
@@ -948,7 +1131,7 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
       disableLargeAddressSpace = true;
     });
   } // extra-passthru // {
-    buildGHC = extra-passthru.buildGHC.override { inherit ghcEvalPackages; };
+    buildGHC = extra-passthru.buildGHC.evalWith.${evalSystem} or (extra-passthru.buildGHC.override { inherit evalSystem; });
   };
 
   meta = {
@@ -1099,7 +1282,27 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
         runHook preInstall
         ${hadrian}/bin/hadrian ${hadrianArgs} binary-dist-dir
         cd _build/bindist/ghc-*
-        ./configure --prefix=$out ${lib.concatStringsSep " " configureFlags}
+        ./configure --prefix=$out ${lib.concatStringsSep " " configureFlags}${
+          # Pre-answer GHC's C++ standard library probe on Darwin.
+          #
+          # FP_FIND_CXX_STD_LIB (m4/fp_find_cxx_std_lib.m4) links a test object
+          # with `"$CC" -o actest actest.o -lc++ -lc++abi -L"$d" 2>/dev/null`.
+          # autoconf >= 2.72 appends the C23 option to CC when the compiler needs
+          # one, so in *this* configure run CC is two words
+          # ("…/bin/cc -std=gnu23"); the quoted "$CC" is then executed as a single
+          # filename, every candidate library set "fails" (the exec error being
+          # what 2>/dev/null discards), and configure aborts with
+          # "Failed to find C++ standard library" — after the whole compiler has
+          # already been built.  The source tree's own configure is unaffected
+          # because its CC stays one word, which is why only this second,
+          # bindist configure broke, and only for some GHC versions.
+          #
+          # A non-empty CXX_STD_LIB_LIBS makes the macro skip the probe entirely.
+          # The matching *_DIRS variables are deliberately left unset: a
+          # successful probe ends up with them empty too (it maps its `-L.` answer
+          # to ""), and the dynamic-library-dirs of system-cxx-std-lib-1.0.conf
+          # are filled in just below.
+          lib.optionalString stdenv.isDarwin " CXX_STD_LIB_LIBS='c++ c++abi'"}
         ${lib.optionalString (stdenv.isDarwin && (__tryEval libcxxabi).success) ''
           substituteInPlace mk/system-cxx-std-lib-1.0.conf \
             --replace 'dynamic-library-dirs:' 'dynamic-library-dirs: ${libcxx}/lib ${libcxxabi}/lib'

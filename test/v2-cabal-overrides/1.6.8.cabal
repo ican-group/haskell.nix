@@ -1,0 +1,54 @@
+cabal-version:      >=1.10
+name:               crypton-x509-system
+version:            1.6.8
+license:            BSD3
+license-file:       LICENSE
+copyright:          Vincent Hanquez <vincent@snarc.org>
+maintainer:         Kazu Yamamoto <kazu@iij.ad.jp>
+author:             Vincent Hanquez <vincent@snarc.org>
+stability:          experimental
+homepage:           https://github.com/kazu-yamamoto/crypton-certificate
+synopsis:           Handle per-operating-system X.509 accessors and storage
+description:
+    System X.509 handling for accessing operating system dependents store and other storage methods
+
+category:           Data
+build-type:         Simple
+extra-source-files: ChangeLog.md
+
+source-repository head
+    type:     git
+    location: https://github.com/kazu-yamamoto/crypton-certificate
+    subdir:   x509-system
+
+library
+    exposed-modules:
+        System.X509
+        System.X509.Common
+        System.X509.Unix
+        System.X509.MacOS
+
+    default-language: Haskell2010
+    ghc-options:      -Wall
+    build-depends:
+        base >=3 && <5,
+        bytestring,
+        mtl,
+        containers,
+        directory,
+        filepath,
+        process,
+        pem >=0.1 && <0.3,
+        crypton-x509 >=1.6,
+        crypton-x509-store >=1.6.2
+
+    if os(windows)
+        exposed-modules: System.X509.Win32
+        cpp-options:     -DWINDOWS
+        extra-libraries: Crypt32
+        build-depends:
+            Win32,
+            asn1-encoding
+
+    if os(osx)
+        cpp-options: -DMACOSX
