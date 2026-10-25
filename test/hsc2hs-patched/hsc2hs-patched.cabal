@@ -1,0 +1,12 @@
+cabal-version: 3.0
+name:          hsc2hs-patched
+version:       0.1.0.0
+build-type:    Simple
+
+executable hsc2hs-patched
+  main-is:            Main.hs
+  other-modules:      Constants
+  hs-source-dirs:     src
+  build-depends:      base
+  build-tool-depends: hsc2hs:hsc2hs
+  default-language:   Haskell2010

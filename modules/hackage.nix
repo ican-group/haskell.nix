@@ -98,12 +98,15 @@ in
     # this should allow us to use `config` overrides
     # in the nixpkgs setup, and properly override the
     # complier as needed.
-    default = (pkgs.buildPackages.haskell-nix.compiler.${config.compiler.nix-name} or (throw ''
-      This version of Nixpkgs does not contain GHC ${config.compiler.version}
-      (or it is not present at attribute '${config.compiler.nix-name})').
-      Either switch to a version of Nixpkgs which does have this version, or use a version
-      of GHC which the current version of Nixpkgs contains.
-    '')).override { ghcEvalPackages = config.evalPackages; };
+    default =
+      let baseGhc = pkgs.buildPackages.haskell-nix.compiler.${config.compiler.nix-name} or (throw ''
+            This version of Nixpkgs does not contain GHC ${config.compiler.version}
+            (or it is not present at attribute '${config.compiler.nix-name})').
+            Either switch to a version of Nixpkgs which does have this version, or use a version
+            of GHC which the current version of Nixpkgs contains.
+          '');
+          evalSystem = config.evalPackages.stdenv.hostPlatform.system;
+      in baseGhc.evalWith.${evalSystem} or (baseGhc.override { evalSystem = evalSystem; });
     defaultText = "pkgs.buildPackages.haskell-nix.compiler.\${config.compiler.nix-name}";
   };
 

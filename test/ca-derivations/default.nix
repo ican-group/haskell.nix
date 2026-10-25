@@ -1,6 +1,6 @@
 # Test if derivations are content addressed building two derivations producing
 # the same outputs and checking if the path stores are equals
-{ stdenv, pkgs, lib, mkCabalProjectPkgSet, project', haskellLib, testSrc, compiler-nix-name, evalPackages, CADerivationsEnabled }:
+{ stdenv, pkgs, lib, mkCabalProjectPkgSet, project', haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem, CADerivationsEnabled }:
 
 with lib;
 
@@ -23,13 +23,13 @@ let
   '';
 
   projectPlain = project' {
-    inherit compiler-nix-name evalPackages cabalProject;
+    inherit compiler-nix-name evalSystem cabalProject;
     src = srcPlain;
     modules = [{ contentAddressed = true; }];
   };
 
   projectWithComment = project' {
-    inherit compiler-nix-name evalPackages cabalProject;
+    inherit compiler-nix-name evalSystem cabalProject;
     src = srcWithComment;
     modules = [{ contentAddressed = true; }];
   };

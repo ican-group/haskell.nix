@@ -2,8 +2,13 @@
   # This is a template created by `hix init`
   inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
+  # nixpkgs unstable (26.11) dropped x86_64-darwin, and `eachSystem` below
+  # evaluates *every* supported system to collect its output names — so one
+  # unimportable system breaks `nix develop` on all of them.  Keep the last
+  # pin that supports it and use it for that system only.
+  inputs.nixpkgs-2605.follows = "haskellNix/nixpkgs-2605";
   inputs.flake-utils.url = "github:numtide/flake-utils";
-  outputs = { self, nixpkgs, flake-utils, haskellNix }:
+  outputs = { self, nixpkgs, nixpkgs-2605, flake-utils, haskellNix }:
     let
       supportedSystems = [
         "x86_64-linux"
@@ -24,7 +29,8 @@
               };
           })
         ];
-        pkgs = import nixpkgs { inherit system overlays; inherit (haskellNix) config; };
+        pkgs = import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs)
+          { inherit system overlays; inherit (haskellNix) config; };
         flake = pkgs.hixProject.flake {};
       in flake // {
         legacyPackages = pkgs;

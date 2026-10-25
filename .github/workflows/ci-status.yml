@@ -21,7 +21,7 @@ concurrency:
 jobs:
   update-ci-status:
     # Scheduled runs only make sense on the canonical repo, not on forks.
-    if: github.event_name == 'workflow_dispatch' || github.repository == 'input-output-hk/haskell.nix'
+    if: github.event_name == 'workflow_dispatch' || github.repository == 'ican-group/haskell.nix'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

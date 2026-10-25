@@ -61,6 +61,13 @@ in
       type = attrsOf unspecified;
       default = {};
     };
+    # The same index preferring the fork's BUILD-stage twins on id
+    # collisions (setup scopes are build-stage; see
+    # modules/install-plan/override-package-by-name.nix).
+    plan-json-by-id-build = mkOption {
+      type = attrsOf unspecified;
+      default = {};
+    };
     # Project-global data the v2 builder derives once from the install
     # plan (`projectConfigPragmas`, the doc-enabled package set and the
     # source-repo flag map).  Computed in

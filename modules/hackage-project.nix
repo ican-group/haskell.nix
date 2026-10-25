@@ -17,6 +17,12 @@ in {
         config.evalPackages.runCommand "from-hackage-${fullName}" {} ''
           mkdir $out
           echo "extra-packages: ${fullName}" > $out/cabal.project
+          # The stable-haskell cabal fork rejects a project with neither
+          # `packages:` nor `optional-packages:` (Cabal-7168).  A hackage tool
+          # has no local packages, so give it an `optional-packages:` glob that
+          # matches nothing here — it satisfies the check without adding any
+          # package (UnitId-neutral).
+          echo "optional-packages: ./*" >> $out/cabal.project
         '';
       # Disable git cleanSourceWith filtering
       filterPath = { path, ... }: path;

@@ -46,7 +46,9 @@ runCommand name
   # produced them, so they conflict with each other once we merge.
   # Drop the symlinks and let `ghc-pkg recache` regenerate one cache
   # describing the merged set.
-  for pkgdb in $out/ghc-*/package.db; do
+  # Two slice-store layouts: mainline cabal's `$out/ghc-<ver>/package.db`
+  # and the stable-haskell fork's staged `$out/host/<platform>/package.conf.d`.
+  for pkgdb in $out/ghc-*/package.db $out/host/*/package.conf.d; do
     [ -d "$pkgdb" ] || continue
     for f in package.cache package.cache.lock; do
       if [ -L "$pkgdb/$f" ]; then rm "$pkgdb/$f"; fi

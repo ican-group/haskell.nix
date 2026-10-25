@@ -246,7 +246,21 @@ in {
   check = import ./check.nix {
     inherit stdenv lib haskellLib;
     inherit (pkgs) pkgsBuildBuild;
+    # Every check for a host matching `emulatorNativeBuilderCheck` is
+    # pinned -- see `overlays/haskell.nix`.
+    emulatorSystemFeatures = pkgs.haskell-nix.emulatorSystemFeatures or [];
+    emulatorNativeBuilderCheck = pkgs.haskell-nix.emulatorNativeBuilderCheck or (_: false);
   };
+
+  # The same pin for a hand-written derivation that runs a host-platform exe
+  # through its component's `testWrapper` itself, rather than via `check`
+  # (e.g. test/cabal-simple-prof's `run`).  Merge into its attrs.
+  emulatorRunAttrs =
+    let features = pkgs.haskell-nix.emulatorSystemFeatures or [];
+    in lib.optionalAttrs (features != []
+        && (pkgs.haskell-nix.emulatorNativeBuilderCheck or (_: false)) stdenv.hostPlatform) {
+      requiredSystemFeatures = features;
+    };
 
   # Do coverage of a package
   coverageReport = import ./cover.nix {
@@ -268,8 +282,12 @@ in {
   # This is the same as isCrossHost but for use when building ghc itself
   isCrossTarget = stdenv.targetPlatform != stdenv.hostPlatform
     && !(stdenv.hostPlatform.isLinux && stdenv.targetPlatform.isMusl && stdenv.hostPlatform.linuxArch == stdenv.targetPlatform.linuxArch);
-  # Native musl build-host-target combo
-  isNativeMusl = stdenv.targetPlatform.isMusl
+  # Native musl build-host-target combo.  The build platform must be
+  # Linux: `linuxArch` is defined for any OS (aarch64-darwin is "arm64"
+  # too), but a darwin build machine cannot run the musl binaries, so
+  # same-arch darwin->linux-musl is a real cross compile, not native.
+  isNativeMusl = stdenv.buildPlatform.isLinux
+    && stdenv.targetPlatform.isMusl
     && stdenv.buildPlatform.linuxArch == stdenv.hostPlatform.linuxArch
     && stdenv.hostPlatform.linuxArch == stdenv.targetPlatform.linuxArch;
 
@@ -294,6 +312,59 @@ in {
 
 
   cabalToNixpkgsLicense = import ./spdx/cabal.nix pkgs;
+
+  # Every direct Hackage tarball URL — of the form
+  #   https://hackage.haskell.org/package/NAME-VER/NAME-VER.tar.gz
+  # — occurring in `text`, parsed to `{ url; name; version; }` (unique, in
+  # first-seen order).  Shared by `modules/replace-hackage-tarball-urls.nix`
+  # (URL rewrite + build `src` overrides) and the stable-haskell overlay's
+  # boot-package dump synthesis, which both need the same (name, version) set.
+  hackageTarballUrls = text:
+    let
+      urlRe = "https://hackage[.]haskell[.]org/package/[^/[:space:]]+/[^/[:space:]]+[.]tar[.]gz";
+      urls = lib.unique (builtins.concatMap
+        (x: if builtins.isList x then x else [])
+        (builtins.split "(${urlRe})" text));
+    in map (url:
+         let m = builtins.match
+           "https://hackage[.]haskell[.]org/package/[^/]+/(.+)-([0-9][0-9.]*)[.]tar[.]gz" url;
+         in { inherit url; name = builtins.elemAt m 0; version = builtins.elemAt m 1; })
+       urls;
+
+  # The stable-haskell fork stage a plan.json unit belongs to ("build" =
+  # runs on the build machine: setup scopes, build tools; "host" = the
+  # artifacts' platform).  make-install-plan strips the fork's
+  # `host:`/`build:` id qualifiers (haskell.nix keys everything by the
+  # bare id), which loses the stage as an explicit field — but it
+  # survives in two places on configured units:
+  #   * the staged `--prefix=./dist-newstyle/store/<stage>/<platform>`
+  #     configure-arg (every configured unit);
+  #   * the `dist-dir` (`./dist-newstyle/build/<stage>/<platform>/...`,
+  #     local/inplace units only).
+  # Both are relative to where plan-to-nix ran, so for a project in a
+  # subdirectory they carry it first (`./test/cabal-22/dist-newstyle/...`,
+  # every test project); match any leading path.  Anchoring on
+  # `./dist-newstyle` sent every unit of such a plan to "host", which merged
+  # the two stages' configure-args in the slice project
+  # (builder/v2-project-globals.nix) and let a Host `shared: True` reach the
+  # Build-stage tools.
+  # Pre-existing units carry neither; callers treat them per context
+  # (in a two-stage plan they are all build-stage — the target db is
+  # empty).  Defaults to "host": mainline plans are single-stage.
+  planUnitStage = p:
+    let
+      fromArgs =
+        let ms = builtins.concatMap (a:
+              let m = builtins.match "--prefix=(.*/)?dist-newstyle/store/([a-z]+)/.*" (toString a);
+              in if m == null then [] else [ (builtins.elemAt m 1) ])
+              (p.configure-args or []);
+        in if ms == [] then null else builtins.head ms;
+      fromDist =
+        let m = builtins.match "(.*/)?dist-newstyle/build/([a-z]+)/.*" (p.dist-dir or "");
+        in if m == null then null else builtins.elemAt m 1;
+    in if fromArgs != null then fromArgs
+       else if fromDist != null then fromDist
+       else "host";
 
   # This function is like
   #   `src + (if subDir == "" then "" else "/" + subDir)`
@@ -610,6 +681,8 @@ in {
     then "aarch64"
     else if hostPlatform.isi686
     then "i386"
+    else if hostPlatform.isx86_64
+    then "x86_64"
     else abort "Don't know which QEMU to use for hostPlatform ${hostPlatform.config}. Please provide qemuSuffix";
 
   # How to run ldd when checking for static linking
@@ -660,9 +733,8 @@ in {
   # almost never reflects intent.
   # Warns (but passes) when items share a key but differ structurally --
   # typically a list-merge accident where an explicit override appended to
-  # a default rather than replacing it (use `lib.mkForce`).  Master's
-  # `checkUnique` allowed this silently; bd93f01d3 unintentionally tightened
-  # it to an error; we keep master's tolerance but flag it for visibility.
+  # a default rather than replacing it (use `lib.mkForce`).  That case
+  # used to pass silently; it stays allowed, but is flagged for visibility.
   checkUnique = msg: x:
     let
       grouped = builtins.groupBy uniqueWithNameKey x;

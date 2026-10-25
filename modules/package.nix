@@ -225,6 +225,29 @@ in
       defaultText = "\${config.package.identifier.name}-\${config.package.identifier.version}";
     };
 
+    # Does this record describe a package, or is it only an alias target?
+    #
+    # The plan defines `packages.<UnitID>`; `packages.<pkg-name>` exists so
+    # that a module can override a package by name, and
+    # modules/install-plan/override-package-by-name.nix copies those
+    # definitions onto every matching id.  So a single
+    # `packages.foo.patches = [...]` in configuration-nix.nix -- or a
+    # `packages.foo.additional-prebuilt-depends` from the stable-haskell
+    # boot-package injection -- is enough to make `options.packages.foo`
+    # *defined* while nothing ever gives it a `package`.  Building such a
+    # record throws "The option `packages.foo.package.identifier.version'
+    # was accessed but has no value defined".
+    #
+    # `options.packages.<name>.package…` is not reachable from outside the
+    # submodule (the nested options only exist in here), which is why this
+    # is an option rather than a check at the use site.
+    hasPackageDefinition = lib.mkOption {
+      type = types.bool;
+      internal = true;
+      default = options.package.identifier.name.isDefined;
+      defaultText = "options.package.identifier.name.isDefined";
+    };
+
     sha256 = lib.mkOption {
       type = types.nullOr types.str;
       default = null;

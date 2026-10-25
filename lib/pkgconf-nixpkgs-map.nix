@@ -17,8 +17,23 @@ pkgs:
           names));
 
     # Prefer the new package name when available, fall back to old name
-    # for backwards compatibility with older nixpkgs.
+    # for backwards compatibility with older nixpkgs.  Works when the new name
+    # appears exactly as the old one becomes a deprecated alias (e.g.
+    # xxHash->xxhash, QuadProgpp->quadprogpp, both landed in nixpkgs 26.05).
     prefer = new: old: if pkgs ? ${new} then new else old;
+
+    # `librest_1_0` (the REST 1.0 pkg-config provider) is special: `prefer`
+    # does not work because `librest` also exists on every nixpkgs as a
+    # *distinct* package (the older 0.7 API — version 0.8.x through 26.05) that
+    # does NOT provide `rest-1.0.pc`; that is exactly why the map historically
+    # pointed `rest-1.0` at `librest_1_0`.  In nixpkgs 26.11 `librest_1_0`
+    # became a deprecated alias (warns) after the 1.0 provider was renamed to
+    # `librest`.  So gate on the nixpkgs release: keep the real `librest_1_0` up
+    # to 26.05, and use `librest` from 26.11 on.  (The boundary "26.06" avoids
+    # the "26.11pre-git" vs "26.11" pre-release comparison edge case.)
+    restLib =
+      if builtins.compareVersions lib.version "26.06" >= 0
+      then "librest" else "librest_1_0";
 
     # Compatibility set for the deprecated xorg.* package set.
     # New nixpkgs promotes xorg packages to top-level with new names.
@@ -158,7 +173,7 @@ pkgs:
     "pulse-simple"                       = [ "libpulseaudio" ];
     "python-3.3"                         = [ "python33" ];
     "python-3.4"                         = [ "python34" ];
-    "quadprog"                           = [ "QuadProgpp" ];
+    "quadprog"                           = [ (prefer "quadprogpp" "QuadProgpp") ];
     "rt"                                 = []; # in glibc
     "rtlsdr"                             = [ "rtl-sdr" ];
     "ruby1.8"                            = [ "ruby" ];
@@ -3191,8 +3206,8 @@ pkgs:
 #    "openssl" = [ "libressl_3_5" ];
     "rest-0.7" = [ "librest" ];
     "rest-extras-0.7" = [ "librest" ];
-    "rest-1.0" = [ "librest_1_0" ];
-    "rest-extras-1.0" = [ "librest_1_0" ];
+    "rest-1.0" = [ restLib ];
+    "rest-extras-1.0" = [ restLib ];
     "librevenge-0.0" = [ "librevenge" ];
     "librevenge-generators-0.0" = [ "librevenge" ];
     "librevenge-stream-0.0" = [ "librevenge" ];
@@ -5620,7 +5635,7 @@ pkgs:
     "xtl" = [ "xtl" ];
     "xwayland" = [ "xwayland" ];
     "libxwiimote" = [ "xwiimote" ];
-    "libxxhash" = [ "xxHash" ];
+    "libxxhash" = [ (prefer "xxhash" "xxHash") ];
     "liblzma" = [ "xz" ];
     "yajl" = [ "yajl" ];
     "yara" = [ "yara" ];

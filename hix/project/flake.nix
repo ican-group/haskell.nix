@@ -4,11 +4,14 @@
   description = "Default hix flake";
   inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
+  # nixpkgs unstable (26.11) dropped x86_64-darwin, so importing it for that
+  # system throws.  Keep the last pin that supports it and use it there only.
+  inputs.nixpkgs-2605.follows = "haskellNix/nixpkgs-2605";
   inputs.flake-utils.url = "github:numtide/flake-utils";
   inputs.projectArgs.url = "github:input-output-hk/empty-flake";
   inputs.projectArgs.flake = false;
   inputs.src.flake = false;
-  outputs = { self, src, nixpkgs, flake-utils, haskellNix, projectArgs }:
+  outputs = { self, src, nixpkgs, nixpkgs-2605, flake-utils, haskellNix, projectArgs }:
     flake-utils.lib.eachSystem (
       if builtins.pathExists (projectArgs + "/supportedSystems.nix")
         then import (projectArgs + "/supportedSystems.nix")
@@ -25,7 +28,7 @@
               );
         })
       ];
-      pkgs = import nixpkgs { inherit system;
+      pkgs = import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs) { inherit system;
         overlays = overlays ++ (if builtins.pathExists (projectArgs + "/overlays.nix")
           then import (projectArgs + "/overlays.nix")
           else []);

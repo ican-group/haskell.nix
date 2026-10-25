@@ -1,13 +1,17 @@
-{ stdenv, lib, haskellLib, testSrc, compiler-nix-name, evalPackages, project' }:
+# `evalPackages` is unused but always supplied by `callTest`.
+{ stdenv, lib, haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem, project', testCabalProjectLocal, testInputMap }:
 
 with lib;
 
 let
   project = project' {
-    inherit compiler-nix-name evalPackages;
+    inherit compiler-nix-name evalSystem;
     src = testSrc "shell-for";
-    cabalProjectLocal = builtins.readFile ../cabal.project.local;
-    modules = [{ inherit evalPackages; }];
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal;
+    # No `evalPackages` module: it is read-only (derived from `evalSystem`,
+    # which is already set above), so defining it here would be a second
+    # definition and error out once the option is forced.
   };
 
   packages = project.hsPkgs;
@@ -16,8 +20,10 @@ let
     exposePackagesVia = "ghc-pkg";
     packages = ps: with ps; [ pkga pkgb ];
     tools = {
-      cabal.cabalProjectLocal = builtins.readFile ../cabal.project.local;
-      hoogle.cabalProjectLocal = builtins.readFile ../cabal.project.local;
+      cabal.inputMap = testInputMap;
+      cabal.cabalProjectLocal = testCabalProjectLocal;
+      hoogle.inputMap = testInputMap;
+      hoogle.cabalProjectLocal = testCabalProjectLocal;
     };
     exactDeps = true;
     packageSetupDeps = false;
@@ -30,8 +36,10 @@ let
     # This adds cabal-install to the shell, which helps tests because
     # they use a nix-shell --pure. Normally you would BYO cabal-install.
     tools = {
-      cabal.cabalProjectLocal = builtins.readFile ../cabal.project.local;
-      hoogle.cabalProjectLocal = builtins.readFile ../cabal.project.local;
+      cabal.inputMap = testInputMap;
+      cabal.cabalProjectLocal = testCabalProjectLocal;
+      hoogle.inputMap = testInputMap;
+      hoogle.cabalProjectLocal = testCabalProjectLocal;
     };
     exactDeps = true;
     # Avoid duplicate package issues when runghc looks for packages
@@ -46,8 +54,10 @@ let
     # This adds cabal-install to the shell, which helps tests because
     # they use a nix-shell --pure. Normally you would BYO cabal-install.
     tools = {
-      cabal.cabalProjectLocal = builtins.readFile ../cabal.project.local;
-      hoogle.cabalProjectLocal = builtins.readFile ../cabal.project.local;
+      cabal.inputMap = testInputMap;
+      cabal.cabalProjectLocal = testCabalProjectLocal;
+      hoogle.inputMap = testInputMap;
+      hoogle.cabalProjectLocal = testCabalProjectLocal;
     };
     # Avoid duplicate package issues when runghc looks for packages
     packageSetupDeps = false;

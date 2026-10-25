@@ -1,0 +1,72 @@
+Don't archive a signature object the backend never emitted.
+
+`ghcjs.tests.backpack.build` fails for ghc914-sh (and only for it) when
+the instantiated `consumer` sublibrary is archived:
+
+    Building library 'consumer' instantiated with Module = ...-impl:Mod
+    [1 of 2] Compiling Module[sig] ( .../autogen/Module.hsig, .../Module.o )
+    [2 of 2] Compiling Consumer    ( consumer/Consumer.hs, .../Consumer.o )
+    Linking StaticWay library...
+    llvm-ar: error: .../Module.o: No such file or directory
+
+Nothing is misplaced: GHC's `-odir` is the very directory `ar` searches.
+GHC announced `Module.o` and wrote no such file -- the JS backend emits
+no code for a filled-in signature, whose implementation lives in the
+other unit.  `getHaskellObjects` builds the archive list from
+`allLibModules`, and `explicitLibModules` includes `signatures:`, so the
+object is demanded whether or not the backend produced one.
+
+Ask the file system rather than assume, and only for signature modules:
+a missing object for an ordinary module is a real failure and must keep
+reaching `ar` as one.
+
+Scope, which is what points at this rather than at the JS backend: the
+same test passes for ghc914-sh on native and wasi32 (where GHC does emit
+the object), and passes on ghcjs for every mainline compiler -- ghc9124,
+ghc9141, ghc967, ghc984, on both platforms.  Those mainline jobs run the
+v1 builder, and their logs show why they never hit it: for an
+instantiated component they compile the two modules and go straight to
+installPhase, with no archive step at all.
+
+--- pa/src/Distribution/Simple/GHC/Internal.hs	2026-08-27 19:31:23
++++ pb/src/Distribution/Simple/GHC/Internal.hs	2026-08-27 19:31:23
+@@ -90,7 +90,7 @@
+ import Distribution.Verbosity
+ import Distribution.Version (Version)
+ import Language.Haskell.Extension
+-import System.Directory (listDirectory)
++import System.Directory (doesFileExist, listDirectory)
+ import System.Environment (getEnv)
+ import System.FilePath
+   ( takeDirectory
+@@ -639,11 +639,25 @@
+             , '.' : wanted_obj_ext == obj_ext
+             ]
+       return objs
+-  | otherwise =
+-      return
+-        [ pref </> makeRelativePathEx (ModuleName.toFilePath x <.> wanted_obj_ext)
+-        | x <- allLibModules lib clbi
+-        ]
++  | otherwise = do
++      -- A `signatures:` module carries no code of its own.  Once the
++      -- component is INSTANTIATED, GHC fills the signature in from the
++      -- implementing unit and, on most backends, still emits a small object
++      -- for it which belongs in the archive.  The JS backend emits nothing,
++      -- and `ar` then dies on a member that was never written:
++      --
++      --   [1 of 2] Compiling Module[sig] ( .../autogen/Module.hsig, .../Module.o )
++      --   llvm-ar: error: .../Module.o: No such file or directory
++      --
++      -- Whether a filled-in signature has an object is a backend detail, so
++      -- ask the file system instead of assuming.  ONLY signature modules are
++      -- treated this way: a missing object for any ordinary module is a real
++      -- failure, and must keep reaching `ar` as one.
++      let objOf x = pref </> makeRelativePathEx (ModuleName.toFilePath x <.> wanted_obj_ext)
++          keep x
++            | x `elem` signatures lib = doesFileExist (i (objOf x))
++            | otherwise = return True
++      map objOf <$> filterM keep (allLibModules lib clbi)
+   where
+     i = interpretSymbolicPathLBI lbi
+ 
