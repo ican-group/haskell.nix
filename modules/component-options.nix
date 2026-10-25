@@ -39,9 +39,9 @@
         for memory-hungry packages that OOM under parallel builds), or to any
         other positive integer to pin the parallelism.
 
-        Only affects the v1 (`builderVersion = 1`) builder; the v2 builder
-        builds whole cabal slices rather than individual components, so it has
-        no per-component equivalent and ignores this option.
+        The v2 (`builderVersion = 2`) builder passes it to the component's
+        slice, whose `Setup build` gets the same `-jN` (a library slice
+        builds all of a package's libraries, so set it on `library`).
 
         Two v1 exceptions:
 

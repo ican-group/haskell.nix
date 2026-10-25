@@ -2264,6 +2264,8 @@ let
     # prevents the Android NDK from pulling `bits/fortify/stdio.h`
     # into c2hs preprocessing, which c2hs can't parse.
     hardeningDisable = component.hardeningDisable or [];
+    # Per-component `Setup build -jN` (see modules/component-options.nix).
+    buildJobs = component.buildJobs or null;
     # Things that flow into downstream slices' build envs through
     # stdenv's propagation chain.  Library deps don't appear here
     # because in v2 they're the dep slices themselves, already in
@@ -2650,6 +2652,8 @@ let
     # prevents the Android NDK from pulling `bits/fortify/stdio.h`
     # into c2hs preprocessing, which c2hs can't parse.
     hardeningDisable = component.hardeningDisable or [];
+    # Per-component `Setup build -jN` (see modules/component-options.nix).
+    buildJobs = component.buildJobs or null;
     doHaddock = true;
     # The build-cabal-slice dry-run check fails when cabal plans
     # to build anything other than `expectedPackage` — that's
