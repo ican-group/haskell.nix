@@ -85,8 +85,16 @@ in pkgs.runCommand "project-coverage-report"
       for f in $report/share/hpc/vanilla/mix/*; do
         cp -Rn $f $out/share/hpc/vanilla/mix
       done
-      cp -R $report/share/hpc/vanilla/tix/* $out/share/hpc/vanilla/tix/
-      cp -R $report/share/hpc/vanilla/html/* $out/share/hpc/vanilla/html/
+      # `-n` (like the mix copy above): two reports can legitimately carry
+      # the SAME check.  v2's plan-id keyed `hsPkgs` lists a local package's
+      # test component both under the package entry (`pkgb-0.1.0.0`) and
+      # under the component entry (`pkgb-0.1.0.0-tests`), so both of those
+      # reports contain `tix/<check>/` and `html/<check>/`.  Without `-n` the
+      # second copy tries to overwrite the read-only file the first one left
+      # and fails with "Permission denied".  The content is identical -- it
+      # is the same check derivation -- so skipping is right.
+      cp -Rn $report/share/hpc/vanilla/tix/* $out/share/hpc/vanilla/tix/
+      cp -Rn $report/share/hpc/vanilla/html/* $out/share/hpc/vanilla/html/
     '') coverageReports)}
 
     # Copy out "all" coverage report

@@ -1,7 +1,7 @@
-{ lib, cabalProject', testSrc, compiler-nix-name, buildPackages, evalPackages, haskellLib }: let
+{ lib, cabalProject', testSrc, compiler-nix-name, buildPackages, evalPackages, evalSystem, haskellLib }: let
   project = cabalProject' {
     src = testSrc "external-static-plugin";
-    inherit compiler-nix-name evalPackages;
+    inherit compiler-nix-name evalSystem;
     modules = [ {
       packages.prog.postInstall = ''
         test -f f1

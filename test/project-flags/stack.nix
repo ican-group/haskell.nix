@@ -1,11 +1,11 @@
-{ stdenv, lib, stackProject', haskellLib, testSrc, compiler-nix-name, evalPackages }:
+{ stdenv, lib, stackProject', haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem }:
 
 with lib;
 
 let
   project = stackProject' {
     src = testSrc "project-flags";
-    inherit evalPackages;
+    inherit evalSystem;
   };
   packages = project.hsPkgs;
 

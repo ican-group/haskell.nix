@@ -1,10 +1,10 @@
-{ stdenv, lib, stackProject', haskellLib, testSrc, compiler-nix-name, evalPackages }:
+{ stdenv, lib, stackProject', haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem }:
 
 with lib;
 
 let
   project = stackProject' {
-    inherit evalPackages;
+    inherit evalSystem;
     src = testSrc "ghc-options";
   };
   packages = project.hsPkgs;

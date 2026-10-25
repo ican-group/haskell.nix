@@ -1,13 +1,14 @@
-{ pkgs, compiler-nix-name, evalPackages }:
+{ pkgs, compiler-nix-name, evalPackages, evalSystem, testCabalProjectLocal, testInputMap }:
 
 with pkgs;
 with lib;
 
 let
   project = haskell-nix.cabalProject' {
-    inherit compiler-nix-name evalPackages;
+    inherit compiler-nix-name evalSystem;
     src = evalPackages.haskell-nix.haskellLib.cleanGit { src = ../..; name = "setup-deps"; subDir = "test/setup-deps"; };
-    cabalProjectLocal = builtins.readFile ../cabal.project.local;
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal;
   };
 
   meta = {

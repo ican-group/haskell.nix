@@ -43,6 +43,11 @@
     isX86_64 = false;
     isPPC    = false;
     isPPC64  = false;
+    # plan-to-nix (via capitalize) generates isPpc/isPpc64; keep aliases so
+    # generated plan.nix files evaluate correctly until nix-tools is rebuilt
+    # with the fixSystem entries below.
+    isPpc    = false;
+    isPpc64  = false;
     isSparc  = false;
     isArm    = false;
     isAarch64= false;
@@ -50,6 +55,7 @@
     isSH     = false;
     isIA64   = false;
     isS390   = false;
+    isS390x  = false;
     isAlpha  = false;
     isHppa   = false;
     isRs6000 = false;
@@ -57,5 +63,10 @@
     isVax    = false;
     isJavaScript = false;
     isWasm32 = false;
+    # Newer architectures in GHC 9.14's rts.cabal not yet in older cabal-os-arch-comp
+    isRiscv64    = false;   # nixpkgs: isRiscV64
+    isRiscV64    = false;
+    isLoongarch64 = false;  # nixpkgs: isLoongArch64 (if/when added)
+    isLoongArch64 = false;
   };
 }
