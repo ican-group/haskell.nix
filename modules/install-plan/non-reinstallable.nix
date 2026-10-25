@@ -4,6 +4,12 @@
       "ghc-bignum"]
     ++ lib.optionals (builtins.compareVersions config.compiler.version "9.9" >= 0) [
       "ghc-internal"]
+    # GHC 9.14+ rts.conf depends on libffi-clib at the ghc-pkg level.
+    # Cabal doesn't track it in the plan (it's a C library wrapper), so
+    # we must add it here so make-config-files.nix copies its .conf into
+    # per-component package DBs.  Harmless for compilers without it.
+    ++ lib.optionals (builtins.compareVersions config.compiler.version "9.14" >= 0) [
+      "libffi-clib"]
     # The v1 builder hides ghci-related packages on ghcjs/wasm because
     # those builds rely on the GHC-bundled versions; reinstalling them
     # via the standard component path tends to clash with what GHC

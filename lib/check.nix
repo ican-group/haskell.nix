@@ -1,5 +1,13 @@
-{ stdenv, lib, haskellLib, pkgsBuildBuild }:
-let self = drvOrig:
+{ stdenv, lib, haskellLib, pkgsBuildBuild
+, emulatorSystemFeatures ? []
+, emulatorNativeBuilderCheck ? (_: false) }:
+let
+  # Whether a check must build on a native builder: every check for a host
+  # matching `haskell-nix.emulatorNativeBuilderCheck`.  Nothing is pinned
+  # while `emulatorSystemFeatures` is empty (the default).
+  needsNativeBuilder =
+    emulatorSystemFeatures != [] && emulatorNativeBuilderCheck stdenv.hostPlatform;
+  self = drvOrig:
 
 # v2 slices don't have the v1-specific internals that this check
 # wrapper relies on (drv.source, drv.drvAttrs, drv.configFiles,
@@ -28,6 +36,11 @@ if drvOrig.passthru.isSlice or false then
       srcSubDirPath = drvOrig.passthru.srcSubDirPath or null;
   in stdenv.mkDerivation ({
     name = drvOrig.name + "-check";
+  } // lib.optionalAttrs needsNativeBuilder {
+    # The test's exes cannot run on an emulated builder (see
+    # `emulatorNativeBuilderCheck` in overlays/haskell.nix).
+    requiredSystemFeatures = emulatorSystemFeatures;
+  } // {
     passthru = { inherit (drvOrig) identifier config exeName meta; };
     inherit (drvOrig) exeName;
     inherit (component) doCheck doCrossCheck;
@@ -57,14 +70,58 @@ if drvOrig.passthru.isSlice or false then
       # `<pkg>_datadir` (the env var Cabal's `Paths_<pkg>` consults before the
       # baked-in path) at that `share` dir.  Done before `preCheck` so a
       # project's own preCheck can still override it.
-      for _conf in ${drvOrig}/store/ghc-*/package.db/*.conf; do
+      for _conf in ${drvOrig}/store/ghc-*/package.db/*.conf \
+                   ${drvOrig}/store/host/*/package.conf.d/*.conf; do
         [ -e "$_conf" ] || continue
-        _share=$(dirname "$(dirname "$_conf")")/$(basename "$_conf" .conf)/share
+        _unitroot=$(dirname "$(dirname "$_conf")")
+        # Mainline layout stages data-files at `<store>/<uid>/share`;
+        # the stable-haskell fork's staged layout at `<store>/lib/<uid>/share`.
+        _share=$_unitroot/$(basename "$_conf" .conf)/share
+        [ -d "$_share" ] || _share=$_unitroot/lib/$(basename "$_conf" .conf)/share
         [ -d "$_share" ] || continue
         _pkgname=$(sed -n 's/^name: *//p' "$_conf" | head -1)
         [ -n "$_pkgname" ] || continue
         export "$(echo "$_pkgname" | tr '-' '_')_datadir=$_share"
       done
+
+      # Build-tool exes the slice built ITSELF, as a PATH fallback.
+      #
+      # `toolDepends` above covers the tools that reach the slice as
+      # separate derivations.  In a TWO-STAGE plan (the stable-haskell
+      # `-target` cross compilers, keyed on `emptyGlobalPackageDb`) there
+      # are none: `lib/load-cabal-plan.nix` gives those plans
+      # `build-tools = []` on purpose — their tools are BUILD-stage units
+      # the fork elaborates inplace, so each consuming slice's own cabal
+      # builds them.  A package's own exe (`build-tool-depends:
+      # pkg:pkg-tool`) is dropped from `homeBuildToolIds` too, by
+      # hspkg-builder's same-package `isExcludedId`.  So
+      # `executableToolDepends` is empty, nothing lands on PATH, and a
+      # test that spawns its build-tool dies with
+      #   <tool>: readCreateProcess: posix_spawnp: does not exist
+      # — while the tool is sitting right there in the slice, at
+      # `<slice>/store/host/<plat>/bin/<tool>` (the fork's staged layout
+      # installs exe units into a flat bindir; see build-cabal-slice's
+      # "flat bin" capture).  test/check-datadir is exactly this shape.
+      #
+      # APPENDED, not prepended: where `toolDepends` does supply a tool it
+      # is the BUILD-platform twin (`homeDepExeSlices` looks it up through
+      # `hsPkgs.pkgsBuildBuild`), which is the one that can actually run
+      # here, and it must keep winning.  What we add is the HOST-stage
+      # copy — the slice keeps no build twin of its own (`$out/store/build`
+      # is removed at the end of build-cabal-slice) — so this rescues the
+      # targets whose host binaries run on the build machine (musl32,
+      # musl64, static) but not one reached only through an emulator,
+      # where the exe would be spawned from inside qemu/wine.
+      #
+      # The complete fix is for `extraNativeBuildInputs` in
+      # comp-v2-builder to keep supplying the build-platform exe slices
+      # for two-stage plans; until then this closes the common case.
+      for _bindir in ${drvOrig}/store/ghc-*/bin \
+                     ${drvOrig}/store/host/*/bin; do
+        [ -d "$_bindir" ] || continue
+        PATH="$PATH:$_bindir"
+      done
+      export PATH
       ${lib.optionalString (srcSubDirPath != null) ''
         # Run from a writable copy of the package source so tests that read
         # source-relative paths (golden files / fixtures) find them.  v1's
@@ -166,6 +223,10 @@ in stdenv.mkDerivation ((
   '';
 } // haskellLib.optionalHooks {
   inherit (component) preCheck postCheck;
+}
+// lib.optionalAttrs needsNativeBuilder {
+  # v1 counterpart of the slice branch above.
+  requiredSystemFeatures = emulatorSystemFeatures;
 }
 // lib.optionalAttrs (drv ? LOCALE_ARCHIVE) { inherit (drv) LOCALE_ARCHIVE; }
 );

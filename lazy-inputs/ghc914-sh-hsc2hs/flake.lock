@@ -1,0 +1,28 @@
+{
+  "nodes": {
+    "root": {
+      "inputs": {
+        "ghc914-sh-hsc2hs": "ghc914-sh-hsc2hs"
+      }
+    },
+    "ghc914-sh-hsc2hs": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1772348474,
+        "narHash": "sha256-F/NTJpuqMNaaGLoZY9+5X6Z4BGzLtfIlh8Gf9YDU3ao=",
+        "owner": "stable-haskell",
+        "repo": "hsc2hs",
+        "rev": "d07eea1260894ce5fe456f881fbc62366c9eb1b7",
+        "type": "github"
+      },
+      "original": {
+        "owner": "stable-haskell",
+        "repo": "hsc2hs",
+        "rev": "d07eea1260894ce5fe456f881fbc62366c9eb1b7",
+        "type": "github"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

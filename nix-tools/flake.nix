@@ -7,6 +7,12 @@
   
   outputs = inputs@{ self, nixpkgs, haskellNix, ... }:
     let
+      # NB: x86_64-darwin is kept here even though nixpkgs unstable (26.11)
+      # dropped it: this subflake resolves pkgs via its OWN pinned haskellNix
+      # (see flake.lock), whose unstable nixpkgs predates the drop and still
+      # supports x86_64-darwin.  `legacyPackages` here is consumed per-system by
+      # the main overlay (overlays/default.nix) for the from-source nix-tools,
+      # so x86_64-darwin must remain present.
       systems = [
         "x86_64-linux"
         "x86_64-darwin"

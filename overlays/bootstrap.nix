@@ -360,6 +360,13 @@ in {
                 ++ onGhcjs (fromUntil   "9.12"   "9.15"  ./patches/ghc/ghc-9.12-ghcjs-rts-mem-heap8.patch)
                 # Fix for `fatal error: 'rts/Types.h' file not found` when building `primitive`
                 ++ onGhcjs (fromUntil   "9.12.3" "9.15"  ./patches/ghc/ghc-9.13-ghcjs-rts-types.patch)
+                # Apple's ranlib (which cabal runs after `ar` on darwin build
+                # hosts) rewrites archives with 8-byte '\n' member padding
+                # counted into the size field; GHC's archive reader then hands
+                # padded wasm cbits objects to emscripten and wasm-ld fails
+                # with "section too large".  Trim the padding when extracting
+                # wasm members.
+                ++ onGhcjs (fromUntil   "9.12"   "9.15"  ./patches/ghc/ghc-9.12-js-ar-darwin-ranlib-padding.patch)
 
                 ++ onGhcjs (fromUntil   "9.6.7" "9.7"    ./patches/ghc/ghc-9.6-js-support-this-unit-id-10819.patch)
 
@@ -1356,7 +1363,7 @@ in {
                     isHaskellNixCompiler = true;
                     enableShared = false;
                     inherit (booted-ghcjs) configured-src bundled-ghcjs project;
-                    raw-src = _evalPackages: booted-ghcjs.configured-src;
+                    raw-src = booted-ghcjs.configured-src;
                     inherit booted-ghcjs buildGHC;
                     extraConfigureFlags = [
                         "--ghcjs"
@@ -1386,7 +1393,7 @@ in {
     # recursion.
     cabal-install-tool = {compiler-nix-name, ...}@args:
       (final.haskell-nix.tool compiler-nix-name "cabal" ({pkgs, ...}: {
-        evalPackages = pkgs.buildPackages;
+        evalSystem = pkgs.buildPackages.stdenv.hostPlatform.system;
         version = "3.10.3.0";
       } // args));
 

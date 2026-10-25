@@ -1,0 +1,37 @@
+--- a/cbits/symbols.armv7a-android.c
++++ b/cbits/symbols.armv7a-android.c
+@@ -5,6 +5,19 @@
+ #include <stdlib.h>
+ #include <math.h>
+ #include <errno.h>
++
++// Static Bionic cannot discover these addresses through dlsym. Match the
++// NDK public prototypes without importing headers that conflict with this
++// generated table's existing generic declarations.
++#if __ANDROID_API__ >= 28
++struct __iconv_t;
++extern struct __iconv_t *iconv_open(const char *, const char *);
++extern size_t iconv(struct __iconv_t *, char **, size_t *, char **, size_t *);
++extern int iconv_close(struct __iconv_t *);
++#endif
++#if __ANDROID_API__ >= 26
++extern char *nl_langinfo(int);
++#endif
+ 
+ extern void __aeabi_idiv(void);
+ extern void __aeabi_idivmod(void);
+@@ -395,6 +408,14 @@
+ RtsSymbolVal my_iserv_syms[] = {
+     // { "__sync_val_compare_and_swap_1", (void*)(&___sync_val_compare_and_swap_1), STRENGTH_NORMAL, 1 },
+     SYM(strlen),
++#if __ANDROID_API__ >= 28
++    SYM(iconv_open),
++    SYM(iconv),
++    SYM(iconv_close),
++#endif
++#if __ANDROID_API__ >= 26
++    SYM(nl_langinfo),
++#endif
+     SYM(__aeabi_idiv),
+     SYM(__aeabi_idivmod),
+     SYM(__aeabi_memcpy),
