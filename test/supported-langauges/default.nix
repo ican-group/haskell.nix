@@ -1,7 +1,8 @@
 { stdenv, pkgs, lib, testSrc, compiler-nix-name, evalPackages, buildPackages }:
 
 let
-  ghc = buildPackages.haskell-nix.compiler.${compiler-nix-name}.override { ghcEvalPackages = evalPackages; };
+  ghc = buildPackages.haskell-nix.compiler.${compiler-nix-name}.evalWith.${evalPackages.stdenv.hostPlatform.system}
+    or (buildPackages.haskell-nix.compiler.${compiler-nix-name}.override { evalSystem = evalPackages.stdenv.hostPlatform.system; });
 
   supported-langauges = import ../../lib/supported-languages.nix {
     inherit pkgs evalPackages ghc;

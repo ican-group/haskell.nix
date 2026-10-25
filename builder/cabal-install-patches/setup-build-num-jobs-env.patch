@@ -18,15 +18,15 @@ is preserved whether the env var is set or not.
 --- a/src/Distribution/Client/ProjectPlanning.hs
 +++ b/src/Distribution/Client/ProjectPlanning.hs
 @@ -233,6 +233,8 @@
- import Distribution.Solver.Types.ProjectConfigPath
- import System.Directory (getCurrentDirectory)
- import System.FilePath
+ import Control.Exception (assert)
+ import Control.Monad (mapM_, sequence)
+ import Control.Monad.IO.Class (liftIO)
 +import qualified System.Environment as Env
 +import qualified System.IO.Unsafe as Unsafe
- import qualified Text.PrettyPrint as Disp
-
- -- | Check that an 'ElaboratedConfiguredPackage' actually makes
-@@ -4228,7 +4230,16 @@
+ import Control.Monad.State (State, execState, gets, modify)
+ import Data.List (deleteBy, groupBy)
+ import qualified Data.List.NonEmpty as NE
+@@ -4120,7 +4122,16 @@
      { buildCommonFlags = common
      , buildProgramPaths = mempty -- unused, set at configure time
      , buildProgramArgs = mempty -- unused, set at configure time

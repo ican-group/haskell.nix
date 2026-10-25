@@ -1,6 +1,12 @@
-{ lib, config, pkgs, ... }:
+{ lib, options, config, pkgs, ... }:
 with lib;
 with lib.types;
+let
+  # Whether the project defines `evalPackages` itself (deprecated) rather
+  # than taking the default derived from `evalSystem`.  A default has
+  # priority 1500 (`mkOptionDefault`); any definition beats it.
+  evalPackagesIsSet = options.evalPackages.highestPrio < 1500;
+in
 {
   _file = "haskell.nix/modules/project-common.nix";
   options = {
@@ -43,7 +49,18 @@ with lib.types;
     };
     evalSystem = mkOption {
       type = str;
-      default = pkgs.pkgsBuildBuild.stdenv.hostPlatform.system;
+      # `evalSystem` is the single knob for the platform on which `cabal` /
+      # `nix-tools` (plan-to-nix, IFD) run.  The `evalPackages` option below is
+      # derived from it (via the memoised `haskell-nix.evalPackages`).
+      #
+      # The one exception is a project that still SETS `evalPackages`
+      # (deprecated): then its system is the eval system.  Reading the
+      # definition does not recurse -- only `evalPackages`' *default*
+      # references `config.evalSystem`, and a definition replaces it.
+      default =
+        if evalPackagesIsSet
+        then config.evalPackages.stdenv.hostPlatform.system
+        else pkgs.pkgsBuildBuild.stdenv.hostPlatform.system;
       description = ''
         Specifies the system on which `cabal` and `nix-tools` should run.
         If not specified the `pkgsBuildBuild` system will be used.
@@ -54,25 +71,32 @@ with lib.types;
     };
     evalPackages = mkOption {
       type = attrs;
-      default =
-        if pkgs.pkgsBuildBuild.stdenv.hostPlatform.system == config.evalSystem
-        then pkgs.pkgsBuildBuild
-        else
-          import pkgs.path {
-            system = config.evalSystem;
-            overlays = pkgs.overlays;
-          };
+      # Derived (read-only) from `evalSystem` via the fixpoint-memoised
+      # `haskell-nix.evalPackages` attrset (overlays/haskell.nix) so every
+      # project sharing an `evalSystem` reuses ONE nixpkgs instance (and its
+      # dummy-ghc / configured-src / nix-tools artifacts) instead of importing
+      # a fresh one per project.  Select the eval platform with `evalSystem`.
+      #
+      # Setting it is deprecated (select the eval platform with `evalSystem`)
+      # but still works for now, with a warning: the definition is used as
+      # given, and `evalSystem` follows it.  The default is cycle-free
+      # because `evalSystem` only reads `evalPackages` when it is set.
+      default = pkgs.haskell-nix.evalPackages.${config.evalSystem};
+      apply = v:
+        if evalPackagesIsSet
+        then lib.warn
+          ("haskell.nix project option `evalPackages` is deprecated; set "
+           + "`evalSystem = \"${v.stdenv.hostPlatform.system}\";` instead.")
+          v
+        else v;
       description = ''
-        Packages used to run `cabal` and `nix-tools`.
-        This will default to `pkgs.pkgsBuildBuild` if it
-        matches the `evalSystem` (or if `evalSystem` was
-        not specified).
-        If a different `evalSystem` was requested, `evalPackages` will
-        default to be:
-          import pkgs.path {
-            system = config.evalSystem;
-            overlays = pkgs.overlays;
-          };
+        Packages used to run `cabal` and `nix-tools`, derived from
+        `evalSystem` via the memoised `haskell-nix.evalPackages` attrset.
+        Defaults to `pkgs.pkgsBuildBuild` when `evalSystem` matches the
+        `pkgsBuildBuild` system (the common case), otherwise a shared
+        nixpkgs imported for `evalSystem` from the same path and overlays.
+        Select the eval platform with `evalSystem` rather than setting this
+        directly; setting it is deprecated and gives a warning.
       '';
     };
     evalSrc = mkOption {
@@ -112,6 +136,37 @@ with lib.types;
         builders; there is no per-component opt-in.
       '';
     };
+    v2LocalPackageSlices = mkOption {
+      type = bool;
+      default = false;
+      description = ''
+        Build v2 slices for `style: "local"` plan units in cabal
+        `packages:` mode instead of `extra-packages:` mode, so each
+        slice's cabal elaborates — and REGISTERS — the same
+        deterministic local unit id the project plan records
+        (`base-4.22.0.0`, `rts-1.0.3-threaded-nodebug`, ...), and the
+        slice/plan unit-id equality check is enforced for them.
+
+        Set by the stable-haskell stage2 boot-library project: its
+        slices' registered ids become the compiler's global package db,
+        which consumer projects' plan-time dummy `ghc-pkg dump` must be
+        able to predict (an `extra-packages:` slice registers an
+        unpredictable hashed id instead).  Only meaningful with
+        `builderVersion = 2`.
+      '';
+    };
+    v2LocalPackageSliceNames = mkOption {
+      type = listOf str;
+      default = [];
+      description = ''
+        Package names whose LIBRARY slices are built in cabal `packages:`
+        mode, as `v2LocalPackageSlices` does for every local unit, but
+        without that option's other project-wide effects (the solver's
+        view of the compiler's global db).  Set by the stable-haskell
+        boot injection for `ghc`, whose unit id GHC itself hard-codes.
+        Only meaningful with `builderVersion = 2`.
+      '';
+    };
     useLocalGhcLib = mkOption {
       type = bool;
       default = false;
@@ -134,6 +189,24 @@ with lib.types;
             unconditionally — stack only supports the v1 builder for
             now, so the post-plan override is harmless (v1 doesn't
             enforce UnitId alignment).
+      '';
+    };
+    injectStableHaskellBootPackages = mkOption {
+      type = nullOr bool;
+      default = null;
+      description = ''
+        Inject the stable-haskell GHC's boot package sources
+        (source-repository-package on the configured GHC tree, exact
+        version pins for the hackage-resolved boot deps, and the
+        stage3-style project configuration) into the project's
+        cabal.project, so cabal plans and builds rts, base, … from
+        source alongside the project's own packages.
+
+        `null` (the default) auto-detects: the injection is applied
+        exactly when the selected compiler is a stable-haskell
+        `-target` cross wrapper (`passthru.emptyGlobalPackageDb`),
+        whose global package db ships no boot libraries.  See
+        `modules/cabal-project.nix` for the wiring.
       '';
     };
   };

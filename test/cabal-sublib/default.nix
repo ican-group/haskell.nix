@@ -1,5 +1,5 @@
 # Test a package set
-{ stdenv, lib, util, cabalProject', haskellLib, testSrc, compiler-nix-name, evalPackages, buildPackages }:
+{ stdenv, lib, util, cabalProject', haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem, buildPackages, testCabalProjectLocal, testInputMap }:
 
 with lib;
 
@@ -14,9 +14,10 @@ let
 
   # The ./pkgs.nix works for linux & darwin, but not for windows
   project = cabalProject' {
-    inherit compiler-nix-name evalPackages;
+    inherit compiler-nix-name evalSystem;
     src = testSrc "cabal-sublib";
-    cabalProjectLocal = builtins.readFile ../cabal.project.local
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal
       + lib.optionalString (haskellLib.isCrossHost && stdenv.hostPlatform.isAarch64) ''
         constraints: text -simdutf, text source
     '';

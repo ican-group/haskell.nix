@@ -11,7 +11,8 @@ let
       stackage = stackageSrc;
     };
   };
-in {
-  inherit haskellNix
-  # ...
-}
+in
+  # Anything built from `haskellNix` now resolves against the pins above --
+  # this snapshot comes from `stackageSrc`, and the package metadata in it
+  # from `hackageSrc`.
+  haskellNix.pkgs.haskell-nix.snapshots."lts-23.28".alex.components.exes.alex

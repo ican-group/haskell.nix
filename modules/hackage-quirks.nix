@@ -37,6 +37,24 @@ in [
     }
   )
 
+  # crypton >=2.1.5 vendors s2n-bignum's x86 assembly, which does not
+  # assemble for x86_64-darwin: its `.macro`s use immediates like `$0`, and
+  # LLVM's assembler, targeting Darwin, substitutes `$N` inside a macro body
+  # with the macro's Nth argument, leaving `adcq , %r8`
+  # (cbits/s2n/x86_att/bignum_emontredc_8n.S).  hoogle pulls crypton in via
+  # its TLS stack.  The flag falls back to crypton's portable C.
+  ({config, lib, pkgs, ...}:
+    { _file = "haskell.nix/overlays/hackage-quirks.nix#hoogle-crypton"; } //
+    lib.mkIf (config.name == "hoogle"
+        && pkgs.stdenv.hostPlatform.isDarwin
+        && pkgs.stdenv.hostPlatform.isx86_64) {
+      cabalProjectLocal = ''
+        package crypton
+          flags: -support_s2n_bignum
+      '';
+    }
+  )
+
   # Map the following into modules that use `mkIf` to check the name of the
   # hackage package in a way that is lazy enought not to cause infinite recursion
   # issues.
