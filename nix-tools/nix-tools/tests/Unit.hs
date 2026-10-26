@@ -57,7 +57,7 @@ tests = testGroup "Stack2nix.External.Resolve.mergeDependencies"
       map prettyName (names (mergeDependencies stackDeps snapshot))
         @?= map prettyName (names (stackDeps <> snapshot))
 
-  , testCase "only the higher-priority overlap is dropped" $ do
+  , testCase "only the lower-priority overlap is dropped" $ do
       let stackDeps = [pkgIndex "foo-2.0"]
           snapshot  = [pkgIndex "foo-1.0", pkgIndex "bar-1.0"]
           merged    = mergeDependencies stackDeps snapshot
