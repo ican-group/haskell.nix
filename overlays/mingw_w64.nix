@@ -36,8 +36,6 @@ let
         # due to a too large environment.
         unset configureFlags
         unset configurePhase
-        WINEPREFIX=''${WINEPREFIX:-$(mktemp -d)}
-        REMOTE_ISERV=''${REMOTE_ISERV:-$(mktemp -d)}
         (>&2 echo "---> Starting iserv-proxy with piped ${interpreter.exeName} via wine")
         REMOTE_ISERV=$(mktemp -d)
         ln -s ${interpreter}/bin/* $REMOTE_ISERV
@@ -53,14 +51,16 @@ let
         (
         cd $REMOTE_ISERV
         for l in lib*.dll; do
+          # Skip an unmatched glob, and keep any existing `X.dll`.
+          [ -e "$l" ] && [ ! -e "''${l#lib}" ] || continue
           ln -s "$l" "''${l#lib}"
         done
         )
         # Not sure why this `unset` helps.  It might avoids some kind of overflow issue.  We see `wine` fail to start when building `cardano-wallet-cli` test `unit`.
         unset pkgsHostTargetAsString
         unset LINK_DLL_FOLDERS
-        WINEDLLOVERRIDES="winemac.drv=d" WINEDEBUG=warn-all,fixme-all,-menubuilder,-mscoree,-ole,-secur32,-winediag WINEPREFIX=$TMP \
-          ${iserv-proxy}/bin/iserv-proxy $@ --pipe ${lib.getExe wine} $REMOTE_ISERV/${interpreter.exeName} tmp --stdio ${no-load-call} $ISERV_ARGS
+        WINEDLLOVERRIDES="winemac.drv=d" WINEDEBUG=warn-all,fixme-all,-menubuilder,-mscoree,-ole,-secur32,-winediag WINEPREFIX=''${WINEPREFIX:-$TMP} \
+          ${iserv-proxy}/bin/iserv-proxy "$@" --pipe ${lib.getExe wine} $REMOTE_ISERV/${interpreter.exeName} tmp --stdio ${no-load-call} $ISERV_ARGS
       '';
 
   wineIservWrapper = symlinkJoin { name = "iserv-wrapper"; paths = [ (wineIservWrapperScript false) (wineIservWrapperScript true) ]; };
@@ -96,7 +96,7 @@ let
       fi
     done
     export Path
-    ${lib.getExe wine} $@
+    ${lib.getExe wine} "$@"
   '';
   testWrapper = ["${wineTestWrapper}/bin/test-wrapper"];
 

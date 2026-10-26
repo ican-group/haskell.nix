@@ -92,7 +92,6 @@ let
             --projectArgs)
               printf %s "$2" > "$HIX_TMPDIR/projectArgs.nix"
               shift
-              args+=(--override-input projectArgs "$(realpath "$HIX_TMPDIR")")
               ;;
             --supportedSystems)
               printf %s "$2" > "$HIX_TMPDIR/supportedSystems.nix"
@@ -148,6 +147,11 @@ let
           esac
           shift
         done
+        # Any of --projectArgs, --supportedSystems, --overlays or --config
+        # wrote a file to $HIX_TMPDIR; pass it to the flake once.
+        if [ -n "$(ls -A "$HIX_TMPDIR")" ]; then
+          args+=(--override-input projectArgs "$(realpath "$HIX_TMPDIR")")
+        fi
         if [ "$has_input_src" != true ]; then
           SRC=.
           FLAKE=$SRC/.hix-flake
