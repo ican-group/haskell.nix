@@ -99,10 +99,104 @@ lib.runTests {
     expected = componentsConfig.components;
   };
 
+  # mkFlakeHaddock collects the `doc` output of every component that produces
+  # haddock (a library/test with doHaddock enabled exposes a `doc` attr), keyed
+  # by component-id, and skips components without docs — exes/benchmarks and
+  # haddock-disabled libraries (see #1932).
+  testMkFlakeHaddock =
+    let
+      mkComp = id: extra: { passthru.identifier.component-id = id; } // extra;
+    in {
+      expr = haskellLib.mkFlakeHaddock {
+        pkgA.components = {
+          library = mkComp "pkgA:lib:pkgA" { doc = "DOC-libA"; };
+          exes.e = mkComp "pkgA:exe:e" { };            # no doc -> skipped
+          # v2 slice without documentation: `doc` throws, `docEnabled` is false.
+          sublibs.v2 = mkComp "pkgA:lib:v2" { doc = throw "no docs"; docEnabled = false; };
+          # v2 slice with documentation.
+          sublibs.v2doc = mkComp "pkgA:lib:v2doc" { doc = "DOC-v2"; docEnabled = true; };
+          sublibs.s = mkComp "pkgA:lib:s" { doc = "DOC-subA"; };
+          tests.t = mkComp "pkgA:test:t" { doc = "DOC-testA"; };
+          foreignlibs = { };
+          benchmarks = { };
+        };
+        pkgB.components = {
+          library = mkComp "pkgB:lib:pkgB" { };        # haddock disabled -> no doc -> skipped
+          sublibs = { }; exes = { }; tests = { };
+          foreignlibs = { }; benchmarks = { };
+        };
+      };
+      expected = {
+        "pkgA:lib:pkgA" = "DOC-libA";
+        "pkgA:lib:s" = "DOC-subA";
+        "pkgA:lib:v2doc" = "DOC-v2";
+        "pkgA:test:t" = "DOC-testA";
+      };
+    };
+
+  # A project with no haddock-producing components yields an empty group,
+  # matching what `doHaddock = false` produces.
+  testMkFlakeHaddockEmpty = {
+    expr = haskellLib.mkFlakeHaddock {
+      pkgB.components.library.passthru.identifier.component-id = "pkgB:lib:pkgB";
+    };
+    expected = { };
+  };
+
+  # mkFlakeCiJobs surfaces the haddock group so hydra builds documentation.
+  testMkFlakeCiJobsHaddock = {
+    expr = (haskellLib.mkFlakeCiJobs { roots = "ROOTS"; } {
+      packages = { }; checks = { }; coverage = { }; devShells = { };
+      checkedProject = { };
+      haddock = { "pkgA:lib:pkgA" = "DOC"; };
+    }).haddock;
+    expected = { "pkgA:lib:pkgA" = "DOC"; };
+  };
+
+  # The haddock arg defaults to {} so any other caller of mkFlakeCiJobs keeps
+  # working, and an empty group is left out so the jobs match a project that
+  # has not opted in.
+  testMkFlakeCiJobsHaddockDefault = {
+    expr = (haskellLib.mkFlakeCiJobs { roots = "ROOTS"; } {
+      packages = { }; checks = { }; coverage = { }; devShells = { };
+      checkedProject = { };
+    }) ? haddock;
+    expected = false;
+  };
+
   # testing that the tests work
   testId = {
     expr = lib.id 1;
     expected = 1;
+  };
+
+  # `dependToLib` returns the library component of a dependency package.
+  testDependToLibResolvesLibrary = {
+    expr = haskellLib.dependToLib { identifier.name = "foo"; components.library = "the-lib"; };
+    expected = "the-lib";
+  };
+
+  # A sublib `depends` value is already the derivation (no `components`), so it
+  # is passed through unchanged.
+  testDependToLibPassesSublibThrough = {
+    expr = haskellLib.dependToLib "already-a-derivation";
+    expected = "already-a-derivation";
+  };
+
+  # A package with `components` but no `library` (unplanned or unbuildable) must throw
+  # rather than silently vanish or give an opaque `attribute 'library' missing`
+  # (see #1379).  `runTests` can only assert that evaluation fails; the message
+  # wording is checked out of band.
+  testDependToLibThrowsForUnplannedPackage = {
+    expr = (builtins.tryEval
+      (haskellLib.dependToLib { identifier.name = "foo"; components = { }; })).success;
+    expected = false;
+  };
+
+  # The shared message names the package (used by v1 and the v2 builder).
+  testUnplannedLibraryMessageNamesPackage = {
+    expr = lib.hasInfix "package 'foo' is not available" (haskellLib.unplannedLibraryMessage "foo");
+    expected = true;
   };
 
   testParseBlock1 = {

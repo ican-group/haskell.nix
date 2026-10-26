@@ -14,6 +14,7 @@
     - [Generating coverage information](./tutorials/coverage.md)
     - [Build a specific package from Hackage or Stackage](./tutorials/building-package-from-stackage-hackage.md)
     - [Content addressed derivations](./tutorials/ca-derivations.md)
+    - [Reducing closure size (removing the gcc dependency)](./tutorials/reducing-closure-size.md)
 - [Reference](./reference/index.md)
     - [Supported GHC versions](./reference/supported-ghc-versions.md)
     - [Command-line tools](./reference/commands.md)
