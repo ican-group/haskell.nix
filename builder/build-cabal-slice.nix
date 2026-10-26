@@ -1453,14 +1453,14 @@ stdenv.mkDerivation ({
       # the passed values, so self participates in the block groups.
       selfFrag=$(mktemp -d); mkdir -p $selfFrag/nix-support/v2-frag
       printf '%s' ${lib.escapeShellArg v2Fragment.pkgName} > $selfFrag/nix-support/v2-frag/pkg-name
-      cp ${builtins.toFile "flags"             v2Fragment.flagsBlock}            $selfFrag/nix-support/v2-frag/flags
-      cp ${builtins.toFile "ghc-options"       v2Fragment.ghcOptionsBlock}       $selfFrag/nix-support/v2-frag/ghc-options
-      cp ${builtins.toFile "configure-options" v2Fragment.configureOptionsBlock} $selfFrag/nix-support/v2-frag/configure-options
-      cp ${builtins.toFile "program-options"   v2Fragment.programOptionsBlock}   $selfFrag/nix-support/v2-frag/program-options
-      cp ${builtins.toFile "doc"               v2Fragment.docBlock}              $selfFrag/nix-support/v2-frag/doc
-      cp ${builtins.toFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $selfFrag/nix-support/v2-frag/extra-lib-dirs
-      cp ${builtins.toFile "config"            v2Fragment.configBlock}           $selfFrag/nix-support/v2-frag/config
-      cp ${builtins.toFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
+      cp ${haskellLib.textFile "flags"             v2Fragment.flagsBlock}            $selfFrag/nix-support/v2-frag/flags
+      cp ${haskellLib.textFile "ghc-options"       v2Fragment.ghcOptionsBlock}       $selfFrag/nix-support/v2-frag/ghc-options
+      cp ${haskellLib.textFile "configure-options" v2Fragment.configureOptionsBlock} $selfFrag/nix-support/v2-frag/configure-options
+      cp ${haskellLib.textFile "program-options"   v2Fragment.programOptionsBlock}   $selfFrag/nix-support/v2-frag/program-options
+      cp ${haskellLib.textFile "doc"               v2Fragment.docBlock}              $selfFrag/nix-support/v2-frag/doc
+      cp ${haskellLib.textFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $selfFrag/nix-support/v2-frag/extra-lib-dirs
+      cp ${haskellLib.textFile "config"            v2Fragment.configBlock}           $selfFrag/nix-support/v2-frag/config
+      cp ${haskellLib.textFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
         $selfFrag/nix-support/v2-frag/setup-constraints
       cp ${pkgs.writeText "source-repo-block" v2Fragment.sourceRepoBlock} \
         $selfFrag/nix-support/v2-frag/source-repo-block
@@ -1605,7 +1605,7 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       # local skeleton (via file — no shell escaping) + composed sections.
       # Use a redirect (not `cp`, which would create cabal.project with
       # the store file's read-only mode and break the `>>` append).
-      cat ${builtins.toFile "local-cabal-project" v2Fragment.localCabalProject} > cabal.project
+      cat ${haskellLib.textFile "local-cabal-project" v2Fragment.localCabalProject} > cabal.project
       cat cabal.project.closure >> cabal.project
 
     ''}
@@ -2407,18 +2407,18 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       ${metadataFragExport}
       # Per-package cabal.project blocks (emitted as separate files so a
       # consumer can group by block-type across the closure, matching the
-      # current cabal.project byte-layout).  Written via `toFile` so the
+      # current cabal.project byte-layout).  Written via `haskellLib.textFile` so the
       # multi-line block text needs no shell escaping.
       printf '%s' ${lib.escapeShellArg v2Fragment.pkgName}        > $out/nix-support/v2-frag/pkg-name
-      cp ${builtins.toFile "flags"             v2Fragment.flagsBlock}            $out/nix-support/v2-frag/flags
-      cp ${builtins.toFile "ghc-options"       v2Fragment.ghcOptionsBlock}       $out/nix-support/v2-frag/ghc-options
-      cp ${builtins.toFile "configure-options" v2Fragment.configureOptionsBlock} $out/nix-support/v2-frag/configure-options
-      cp ${builtins.toFile "program-options"   v2Fragment.programOptionsBlock}   $out/nix-support/v2-frag/program-options
-      cp ${builtins.toFile "doc"               v2Fragment.docBlock}              $out/nix-support/v2-frag/doc
-      cp ${builtins.toFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $out/nix-support/v2-frag/extra-lib-dirs
-      cp ${builtins.toFile "config"            v2Fragment.configBlock}           $out/nix-support/v2-frag/config
+      cp ${haskellLib.textFile "flags"             v2Fragment.flagsBlock}            $out/nix-support/v2-frag/flags
+      cp ${haskellLib.textFile "ghc-options"       v2Fragment.ghcOptionsBlock}       $out/nix-support/v2-frag/ghc-options
+      cp ${haskellLib.textFile "configure-options" v2Fragment.configureOptionsBlock} $out/nix-support/v2-frag/configure-options
+      cp ${haskellLib.textFile "program-options"   v2Fragment.programOptionsBlock}   $out/nix-support/v2-frag/program-options
+      cp ${haskellLib.textFile "doc"               v2Fragment.docBlock}              $out/nix-support/v2-frag/doc
+      cp ${haskellLib.textFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $out/nix-support/v2-frag/extra-lib-dirs
+      cp ${haskellLib.textFile "config"            v2Fragment.configBlock}           $out/nix-support/v2-frag/config
       printf '%s' ${lib.escapeShellArg v2Fragment.constraintLine} > $out/nix-support/v2-frag/constraint
-      cp ${builtins.toFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
+      cp ${haskellLib.textFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
         $out/nix-support/v2-frag/setup-constraints
       cp ${pkgs.writeText "source-repo-block" v2Fragment.sourceRepoBlock} \
         $out/nix-support/v2-frag/source-repo-block

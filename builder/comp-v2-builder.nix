@@ -388,7 +388,7 @@ let
   '';
   cabalFileOverride = lib.optionalString (cabalFile != null) ''
     chmod -R u+w $target
-    cp ${builtins.toFile "${pkgName}.cabal" cabalFile} $target/${pkgName}.cabal
+    cp ${haskellLib.textFile "${pkgName}.cabal" cabalFile} $target/${pkgName}.cabal
   '';
   # Local packages with `cabal-generator: hpack` ship `package.yaml`
   # without a generated `.cabal`.  Mirror v1's comp-builder.nix:
@@ -1910,7 +1910,7 @@ let
   # .cabal in every slicing index instead of restoring the old override.
   thisCabalFile =
     if cabalFile != null && resolvedPatches == [] && !pkgHasHook
-    then builtins.toFile "${pkgName}.cabal" cabalFile
+    then haskellLib.textFile "${pkgName}.cabal" cabalFile
     else null;
 
   # Two-stage (stable-haskell `-target` cross) plans.  The compiler is a
@@ -2485,17 +2485,14 @@ let
       # a symlink into the dep slice, not a real file.
       bin=$(find $out/store \( -type f -o -type l \) -path "*/bin/${exeName}" | head -n1)
       if [ -z "$bin" ]; then
-        # TODO: this currently fires when cabal short-circuits on
-        # "Up to date" without materialising the exe in $out/store,
-        # which can happen when a transitive slice already supplied
-        # the unit and our composition didn't carry the bin/.  Emit
-        # a non-functional placeholder so the slice still produces
-        # an output (lets the dev shell open while we investigate).
-        echo "WARN: ${componentKindLabel} binary ${exeName} not found in $out/store" >&2
-        echo "      emitting placeholder so this slice still produces an output" >&2
-        printf '#!/bin/sh\necho "%s: placeholder — slice did not materialise the exe" >&2\nexit 1\n' \
-          "${exeName}" > $out/bin/${exeName}
-        chmod +x $out/bin/${exeName}
+        # Fail rather than emit a placeholder: a stub that exits 1 would
+        # be cached and substituted as if it were the real exe.  This can
+        # fire when cabal short-circuits on "Up to date" without
+        # materialising the exe in $out/store (a transitive slice
+        # supplied the unit and the composition didn't carry the bin/).
+        echo "FAIL: ${componentKindLabel} binary ${exeName} not found in $out/store" >&2
+        find $out/store -path '*/bin/*' \( -type f -o -type l \) >&2
+        exit 1
       else
         cp "$bin" $out/bin/${exeName}
         chmod +x $out/bin/${exeName}

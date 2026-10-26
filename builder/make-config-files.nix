@@ -104,7 +104,7 @@ let
 
     unwrappedGhc=${ghc}
     ghcDeps=${ghc.cachedDeps
-      or (__trace "WARNING: ghc.cachedDeps not found" haskellLib.makeCompilerDeps ghc)}
+      or (__trace "WARNING: ghc.cachedDeps not found" (haskellLib.makeCompilerDeps ghc).cachedDeps)}
     ${ # Copy over the nonReinstallablePkgs from the global package db.
     ''
       for p in ${lib.concatStringsSep " " nonReinstallablePkgs'}; do

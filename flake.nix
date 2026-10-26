@@ -391,15 +391,11 @@
                 ];
               };
             shells = lib.genAttrs (
-              # Exclude old versions of GHC to speed up `nix flake check`
-              lib.attrNames (
-                lib.removeAttrs pkgs.haskell-nix.compiler
-                  ([ "ghc844" ] ++
-                    [ "ghc861" "ghc862" "ghc863" "ghc864" ] ++
-                    [ "ghc881" "ghc882" "ghc883" ] ++
-                    [ "ghc8101" "ghc8102" "ghc8103" "ghc8104" "ghc810420210212" "ghc8105" "ghc8106" ] ++
-                    [ "ghc901" ] ++ [ "ghc921" "ghc922" "ghc923" ])
-              ))
+              # Exclude compilers that are too old to be supported.  Those
+              # attributes throw (see `traceWarnOld` in overlays/bootstrap.nix),
+              # which would break `nix flake check`.
+              lib.filter (n: (builtins.tryEval pkgs.haskell-nix.compiler.${n}.version).success)
+                (lib.attrNames pkgs.haskell-nix.compiler))
               mkHaskellNixShell;
           in
           shells // { default = shells.${defaultCompiler}; });

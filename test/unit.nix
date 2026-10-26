@@ -264,6 +264,28 @@ lib.runTests {
     };
   };
 
+  # A commented-out `-- --sha256:` line must be dropped (not appended to the
+  # previous field), and a `--` inside a value (no leading whitespace) is not
+  # a comment.
+  testParseBlockComments = {
+    expr = __toJSON (haskellLib.parseSourceRepositoryPackageBlock "cabal.project" {} {} "" ''
+        type: git
+        location: https://github.com/foo--bar/haskell.nix.git
+        tag: 487eea1c249537d34c27f6143dff2b9d5586c657 -- trailing comment
+        -- --sha256: 0000000000000000000000000000000000000000000000000000
+        --sha256: 077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123
+      -- end of block
+    '');
+    expected = __toJSON {
+      followingText = "-- end of block\n";
+      indentation = "";
+      sourceRepo = testRepoData // {
+        url = "https://github.com/foo--bar/haskell.nix.git";
+        subdirs = ["."];
+      };
+    };
+  };
+
   # Verify that parseBlockLines (called inside parseSourceRepositoryPackageBlock)
   # preserves string context on parsed attribute values like `location`.
   # This is critical for repository blocks where the URL may contain

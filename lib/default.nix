@@ -831,4 +831,15 @@ in {
   types = import ./types.nix { inherit lib; };
 
   addPackageKeys = x: x // { package-keys = builtins.attrNames x.packages; };
+
+  # `builtins.toFile` refuses text that references a derivation output
+  # (e.g. `configureOptions = [ "--with-foo=${pkgs.foo}" ]` or a darwin
+  # framework's `extra-lib-dirs:`).  Keep `toFile` for the usual
+  # context-free text (no extra drv, unchanged hashes) and fall back to
+  # `writeText` when the text carries derivation context.
+  textFile = name: text:
+    if lib.any (c: c ? outputs || (c.allOutputs or false))
+         (lib.attrValues (builtins.getContext text))
+    then pkgs.writeText name text
+    else builtins.toFile name text;
 }
