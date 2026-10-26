@@ -343,11 +343,14 @@ in
             builtins.removeAttrs c [ "preCheck" "postCheck" "keepConfigFiles" "keepGhc" "keepSource" ]
           )
           (lib.filter (c: c.buildable && c.planned) allComps)
-      ) // {
-      # If any one of the components needs us to keep one of these
-      # then keep it for the `all` component
-      keepConfigFiles = lib.foldl' (x: comp: x || comp.keepConfigFiles) false allComps;
-      keepGhc = lib.foldl' (x: comp: x || comp.keepGhc) false allComps;
-      keepSource = lib.foldl' (x: comp: x || comp.keepSource) false allComps;
-    };
+        # If any one of the components needs us to keep one of these
+        # then keep it for the `all` component.  (This must be part of the
+        # `mkMerge` list: attributes `//`-ed onto a `mkMerge` value are
+        # ignored by the module system.)
+        ++ [{
+          keepConfigFiles = lib.any (comp: comp.keepConfigFiles) allComps;
+          keepGhc = lib.any (comp: comp.keepGhc) allComps;
+          keepSource = lib.any (comp: comp.keepSource) allComps;
+        }]
+      );
 }

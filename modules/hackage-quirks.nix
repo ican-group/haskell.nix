@@ -63,8 +63,10 @@ in [
     lib.mkIf (n == config.name) v) {
 
     lsp-test = {
-      cabalProject = ''
-        packages: .
+      # `cabalProjectLocal` (not `cabalProject`): replacing the generated
+      # `cabal.project` would drop its `extra-packages:` line, leaving the
+      # package itself out of the plan.
+      cabalProjectLocal = ''
         package lsp
           flags: +demo
       '';
@@ -80,8 +82,10 @@ in [
 
     # See https://github.com/input-output-hk/haskell.nix/issues/948
     postgrest = {
-      cabalProject = ''
-        packages: .
+      # `cabalProjectLocal` (not `cabalProject`): replacing the generated
+      # `cabal.project` would drop its `extra-packages:` line, leaving the
+      # package itself out of the plan.
+      cabalProjectLocal = ''
         package postgresql-libpq
           flags: +use-pkg-config
       '';
