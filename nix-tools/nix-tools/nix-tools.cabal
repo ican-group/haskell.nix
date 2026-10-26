@@ -7,8 +7,15 @@ license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Moritz Angermann
 maintainer:          moritz.angermann@gmail.com
+homepage:            https://github.com/ican-group/haskell.nix
+bug-reports:         https://github.com/ican-group/haskell.nix/issues
 category:            Distribution
 build-type:          Simple
+
+source-repository head
+  type:              git
+  location:          https://github.com/ican-group/haskell.nix
+  subdir:            nix-tools/nix-tools
 
 common warnings
   ghc-options:         -Wall
@@ -59,7 +66,7 @@ library
                      , StackRepos
                      , StackRepos.CLI
                      , Stack2nix
-                     , Stack2nix.Cache
+                     , NixTools.Cache
                      , Stack2nix.CLI
                      , Stack2nix.External.Resolve
                      , Stack2nix.Project
@@ -140,7 +147,6 @@ executable plan-to-nix
                      , vector
   main-is:             Main.hs
   other-modules:       Plan2Nix
-                     , Plan2Nix.Cache
                      , Plan2Nix.CLI
                      , Plan2Nix.Plan
   hs-source-dirs:      plan2nix
@@ -281,6 +287,20 @@ test-suite tests
   hs-source-dirs:      tests
   default-language:    Haskell2010
 
+-- Pure, self-contained test for the friendly hackage.nix lookup guard (#855).
+-- Unlike the golden `tests` suite above it needs no external tools or network.
+test-suite hackage-lookup-tests
+  import:              warnings
+  type:                exitcode-stdio-1.0
+  main-is:             Main.hs
+  build-depends:       base
+                     , text
+                     , hnix              ^>=0.17
+                     , prettyprinter
+                     , nix-tools:cabal2nix
+  hs-source-dirs:      tests-hackage
+  default-language:    Haskell2010
+
 -- Pure parser tests (no external programs / network), kept separate from the
 -- golden `tests` suite above so they can run standalone.
 test-suite stack-parser-tests
@@ -325,5 +345,18 @@ test-suite stack-project-tests
                      , filepath
                      , nix-tools
                      , nix-tools:cabal2nix
+  hs-source-dirs:      tests
+  default-language:    Haskell2010
+
+-- Tests for the git-fetch cache file (no external programs / network).
+test-suite cache-tests
+  import:              warnings
+  type:                exitcode-stdio-1.0
+  main-is:             CacheTests.hs
+  build-depends:       base
+                     , directory
+                     , nix-tools
+                     , tasty
+                     , tasty-hunit
   hs-source-dirs:      tests
   default-language:    Haskell2010

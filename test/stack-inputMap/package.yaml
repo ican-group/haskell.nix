@@ -1,0 +1,8 @@
+name: stack-inputMap
+
+dependencies:
+- base
+- cabal-simple
+
+library:
+  source-dirs: src

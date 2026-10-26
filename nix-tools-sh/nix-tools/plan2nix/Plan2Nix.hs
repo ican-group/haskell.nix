@@ -48,7 +48,7 @@ import Cabal2Nix.Util
 import Plan2Nix.CLI (Args(..))
 import Plan2Nix.Plan (Plan(..), PkgSrc(..), Package(..), Location(..))
 
-import Plan2Nix.Cache (appendCache, cacheHits)
+import NixTools.Cache (appendCache, cacheHits)
 import Stack2nix.Project (findCabalFiles)
 
 import System.FilePath ((<.>), (</>), takeDirectory, dropFileName)

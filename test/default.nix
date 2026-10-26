@@ -276,6 +276,7 @@ let
     ghc-options-stack = callTest ./ghc-options/stack.nix {};
     exe-only = callTest ./exe-only { inherit util; };
     stack-source-repo = callTest ./stack-source-repo {};
+    stack-inputMap = callTest ./stack-inputMap { inherit testSrcRoot; };
     ghc-lib-reinstallable-cabal = callTest ./ghc-lib-reinstallable/cabal.nix {};
     ghc-lib-reinstallable-stack = callTest ./ghc-lib-reinstallable/stack.nix {};
     generated-light = callTest ./generated-light {};
