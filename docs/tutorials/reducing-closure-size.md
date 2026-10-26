@@ -22,14 +22,18 @@ Use `nix why-depends` to confirm what is pulling `gcc` (or any other
 unwanted path) into the closure:
 
 ```shell
-nix why-depends ./result "$(nix-store -q --references ./result | grep gcc)"
+for dep in $(nix-store -q --references ./result | grep gcc); do
+  nix why-depends ./result "$dep"
+done
 ```
 
-or, for a flake-based project:
-
-```shell
-nix why-depends .#your-exe nixpkgs#gcc
-```
+(for a flake-based project, `nix build .#your-exe` first to get
+`./result`).  Check the actual paths found this way rather than
+comparing against `nixpkgs#gcc`: that is the compiler *wrapper*,
+possibly from a different Nixpkgs revision, so `why-depends` can find
+no dependency even when the executable retains the full compiler.
+There may be more than one match (for instance `gcc-…` and
+`gcc-…-lib`); look at each of them.
 
 The output usually points at a reference embedded in the executable
 itself (frequently via the bundled RTS include files), rather than a
@@ -99,7 +103,7 @@ pkgs.haskell-nix.project {
       # Drop references to the compiler and its libraries that are
       # left embedded in the static binary.
       postInstall = ''
-        for ref in ${pkgs.buildPackages.gcc} ${pkgs.stdenv.cc.cc.lib}; do
+        for ref in ${pkgs.stdenv.cc.cc} ${pkgs.stdenv.cc.cc.lib}; do
           ${pkgs.buildPackages.removeReferencesTo}/bin/remove-references-to \
             -t "$ref" "$out/bin/your-exe"
         done
@@ -109,8 +113,12 @@ pkgs.haskell-nix.project {
 }
 ```
 
-Add each store path that `nix why-depends` reports as unwanted to the
-loop.  `nukeReferences` (`${pkgs.buildPackages.nukeReferences}/bin/nuke-refs`)
+`pkgs.stdenv.cc.cc` is the unwrapped compiler (the wrapper,
+`pkgs.stdenv.cc` or `pkgs.gcc`, is a different store path, so removing
+references to it leaves the real compiler in the closure).  Make sure
+the paths in the loop match the store paths found during
+[diagnosis](#diagnosis), and add each other path that
+`nix why-depends` reports as unwanted.  `nukeReferences` (`${pkgs.buildPackages.nukeReferences}/bin/nuke-refs`)
 is a blunter alternative that rewrites *every* store-path reference in
 the given files; only use it when you are certain the binary has no
 legitimate runtime dependencies.
@@ -131,10 +139,11 @@ in pkgs.runCommand "your-exe-slim" {
   mkdir -p $out/bin
   cp ${exe.exePath} $out/bin/
   chmod +w $out/bin/your-exe
-  remove-references-to -t ${pkgs.buildPackages.gcc} $out/bin/your-exe
+  remove-references-to -t ${pkgs.stdenv.cc.cc} $out/bin/your-exe
 ''
 ```
 
+As above, use the store paths `nix why-depends` reported.
 `runCommand` does not run the stdenv fixup phase, so the binary is not
 stripped; to strip it as well, use `pkgs.runCommandCC` and add
 `$STRIP $out/bin/your-exe`.  Data files and other runtime
