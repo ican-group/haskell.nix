@@ -195,10 +195,22 @@ final: prev: {
             }:
             let
                 # The Stackage release referenced in the stack config
-                pkg-def = stackage.${stack-pkgs.resolver} or (throw ''
-                This version of stackage.nix does not know about the Stackage resolver ${stack-pkgs.resolver}.
-                You may need to update haskell.nix to one that includes a newer stackage.nix.
-                '');
+                # A compiler-only snapshot (`resolver: ghc-X`, or a snapshot
+                # file whose own resolver is `{ compiler: ghc-X }`, as every
+                # commercialhaskell/stackage-snapshots file has) is not a
+                # Stackage release, so updating stackage.nix will not help.
+                pkg-def = stackage.${stack-pkgs.resolver} or (throw (
+                  if final.lib.hasPrefix "ghc-" stack-pkgs.resolver
+                  then ''
+                  The stack project resolves to the compiler-only snapshot ${stack-pkgs.resolver},
+                  which haskell.nix does not support: it needs a Stackage release (lts-* or nightly-*).
+                  If the snapshot is a commercialhaskell/stackage-snapshots file, use the matching
+                  lts-X.Y or nightly-YYYY-MM-DD name as the resolver instead.
+                  ''
+                  else ''
+                  This version of stackage.nix does not know about the Stackage resolver ${stack-pkgs.resolver}.
+                  You may need to update haskell.nix to one that includes a newer stackage.nix.
+                  ''));
                 # The compiler referenced in the stack config
                 compiler = (stack-pkgs.extras hackageForStack).compiler or (pkg-def hackageForStack).compiler;
                 patchesModule = ghcHackagePatches.${compiler.nix-name} or {};

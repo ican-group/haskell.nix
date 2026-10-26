@@ -20,9 +20,11 @@ module Stack2nix.Stack
   ) where
 
 import Data.Char (isDigit)
-import Data.List (isSuffixOf)
+import Data.List (isPrefixOf, isSuffixOf)
 import qualified Data.Text as T
 import Data.Aeson
+import Data.Aeson.Types (JSONPathElement(Key), Parser, typeMismatch)
+import qualified Data.Aeson.Types as Aeson
 import Control.Applicative ((<|>))
 import Data.Monoid (mempty)
 
@@ -201,20 +203,55 @@ instance FromJSON Location where
       gitHubUrl ownerRepo =
         "https://github.com/" <> ownerRepo <> ".git"
 
+-- | Parse the @resolver@ (or its modern synonym @snapshot@) field.  Stack
+-- accepts the plain string form (@lts-20.11@, @ghc-9.0.1@, a URL, or a
+-- @.yaml@ path) and pantry's snapshot-location objects (see #1677):
+--
+--   * @{ url: ..., sha256: ..., size: ... }@: a remote snapshot file;
+--   * @{ filepath: ... }@: a local snapshot file;
+--   * @{ compiler: ghc-X.Y.Z }@: a compiler-only snapshot, which is what every
+--     file in commercialhaskell/stackage-snapshots uses.
+--
+-- Each object form is reduced to the string stack would accept in its place
+-- (the @sha256@/@size@ integrity fields are not used here), so the rest of
+-- stack-to-nix only ever sees a 'Resolver' string.
+parseResolver :: Object -> Parser Resolver
+parseResolver s = do
+  r <- s .:? "resolver"
+  case r of
+    Just v  -> go v Aeson.<?> Key "resolver"
+    Nothing -> do
+      v <- s .: "snapshot"
+      go v Aeson.<?> Key "snapshot"
+  where
+    go (String t) = pure (T.unpack t)
+    go (Object o) = o .: "url" <|> o .: "filepath" <|> o .: "compiler"
+      <|> fail "expected an object with a url, filepath or compiler field"
+    go v          = typeMismatch "a string or a { url | filepath | compiler } object" v
+
+-- | A compiler-only resolver (@ghc-9.0.1@, plain or as @{ compiler: ... }@)
+-- also names the compiler, so use it when no explicit @compiler@ is given.
+resolverCompiler :: Resolver -> Maybe Compiler
+resolverCompiler r
+  | "ghc-" `isPrefixOf` r = Just r
+  | otherwise             = Nothing
+
 instance FromJSON Stack where
-  parseJSON = withObject "Stack" $ \s -> Stack
+  parseJSON = withObject "Stack" $ \s -> do
     -- `snapshot` is the modern synonym for `resolver` (stack >= 2.15.1).
-    <$> (s .: "resolver" <|> s .: "snapshot")
-    <*> s .:? "compiler" .!= Nothing
-    <*> ((<>) <$> s .:? "packages"   .!= [LocalPath "."]
-              <*> s .:? "extra-deps" .!= [])
-    <*> s .:? "flags" .!= mempty
-    <*> s .:? "ghc-options" .!= mempty
+    resolver <- parseResolver s
+    Stack resolver
+      <$> ((<|> resolverCompiler resolver) <$> s .:? "compiler" .!= Nothing)
+      <*> ((<>) <$> s .:? "packages"   .!= [LocalPath "."]
+                <*> s .:? "extra-deps" .!= [])
+      <*> s .:? "flags" .!= mempty
+      <*> s .:? "ghc-options" .!= mempty
 
 instance FromJSON StackSnapshot where
-  parseJSON = withObject "Snapshot" $ \s -> Snapshot
-    <$> (s .: "resolver" <|> s .: "snapshot")
-    <*> s .:? "compiler" .!= Nothing
+  parseJSON = withObject "Snapshot" $ \s -> do
+   resolver <- parseResolver s
+   Snapshot resolver
+    <$> ((<|> resolverCompiler resolver) <$> s .:? "compiler" .!= Nothing)
     -- `name` is optional for custom snapshots (stack itself does not require
     -- it) and stack-to-nix discards it anyway (bound as `_name` in
     -- Stack2nix.External.Resolve.resolveSnapshot), so default it rather than
@@ -228,7 +265,7 @@ instance FromJSON Dependency where
   -- Note: we will parse foo-X.Y.Z as a package.
   --       if we want it to be a localPath, it needs
   --       to be ./foo-X.Y.Z
-  parseJSON p = parsePkgIndex p <|> parseLocalPath p <|> parseDVCS p
+  parseJSON p = parsePkgIndex p <|> parseLocalPath p <|> parseHackage p <|> parseDVCS p
     where parsePkgIndex = withText "Package Index" $ \pi ->
             case parsePackageIdentifier (T.unpack pi) of
               -- Cabal will happily parse "foo" as a packageIdentifier,
@@ -237,6 +274,13 @@ instance FromJSON Dependency where
               -- such we can use that as a filter.
               (Just (pkgIdent, s)) | pkgVersion pkgIdent > nullVersion -> return $ PkgIndex pkgIdent s
               _ -> fail $ "invalid package index: " ++ show pi
+          -- The object form used by snapshot files (e.g. every file in
+          -- commercialhaskell/stackage-snapshots):
+          --   - hackage: AC-Angle-1.0@sha256:<sha>,<size>
+          --     pantry-tree: { size: ..., sha256: ... }
+          -- The @hackage@ value is the bare package-index string.
+          parseHackage = withObject "Hackage package" $ \o ->
+            o .: "hackage" >>= parsePkgIndex
           parseLocalPath = withText "Local Path" $
             return . LocalPath . dropTrailingSlash . T.unpack
           parseSubdirs o = do
