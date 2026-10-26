@@ -271,7 +271,7 @@ let
   '');
 in {
   inherit (ghc) targetPrefix;
-  inherit script libDeps regularLibDeps drv ghcCommand ghcCommandCaps libDir docDir packageCfgDir component prebuilt-depends instantiations;
+  inherit script libDeps regularLibDeps drv ghcCommand ghcCommandCaps libDir docDir packageCfgDir component prebuilt-depends;
   # Use ''${pkgroot} relative paths so that we can relocate the package database
   # along with referenced packages and still have it work on systems with
   # or without nix installed.

@@ -59,7 +59,7 @@ let
         # Not sure why this `unset` helps.  It might avoids some kind of overflow issue.  We see `wine` fail to start when building `cardano-wallet-cli` test `unit`.
         unset pkgsHostTargetAsString
         unset LINK_DLL_FOLDERS
-        WINEDLLOVERRIDES="winemac.drv=d" WINEDEBUG=warn-all,fixme-all,-menubuilder,-mscoree,-ole,-secur32,-winediag WINEPREFIX=''${WINEPREFIX:-$TMP} \
+        WINEDLLOVERRIDES="winemac.drv=d" WINEDEBUG=warn-all,fixme-all,-menubuilder,-mscoree,-ole,-secur32,-winediag WINEPREFIX=$TMP \
           ${iserv-proxy}/bin/iserv-proxy "$@" --pipe ${lib.getExe wine} $REMOTE_ISERV/${interpreter.exeName} tmp --stdio ${no-load-call} $ISERV_ARGS
       '';
 

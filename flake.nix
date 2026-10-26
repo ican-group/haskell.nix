@@ -391,10 +391,10 @@
                 ];
               };
             shells = lib.genAttrs (
-              # Exclude GHC versions older than 9.6 (8.x and 9.0/9.2/9.4).
-              # Those compiler attributes throw (see `traceWarnOld` in
-              # overlays/bootstrap.nix), which breaks `nix flake check`.
-              lib.filter (n: builtins.match "ghc(8[0-9]+|9[024][0-9])(llvm)?" n == null)
+              # Exclude compilers that are too old to be supported.  Those
+              # attributes throw (see `traceWarnOld` in overlays/bootstrap.nix),
+              # which would break `nix flake check`.
+              lib.filter (n: (builtins.tryEval pkgs.haskell-nix.compiler.${n}.version).success)
                 (lib.attrNames pkgs.haskell-nix.compiler))
               mkHaskellNixShell;
           in

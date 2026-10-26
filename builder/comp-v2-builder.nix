@@ -388,7 +388,7 @@ let
   '';
   cabalFileOverride = lib.optionalString (cabalFile != null) ''
     chmod -R u+w $target
-    cp ${builtins.toFile "${pkgName}.cabal" cabalFile} $target/${pkgName}.cabal
+    cp ${haskellLib.textFile "${pkgName}.cabal" cabalFile} $target/${pkgName}.cabal
   '';
   # Local packages with `cabal-generator: hpack` ship `package.yaml`
   # without a generated `.cabal`.  Mirror v1's comp-builder.nix:
@@ -1910,7 +1910,7 @@ let
   # .cabal in every slicing index instead of restoring the old override.
   thisCabalFile =
     if cabalFile != null && resolvedPatches == [] && !pkgHasHook
-    then builtins.toFile "${pkgName}.cabal" cabalFile
+    then haskellLib.textFile "${pkgName}.cabal" cabalFile
     else null;
 
   # Two-stage (stable-haskell `-target` cross) plans.  The compiler is a

@@ -39,11 +39,8 @@ let
   docsConfigFiles = makeConfigFiles {
     inherit (package) identifier;
     inherit component fullName flags needsProfiling;
-    chooseDrv = p: p.haddock or p;
+    chooseDrv = p: p.haddock;
     inherit (componentDrv) enableDWARF;
-    # Use the same backpack instantiations and prebuilt dependencies as
-    # the build derivation (otherwise they are missing from the package DB).
-    inherit (configFiles) instantiations prebuilt-depends;
   };
 
   finalConfigureFlags = lib.concatStringsSep " " (
@@ -77,10 +74,7 @@ let
 
     propagatedBuildInputs = haskellLib.checkUnique "${fullName} propagatedBuildInputs" (
          haskellLib.uniqueWithName (map lib.getDev (builtins.concatLists pkgconfig))
-      # Use the haddock derivations of the dependencies so that the package DB
-      # built by `docsConfigFiles.script` has `haddock-interfaces` and
-      # `haddock-html` fields pointing at the dependencies' docs.
-      ++ docsConfigFiles.libDeps); # libDeps is already deduplicated
+      ++ configFiles.libDeps); # libDeps is already deduplicated
 
     buildInputs = haskellLib.uniqueWithName (lib.flatten component.libs);
 
