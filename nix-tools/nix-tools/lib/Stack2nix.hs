@@ -219,7 +219,7 @@ packages2nix args pkgs =
                 prettyNix <$> cabal2nix True (argDetailLevel args) src cabalFile
               -- Only update the cache if there is not already a record
               cacheHits (argCacheFile args) url rev subdir >>= \case
-                [hit] | hit == (pkg, nix) -> return ()
+                hits | (pkg, nix) `elem` hits -> return ()
                 _ -> appendCache (argCacheFile args) url rev subdir sha256 pkg nix
               return (fromString pkg, fromString pkg $= mkPath False nix)
 
