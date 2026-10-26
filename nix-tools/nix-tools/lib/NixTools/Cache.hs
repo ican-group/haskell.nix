@@ -15,25 +15,27 @@ module NixTools.Cache
 
 import Control.DeepSeq ((<$!!>))
 import Control.Exception (catch, SomeException(..))
-import Data.Maybe (mapMaybe)
+import Data.Either (partitionEithers)
+import Data.List (isPrefixOf)
 
 readCache :: FilePath
-          -> IO [( String -- url
-                 , String -- rev
-                 , String -- subdir
-                 , String -- sha256
-                 , String -- pkgname
-                 , String -- nixexpr-path
-                 )]
-readCache f = mapMaybe (toTuple . words) . lines <$!!> readFile f
+          -> IO ( [[String]] -- malformed (nonblank) lines, as words
+                , [( String -- url
+                   , String -- rev
+                   , String -- subdir
+                   , String -- sha256
+                   , String -- pkgname
+                   , String -- nixexpr-path
+                   )] )
+readCache f = partitionEithers . map toTuple . filter (not . null) . map words . lines <$!!> readFile f
   where
-    -- The cache is advisory, so skip any line we cannot make sense of (a blank
-    -- line, or a truncated one from an interrupted `appendCache`) instead of
-    -- letting an incomplete pattern match abort the whole read and throw away
-    -- every other entry.  A skipped entry just means we fetch it again.
+    -- The cache is advisory, so set aside any line we cannot make sense of (a
+    -- truncated one from an interrupted `appendCache`) instead of letting an
+    -- incomplete pattern match abort the whole read and throw away every other
+    -- entry.  `cacheHits` treats a key such a line might belong to as a miss.
     toTuple [ url, rev, subdir, sha256, pkgname, exprPath ]
-      = Just ( url, rev, subdir, if sha256 == "NOHASH" then "" else sha256, pkgname, exprPath )
-    toTuple _ = Nothing
+      = Right ( url, rev, subdir, if sha256 == "NOHASH" then "" else sha256, pkgname, exprPath )
+    toTuple ws = Left ws
 
 -- When we do not need a hash (when the files are local) we store "NOHASH" instead of ""
 -- in the file so that the use of `words` function in `readCache` still works.
@@ -43,8 +45,15 @@ appendCache f url rev subdir sha256 pkgname exprPath = do
 
 cacheHits :: FilePath -> String -> String -> String -> IO [ (String, String) ]
 cacheHits f url rev subdir
-  = do cache <- catch' (readCache f) (const (pure []))
-       return [ ( pkgname, exprPath )
+  = do (malformed, cache) <- catch' (readCache f) (const (pure ([], [])))
+       -- One (url, rev, subdir) can map to several packages, so a damaged row
+       -- for this key would otherwise leave a nonempty but incomplete hit list
+       -- and the missing package would be silently dropped.  Report a full miss
+       -- instead (we just fetch again).  A truncated row's words are prefixes
+       -- of the key's, the last possibly cut short.
+       return $ if any (\ws -> and (zipWith isPrefixOf ws [url, rev, subdir])) malformed
+         then []
+         else [ ( pkgname, exprPath )
               | ( url', rev', subdir', _sha256, pkgname, exprPath ) <- cache
               , url == url'
               , rev == rev'
