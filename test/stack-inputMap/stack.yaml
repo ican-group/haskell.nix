@@ -1,0 +1,10 @@
+resolver: lts-23.7
+
+packages:
+- .
+
+extra-deps:
+- git: https://github.com/input-output-hk/haskell.nix.git
+  commit: bc01ebc05a8105035c9449943046b46c8364b932
+  subdirs:
+    - cabal-simple

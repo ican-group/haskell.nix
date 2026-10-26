@@ -15,6 +15,7 @@ module Stack2nix.Stack
   , StackSnapshot(..)
   , PackageFlags
   , GhcOptions
+  , GhcOptionsValue(..)
   , parsePackageIdentifier
   ) where
 
@@ -124,7 +125,19 @@ data Dependency
 -- flags are { pkg -> { flag -> bool } }
 type PackageFlags = HM.HashMap T.Text (HM.HashMap T.Text Bool)
 
-type GhcOptions = HM.HashMap T.Text T.Text
+-- | A package's @ghc-options@ value.  In @stack.yaml@ this is written as a
+-- single string (@"-O2 -Wall"@), but in snapshot/resolver definitions stack
+-- writes it as an array of strings (@["-O2", "-Wall"]@).  We accept both
+-- (see #1676) and keep the strings exactly as written: Cabal splits each one
+-- into arguments itself, honouring quotes, so splitting on whitespace here
+-- would break quoted arguments like @-i"dir  with  spaces"@.
+newtype GhcOptionsValue = GhcOptionsValue { ghcOptionsList :: [T.Text] }
+  deriving (Show)
+
+instance FromJSON GhcOptionsValue where
+  parseJSON v = GhcOptionsValue <$> (parseJSON v <|> (pure <$> parseJSON v))
+
+type GhcOptions = HM.HashMap T.Text GhcOptionsValue
 
 data Stack
   = Stack Resolver (Maybe Compiler) [Dependency] PackageFlags GhcOptions
