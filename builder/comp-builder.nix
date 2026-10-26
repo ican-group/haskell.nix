@@ -174,6 +174,7 @@ let self =
 , preConfigure
 , postConfigure
 , setupBuildFlags
+, buildJobs
 , preBuild
 , postBuild
 , preCheck
@@ -996,6 +997,7 @@ in drv; in self) {
           preConfigure
           postConfigure
           setupBuildFlags
+          buildJobs
           preBuild
           postBuild
           preCheck

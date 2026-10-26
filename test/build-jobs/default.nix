@@ -46,22 +46,31 @@ let
   cappedDefault = "-j$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES))";
   v2CappedDefault = "HASKELLNIX_BUILD_NUM_JOBS=$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES))\n";
 
+  # The v1 ghcjs path passes no `-j` by default, and an explicit `-jN` may
+  # end the line there (no trailing `setupBuildFlags`).
+  isGhcjs = stdenv.hostPlatform.isGhcjs;
+  passesJobs = n: drv:
+    hasInfix "-j${toString n} " drv.buildPhase || hasInfix "-j${toString n}\n" drv.buildPhase;
+
   v1Checks = [
-    # Default is unchanged: capped `-j` and parallel building on.
-    { name = "v1 default keeps capped -j";
-      ok = hasInfix cappedDefault v1.default.buildPhase; }
+    # Default is unchanged: capped `-j` (none on ghcjs) and parallel building on.
+    (if isGhcjs
+      then { name = "v1 ghcjs default passes no -j";
+             ok = !(hasInfix cappedDefault v1.default.buildPhase); }
+      else { name = "v1 default keeps capped -j";
+             ok = hasInfix cappedDefault v1.default.buildPhase; })
     { name = "v1 default enables parallel building";
       ok = v1.default.enableParallelBuilding == true; }
     # buildJobs = 1 -> `-j1`, parallel building off, capped default gone.
     { name = "v1 buildJobs=1 passes -j1";
-      ok = hasInfix "-j1 " v1.seq.buildPhase; }
+      ok = passesJobs 1 v1.seq; }
     { name = "v1 buildJobs=1 disables parallel building";
       ok = v1.seq.enableParallelBuilding == false; }
     { name = "v1 buildJobs=1 drops the capped default";
       ok = !(hasInfix cappedDefault v1.seq.buildPhase); }
     # buildJobs = 3 -> `-j3`, parallel building on.
     { name = "v1 buildJobs=3 passes -j3";
-      ok = hasInfix "-j3 " v1.pinned.buildPhase; }
+      ok = passesJobs 3 v1.pinned; }
     { name = "v1 buildJobs=3 keeps parallel building";
       ok = v1.pinned.enableParallelBuilding == true; }
   ];
