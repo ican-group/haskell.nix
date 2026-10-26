@@ -34,6 +34,54 @@ let
   };
 in
 lib.runTests {
+  # `shadowedNonReinstallablePkgs` flags names in `nonReinstallablePkgs` that the
+  # project pins to a version different from the compiler-shipped one (#1657).
+
+  # Fires only for the pinned-to-a-different-version entry.
+  testShadowedNonReinstallableFires = {
+    expr = haskellLib.shadowedNonReinstallablePkgs {
+      nonReinstallablePkgs = [ "base" "bytestring" "ghc-prim" ];
+      compilerPackages = { base = "4.18.0.0"; bytestring = "0.11.4.0"; ghc-prim = "0.10.0"; };
+      packages = { bytestring = { package.identifier.version = "0.12.0.0"; }; };
+    };
+    expected = [ "bytestring" ];
+  };
+
+  # A normal project (planned version == shipped version) yields nothing.
+  testShadowedNonReinstallableSilentWhenMatching = {
+    expr = haskellLib.shadowedNonReinstallablePkgs {
+      nonReinstallablePkgs = [ "base" "bytestring" ];
+      compilerPackages = { base = "4.18.0.0"; bytestring = "0.11.4.0"; };
+      packages = { bytestring = { package.identifier.version = "0.11.4.0"; }; };
+    };
+    expected = [ ];
+  };
+
+  # Nothing is flagged when no `nonReinstallablePkgs` entry is overridden
+  # (absent, or present but shadowed to null).
+  testShadowedNonReinstallableIgnoresUnpinned = {
+    expr = haskellLib.shadowedNonReinstallablePkgs {
+      nonReinstallablePkgs = [ "base" "rts" ];
+      compilerPackages = { base = "4.18.0.0"; rts = "1.0.2"; };
+      packages = { rts = null; };
+    };
+    expected = [ ];
+  };
+
+  # A by-name override record (no package definition) is skipped without
+  # touching its undefined `package.identifier.version`.
+  testShadowedNonReinstallableIgnoresOverrideOnly = {
+    expr = haskellLib.shadowedNonReinstallablePkgs {
+      nonReinstallablePkgs = [ "base" "Cabal" ];
+      compilerPackages = { base = "4.18.0.0"; Cabal = "3.10.1.0"; };
+      packages = { Cabal = {
+        hasPackageDefinition = false;
+        package.identifier.version = throw "option used but not defined";
+      }; };
+    };
+    expected = [ ];
+  };
+
   # identity function for applyComponents
   test-applyComponents-id = {
     expr = haskellLib.applyComponents (_componentId: component: component) emptyConfig;
