@@ -40,8 +40,11 @@
         other positive integer to pin the parallelism.
 
         The v2 (`builderVersion = 2`) builder passes it to the component's
-        slice, whose `Setup build` gets the same `-jN` (a library slice
-        builds all of a package's libraries, so set it on `library`).
+        slice, whose `Setup build` gets the same `-jN`.  Each library and
+        sublibrary is its own slice (except for `build-type: Custom`
+        packages, which build as one slice), so to cover a whole package set
+        `packages.<name>.buildJobs`, which applies to every component on
+        both builders.
 
         Two v1 exceptions:
 

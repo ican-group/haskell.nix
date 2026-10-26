@@ -503,7 +503,7 @@ let
       LANG = "en_US.UTF-8";         # GHC needs the locale configured during the Haddock phase.
       LC_ALL = "en_US.UTF-8";
 
-      enableParallelBuilding = buildJobs != 1;
+      enableParallelBuilding = true;
 
       SETUP_HS = setup + "/bin/${setup.exeName}";
 

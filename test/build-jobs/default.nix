@@ -1,11 +1,10 @@
 # Test the per-component `buildJobs` option (#1479).
 #
 # `buildJobs` controls the `-jN` given to `Setup build`: on the v1 builder
-# directly (plus the derivation's `enableParallelBuilding`), on the v2
-# builder through the slice's `HASKELLNIX_BUILD_NUM_JOBS`.  We assert on the
-# component derivation's `buildPhase` / `enableParallelBuilding` attributes
-# directly (an eval-level check) so the test does not need to compile
-# anything.
+# directly, on the v2 builder through the slice's
+# `HASKELLNIX_BUILD_NUM_JOBS`.  We assert on the component derivation's
+# `buildPhase` directly (an eval-level check) so the test does not need to
+# compile anything.
 { stdenv, lib, buildPackages, project', haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem, testInputMap, testCabalProjectLocal, runCommand }:
 
 with lib;
@@ -29,19 +28,22 @@ let
   # arm there.
   onlyV2 = buildPackages.haskell-nix.compiler.${compiler-nix-name}.isStableHaskell or false;
 
-  exesFor = builderVersion:
-    let exe = extra: (mkProject builderVersion extra).hsPkgs.cabal-simple.components.exes.cabal-simple;
-    in {
-      # No `buildJobs` set.
-      default = exe {};
-      # `buildJobs = 1`: sequential build.
-      seq = exe { packages.cabal-simple.components.exes.cabal-simple.buildJobs = 1; };
-      # `buildJobs = 3`: pinned parallelism.
-      pinned = exe { packages.cabal-simple.components.exes.cabal-simple.buildJobs = 3; };
-    };
+  exeFor = builderVersion: extra:
+    (mkProject builderVersion extra).hsPkgs.cabal-simple.components.exes.cabal-simple;
 
-  v1 = exesFor 1;
-  v2 = exesFor 2;
+  # v1 components are overridable, so one project covers all three cases
+  # (`buildJobs = 1` sequential, `buildJobs = 3` pinned).
+  v1 = rec {
+    default = exeFor 1 {};
+    seq = default.override { buildJobs = 1; };
+    pinned = default.override { buildJobs = 3; };
+  };
+  # v2 slices read the module option, so each case is its own project.
+  v2 = {
+    default = exeFor 2 {};
+    seq = exeFor 2 { packages.cabal-simple.components.exes.cabal-simple.buildJobs = 1; };
+    pinned = exeFor 2 { packages.cabal-simple.components.exes.cabal-simple.buildJobs = 3; };
+  };
 
   cappedDefault = "-j$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES))";
   v2CappedDefault = "HASKELLNIX_BUILD_NUM_JOBS=$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES))\n";
@@ -53,26 +55,20 @@ let
     hasInfix "-j${toString n} " drv.buildPhase || hasInfix "-j${toString n}\n" drv.buildPhase;
 
   v1Checks = [
-    # Default is unchanged: capped `-j` (none on ghcjs) and parallel building on.
+    # Default is unchanged: capped `-j` (none on ghcjs).
     (if isGhcjs
       then { name = "v1 ghcjs default passes no -j";
              ok = !(hasInfix cappedDefault v1.default.buildPhase); }
       else { name = "v1 default keeps capped -j";
              ok = hasInfix cappedDefault v1.default.buildPhase; })
-    { name = "v1 default enables parallel building";
-      ok = v1.default.enableParallelBuilding == true; }
-    # buildJobs = 1 -> `-j1`, parallel building off, capped default gone.
+    # buildJobs = 1 -> `-j1`, capped default gone.
     { name = "v1 buildJobs=1 passes -j1";
       ok = passesJobs 1 v1.seq; }
-    { name = "v1 buildJobs=1 disables parallel building";
-      ok = v1.seq.enableParallelBuilding == false; }
     { name = "v1 buildJobs=1 drops the capped default";
       ok = !(hasInfix cappedDefault v1.seq.buildPhase); }
-    # buildJobs = 3 -> `-j3`, parallel building on.
+    # buildJobs = 3 -> `-j3`.
     { name = "v1 buildJobs=3 passes -j3";
       ok = passesJobs 3 v1.pinned; }
-    { name = "v1 buildJobs=3 keeps parallel building";
-      ok = v1.pinned.enableParallelBuilding == true; }
   ];
 
   v2Checks = [
