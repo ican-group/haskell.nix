@@ -1115,6 +1115,7 @@ final: prev: {
                   coverage = final.lib.optionalAttrs project.args.flake.doCoverage
                     (haskellLib.projectCoverageCiJobs
                       project selectPackages project.args.flake.coverageProjectModule);
+                  inherit (project.args.flake) doHaddock;
                 };
                 forAllCrossCompilers = prefix: project: (
                     [{ ${prefix} = mkFlake project; }]
