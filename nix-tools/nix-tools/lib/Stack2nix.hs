@@ -38,7 +38,7 @@ import Cabal2Nix.Util
 import Stack2nix.Cache (appendCache, cacheHits)
 import Stack2nix.CLI (Args(..))
 import Stack2nix.Project
-import Stack2nix.Stack (Stack(..), Dependency(..), Location(..), PackageFlags, GhcOptions)
+import Stack2nix.Stack (Stack(..), Dependency(..), Location(..), PackageFlags, GhcOptions, GhcOptionsValue(..))
 import Stack2nix.External.Resolve
 
 import qualified Data.HashMap.Strict as HM
@@ -131,11 +131,13 @@ flags2nix pkgFlags =
   | (pkgName, flags) <- HM.toList pkgFlags
   ]
 
--- | Converts 'GhcOptions' into @{ packageName = { ghcOptions = "..."; }; }@
+-- | Converts 'GhcOptions' into @{ packageName = { ghcOptions = [ "..." ]; }; }@
+-- A scalar @stack.yaml@ value becomes a single element and each entry of a
+-- snapshot's array becomes its own element (see #1676).
 ghcOptions2nix :: GhcOptions -> [Binding NExpr]
 ghcOptions2nix ghcOptions =
   [ quoted pkgName $= mkNonRecSet
-    [ "ghcOptions" $= mkList [ mkStr opts ] ]
+    [ "ghcOptions" $= mkList (map mkStr (ghcOptionsList opts)) ]
   | (pkgName, opts) <- HM.toList ghcOptions
   ]
 
