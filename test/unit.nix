@@ -70,7 +70,7 @@ lib.runTests {
     expected = "already-a-derivation";
   };
 
-  # An unplanned package (has `components`, but no planned `library`) must throw
+  # A package with `components` but no `library` (unplanned or unbuildable) must throw
   # rather than silently vanish or give an opaque `attribute 'library' missing`
   # (see #1379).  `runTests` can only assert that evaluation fails; the message
   # wording is checked out of band.

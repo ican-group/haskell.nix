@@ -577,7 +577,7 @@ let
       slice = if depLib != null then depLib else asSlice;
     in if slice == null
         then throw ("comp-v2-builder: ${pkgName}:${componentKindLabel}:${componentName} depends on ${d.identifier.name}, which has no v2 slice"
-          # A package record without a library: it was not in the plan (#1379).
+          # A package record without a library: unplanned or unbuildable (#1379).
           + lib.optionalString (d ? components) (".  " + haskellLib.unplannedLibraryMessage d.identifier.name))
         else slice
   ) directLibDeps);

@@ -442,17 +442,22 @@ in {
          else throw (unplannedLibraryMessage (d.identifier.name or null))
     else d;
 
-  # The error for a dependency whose package has no library component because
-  # it was not in the install plan (#1379).  Shared by `dependToLib` (v1) and
-  # the v2 builder's dependency-slice lookup.
+  # The error for a dependency whose package has no library component (#1379).
+  # `applyComponents` omits the library when the package is not in the plan,
+  # but also when it is not buildable or not individually planned, so the
+  # message lists every cause.  Shared by `dependToLib` (v1) and the v2
+  # builder's dependency-slice lookup.
   unplannedLibraryMessage = name:
-    "haskell.nix: the library of package '${if name == null then "<unknown>" else name}'"
-      + " is not available because it was not in the install plan."
-      + " This usually means the package was given overrides (e.g. via"
-      + " `modules` / `packages.${if name == null then "<name>" else name}`) but is not part"
-      + " of the cabal plan, so none of its components were planned."
-      + " Add it to the project's dependencies (so it appears in the plan),"
-      + " or remove the override.";
+    let pkg = if name == null then "<name>" else name;
+    in "haskell.nix: the library of package '${if name == null then "<unknown>" else name}'"
+      + " is not available. Either the package is not in the install plan"
+      + " (often because it was given overrides via `modules` /"
+      + " `packages.${pkg}` without being a dependency of the project),"
+      + " its library is not buildable (`packages.${pkg}.package.buildable`"
+      + " or `buildable: False` in the .cabal file), or the library was not"
+      + " planned (`packages.${pkg}.components.library.planned` is false)."
+      + " Make sure the project depends on it and that its library is"
+      + " buildable, or remove the override.";
 
   projectOverlays = import ./project-overlays.nix {
     inherit lib haskellLib;
