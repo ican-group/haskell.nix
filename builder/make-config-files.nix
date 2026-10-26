@@ -104,7 +104,7 @@ let
 
     unwrappedGhc=${ghc}
     ghcDeps=${ghc.cachedDeps
-      or (__trace "WARNING: ghc.cachedDeps not found" haskellLib.makeCompilerDeps ghc)}
+      or (__trace "WARNING: ghc.cachedDeps not found" (haskellLib.makeCompilerDeps ghc).cachedDeps)}
     ${ # Copy over the nonReinstallablePkgs from the global package db.
     ''
       for p in ${lib.concatStringsSep " " nonReinstallablePkgs'}; do
@@ -271,7 +271,7 @@ let
   '');
 in {
   inherit (ghc) targetPrefix;
-  inherit script libDeps regularLibDeps drv ghcCommand ghcCommandCaps libDir docDir packageCfgDir component prebuilt-depends;
+  inherit script libDeps regularLibDeps drv ghcCommand ghcCommandCaps libDir docDir packageCfgDir component prebuilt-depends instantiations;
   # Use ''${pkgroot} relative paths so that we can relocate the package database
   # along with referenced packages and still have it work on systems with
   # or without nix installed.

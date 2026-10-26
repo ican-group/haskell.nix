@@ -197,7 +197,7 @@ in
                 ''} $(builtin type -P "${ghcEnv.targetPrefix}pkg-config" &> /dev/null && echo "--with-pkg-config=${ghcEnv.targetPrefix}pkg-config") \
                 "$@"
               '');
-    propagatedBuildInputs = mkDrvArgs.propagateBuildInputs or [] ++ ghcEnv.drv.propagatedBuildInputs;
+    propagatedBuildInputs = mkDrvArgs.propagatedBuildInputs or [] ++ ghcEnv.drv.propagatedBuildInputs;
     phases = ["installPhase"];
     installPhase = ''
       echo "${"Shell for " + toString (builtins.map (p : p.identifier.name) selectedPackages)}"

@@ -187,9 +187,12 @@ in stdenv.mkDerivation ((
   name = (drv.name + "-check");
 
   passthru = {
-    inherit (drv) identifier config configFiles executableToolDepends cleanSrc env exeName meta;
+    inherit (drv) identifier config executableToolDepends env exeName meta;
     profiled = self drv.profiled;
     dwarf = self drv.dwarf;
+  } // lib.optionalAttrs (drv ? configFiles) {
+    # The `configFiles` output only exists when `keepConfigFiles` is set.
+    inherit (drv) configFiles;
   };
 
   inherit (drv) LANG LC_ALL buildInputs;
@@ -203,8 +206,9 @@ in stdenv.mkDerivation ((
 
   phases = ["unpackPhase" "patchPhase" "buildPhase"];
 
-  # If doCheck or doCrossCheck are false we may still build this
-  # component and we want it to quietly succeed.
+  # The test is run in `buildPhase` (not `checkPhase`), so it runs
+  # regardless of `doCheck`/`doCrossCheck`.  `hspkg-builder.nix` only
+  # creates `checks` for components with `doCheck` set.
   buildPhase = ''
     mkdir $out
     runHook preCheck
