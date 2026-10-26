@@ -55,6 +55,10 @@ let outerGhc = ghc; in
                               # Forwarded from the slice's
                               # `component.hardeningDisable` module
                               # option by `comp-v2-builder.nix`.
+, buildJobs ? null           # Per-component `buildJobs` (see
+                             # modules/component-options.nix): when set,
+                             # pins `Setup build -jN` in place of the
+                             # capped default below.
 , depSlices ? []
 , localRepo ? null           # derivation with <pkg>-<ver>.tar.gz files
 , v2Fragment ? null          # per-package build-time-composition fragment
@@ -1665,7 +1669,12 @@ ${lib.optionalString (metadataSourceFrags != []) ''
     # `HASKELLNIX_BUILD_NUM_JOBS` from the env at build time and feeds
     # it to `Setup build -jN`.  Build-phase flag, so UnitIds stay
     # stable.
-    export HASKELLNIX_BUILD_NUM_JOBS=$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES))
+    export HASKELLNIX_BUILD_NUM_JOBS=${
+      # A component's `buildJobs` replaces the cap (e.g. `-j1` for a
+      # memory-hungry package).  Unset leaves the script text unchanged.
+      if buildJobs == null
+      then "$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES))"
+      else toString buildJobs}
 
     ${lib.optionalString (expectedPackage != null) ''
       # Dry-run the plan first and verify that cabal isn't planning

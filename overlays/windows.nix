@@ -13,6 +13,18 @@ final: prev:
       }
     '' + drv.postInstall;
   });
+  # Don't install the terminfo database.  Its entries include names that
+  # differ only by case (`N/NCR260VT300WPP -> ../n/ncr260vt300wpp`), and the
+  # cross build writes it with the BUILD platform's `tic`, which always
+  # assumes mixed-case filenames.  On a builder whose store is
+  # case-insensitive (the darwin hosts' linux VMs) one name lands on the
+  # other, leaving a dangling symlink that fails `noBrokenSymlinks` --
+  # intermittently, depending on which is written last.  Nothing on Windows
+  # can use a database under `/nix/store` anyway; ncurses there drives the
+  # console through its win32 driver.
+  ncurses = if !prev.stdenv.hostPlatform.isWindows then prev.ncurses else prev.ncurses.overrideAttrs (drv: {
+    configureFlags = (drv.configureFlags or []) ++ [ "--disable-db-install" ];
+  });
 } // prev.lib.optionalAttrs (prev ? mfpr) {
    mfpr = if !prev.stdenv.hostPlatform.isWindows then prev.mpfr else prev.mfpr.overrideAttrs (drv: {
      configureFlags = (drv.configureFlags or []) ++ [ "--enable-static --disable-shared" ];

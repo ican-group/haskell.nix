@@ -247,6 +247,7 @@ let
   # All tests.
   allTests = {
     cabal-simple = callTest ./cabal-simple { inherit util; };
+    build-jobs = callTest ./build-jobs {};
     dummy-ghc-info = callTest ./dummy-ghc-info {};
     check-datadir = callTest ./check-datadir {};
     pkgconf-pc-version = callTest ./pkgconf-pc-version {};

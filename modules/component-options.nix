@@ -31,6 +31,34 @@
       default = [];
     };
 
+    buildJobs = lib.mkOption {
+      description = ''
+        Number of jobs to pass to `Setup build` as `-jN` for this component.
+        `null` (the default) keeps the standard behaviour of `-j` capped at
+        `min(NIX_BUILD_CORES, 4)`.  Set to `1` to build sequentially (useful
+        for memory-hungry packages that OOM under parallel builds), or to any
+        other positive integer to pin the parallelism.
+
+        The v2 (`builderVersion = 2`) builder passes it to the component's
+        slice, whose `Setup build` gets the same `-jN`.  Each library and
+        sublibrary is its own slice (except for `build-type: Custom`
+        packages, which build as one slice), so to cover a whole package set
+        `packages.<name>.buildJobs`, which applies to every component on
+        both builders.
+
+        Two v1 exceptions:
+
+        * `contentAddressed` components always build with `-j1`, because a
+          deterministic output is the point of `__contentAddressed`.  A larger
+          `buildJobs` is ignored there.
+        * ghcjs components pass no `-j` at all by default.  An explicitly set
+          `buildJobs` is honoured, but leaving it `null` does not introduce the
+          capped default.
+      '';
+      type = lib.types.nullOr lib.types.ints.positive;
+      default = null;
+    };
+
     testFlags = lib.mkOption {
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [];

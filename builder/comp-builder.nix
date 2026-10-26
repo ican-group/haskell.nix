@@ -15,6 +15,7 @@
 , prePatch ? component.prePatch, postPatch ? component.postPatch
 , preConfigure ? component.preConfigure, postConfigure ? component.postConfigure
 , setupBuildFlags ? component.setupBuildFlags
+, buildJobs ? component.buildJobs
 , preBuild ? component.preBuild , postBuild ? component.postBuild
 , preCheck ? component.preCheck , postCheck ? component.postCheck
 , setupInstallFlags ? component.setupInstallFlags
@@ -173,6 +174,7 @@ let self =
 , preConfigure
 , postConfigure
 , setupBuildFlags
+, buildJobs
 , preBuild
 , postBuild
 , preCheck
@@ -228,6 +230,20 @@ let
     if configureAllComponents
       then allComponent
       else component;
+
+  # The `-jN` flag the component asked for, as a (possibly empty) list so that
+  # an unset `buildJobs` contributes nothing at all to the `Setup build`
+  # command line (keeping the generated build phase byte-identical).  See #1479.
+  buildJobsFlags = lib.optional (buildJobs != null) "-j${toString buildJobs}";
+
+  # The `-jN` flag passed to `Setup build` on the normal (non content-addressed,
+  # non-ghcjs) path.  When `buildJobs` is null we keep the historical default
+  # (`-j` capped at min(NIX_BUILD_CORES, 4)); otherwise the component pins the
+  # job count (e.g. `buildJobs = 1` for a sequential, low-memory build).
+  buildJobsFlag =
+    if buildJobs == null
+      then "-j$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES))"
+      else lib.head buildJobsFlags;
 
   # Ignore attempts to include DWARF info when it is not possible
   enableDWARF = drvArgs.enableDWARF or false
@@ -727,19 +743,27 @@ let
       # in order to have a deterministic output and therefore avoid potential situations
       # where the binary cache becomes useless
       # See also https://gitlab.haskell.org/ghc/ghc/-/issues/12935
+      #
+      # This overrides `buildJobs` on purpose: determinism of the output is
+      # what makes `__contentAddressed` useful, so a component may not ask for
+      # more parallelism here.  `buildJobs = 1` is what this path does anyway.
       (if contentAddressed then ''
         runHook preBuild
         $SETUP_HS build ${haskellLib.componentTarget componentId} -j1 ${lib.concatStringsSep " " setupBuildFlags}
         runHook postBuild
-      '' else if stdenv.hostPlatform.isGhcjs then ''
+      ''
+      # The ghcjs path historically passes no `-j` at all.  Honour `buildJobs`
+      # when it is set explicitly (so a memory-hungry ghcjs component can still
+      # be pinned to `-j1`) but keep passing nothing by default.
+      else if stdenv.hostPlatform.isGhcjs then ''
         runHook preBuild
         # https://gitlab.haskell.org/ghc/ghc/issues/9221
-        $SETUP_HS build ${haskellLib.componentTarget componentId} ${lib.concatStringsSep " " setupBuildFlags}
+        $SETUP_HS build ${haskellLib.componentTarget componentId} ${lib.concatStringsSep " " (buildJobsFlags ++ setupBuildFlags)}
         runHook postBuild
       '' else ''
         runHook preBuild
         # https://gitlab.haskell.org/ghc/ghc/issues/9221
-        $SETUP_HS build ${haskellLib.componentTarget componentId} -j$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES)) ${lib.concatStringsSep " " setupBuildFlags}
+        $SETUP_HS build ${haskellLib.componentTarget componentId} ${buildJobsFlag} ${lib.concatStringsSep " " setupBuildFlags}
         runHook postBuild
       '');
 
@@ -973,6 +997,7 @@ in drv; in self) {
           preConfigure
           postConfigure
           setupBuildFlags
+          buildJobs
           preBuild
           postBuild
           preCheck
