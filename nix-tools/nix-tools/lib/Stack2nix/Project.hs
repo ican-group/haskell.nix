@@ -22,13 +22,15 @@ import Stack2nix.CLI (HpackUse(..))
 findCabalFiles :: HpackUse -> FilePath -> IO [CabalFile]
 findCabalFiles IgnorePackageYaml path = findOnlyCabalFiles path
 findCabalFiles UsePackageYamlFirst path = findOnlyCabalFiles path >>= \case
-  -- Prefer a committed `.cabal` file when one exists, matching the
-  -- `cabalProject` behaviour (which ignores a `package.yaml` whenever a
-  -- `.cabal` file is present, see call-cabal-project-to-nix.nix).  Previously a
+  -- Prefer a committed `.cabal` file when one exists, even if it is stale
+  -- relative to `package.yaml` (stack itself would regenerate it).  This is
+  -- what cabal-install sees for `cabalProject` too (call-cabal-project-to-nix.nix
+  -- only runs hpack when no `.cabal` is present), and plan-to-nix shares this
+  -- function so the generated nix matches the plan.  Previously a
   -- `package.yaml` alongside a checked-in `.cabal` was re-rendered through hpack
-  -- unconditionally, discarding the committed file — and historically failing
-  -- outright when the committed `.cabal` was hand-modified or produced by a
-  -- newer hpack (see #626, #767).
+  -- unconditionally, discarding the committed file — and failing outright when
+  -- the committed `.cabal` was hand-modified or produced by a newer hpack
+  -- (see #626, #767).
   cabalFiles@(_:_) -> return cabalFiles
   -- No `.cabal` file: fall back to hpack when a `package.yaml` is present.
   [] -> doesFileExist (path </> Hpack.packageConfig) >>= \case

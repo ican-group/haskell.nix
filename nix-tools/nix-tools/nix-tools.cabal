@@ -128,7 +128,6 @@ executable plan-to-nix
                      , extra
                      , filepath
                      , hnix
-                     , hpack
                      , microlens
                      , microlens-aeson
                      , nix-tools
@@ -143,7 +142,6 @@ executable plan-to-nix
   other-modules:       Plan2Nix
                      , Plan2Nix.Cache
                      , Plan2Nix.CLI
-                     , Plan2Nix.Project
                      , Plan2Nix.Plan
   hs-source-dirs:      plan2nix
   default-language:    Haskell2010
