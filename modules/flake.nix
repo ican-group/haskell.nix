@@ -45,12 +45,14 @@
     };
     doHaddock = lib.mkOption {
       type = lib.types.bool;
-      default = true;
+      default = false;
       description = ''
         Specifies if the flake `ciJobs` and `hydraJobs` should include a
         `haddock` group building the documentation (`.doc`) of each
         library/test component that has haddock enabled, so that broken
-        documentation is caught by CI (see #1932).
+        documentation is caught by CI (see #1932).  Packages with an empty
+        library (no exposed modules) fail with "haddock: No input file(s)";
+        set `packages.<name>.doHaddock = false` for those.
       '';
     };
   };

@@ -105,13 +105,15 @@ lib.runTests {
     expected = { "pkgA:lib:pkgA" = "DOC"; };
   };
 
-  # The haddock arg defaults to {} so any other caller of mkFlakeCiJobs keeps working.
+  # The haddock arg defaults to {} so any other caller of mkFlakeCiJobs keeps
+  # working, and an empty group is left out so the jobs match a project that
+  # has not opted in.
   testMkFlakeCiJobsHaddockDefault = {
     expr = (haskellLib.mkFlakeCiJobs { roots = "ROOTS"; } {
       packages = { }; checks = { }; coverage = { }; devShells = { };
       checkedProject = { };
-    }).haddock;
-    expected = { };
+    }) ? haddock;
+    expected = false;
   };
 
   # testing that the tests work

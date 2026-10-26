@@ -609,12 +609,15 @@ in {
         coverage
         # Make sure all the packages build
         packages
-        # Make sure the haddock documentation builds
-        haddock
         # Build and cache any tools in the `devShells`
         devShells;
       # Build tools and cache tools needed for the project
       inherit (project) roots;
+    }
+    # Make sure the haddock documentation builds (only when requested, so
+    # projects that do not opt in keep exactly the same jobs)
+    // lib.optionalAttrs (haddock != {}) {
+      inherit haddock;
     }
     # Build the plan-nix and check it if materialized
     // lib.optionalAttrs (checkedProject ? plan-nix) {
@@ -632,9 +635,9 @@ in {
         , apps ? mkFlakeApps haskellPackages
         , checks ? mkFlakeChecks (collectChecks' haskellPackages)
         , coverage ? {}
-        # Build the haddock documentation of the project components in CI so
-        # broken docs are caught. Set `doHaddock = false` to opt out (#1932).
-        , doHaddock ? true
+        # Set `doHaddock = true` to also build the haddock documentation of the
+        # project components in CI so broken docs are caught (#1932).
+        , doHaddock ? false
         , haddock ? lib.optionalAttrs doHaddock (mkFlakeHaddock haskellPackages)
         , devShell ? project.shell
         , devShells ? { default = devShell; }
