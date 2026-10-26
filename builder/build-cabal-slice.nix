@@ -245,6 +245,16 @@ let outerGhc = ghc; in
 
 let
   stageCabalFile = import ./stage-cabal-file.nix;
+  # `builtins.toFile` refuses text that references a derivation output
+  # (e.g. `configureOptions = [ "--with-foo=${pkgs.foo}" ]`
+  # or a darwin framework's `extra-lib-dirs:`).  Keep `toFile` for the
+  # usual context-free text (no extra drv, unchanged hashes) and fall
+  # back to `writeText` when the text carries derivation context.
+  textFile = name: text:
+    if lib.any (c: c ? outputs || (c.allOutputs or false))
+         (lib.attrValues (builtins.getContext text))
+    then pkgsBuildBuild.writeText name text
+    else builtins.toFile name text;
   # Cross-aware program names. nixpkgs' cross GHCs prefix every
   # binary with `${ghc.targetPrefix}` (e.g. `javascript-unknown-ghcjs-ghc-pkg`)
   # and don't ship the unprefixed `ghc-pkg`, so plain `ghc-pkg` on
@@ -1453,14 +1463,14 @@ stdenv.mkDerivation ({
       # the passed values, so self participates in the block groups.
       selfFrag=$(mktemp -d); mkdir -p $selfFrag/nix-support/v2-frag
       printf '%s' ${lib.escapeShellArg v2Fragment.pkgName} > $selfFrag/nix-support/v2-frag/pkg-name
-      cp ${builtins.toFile "flags"             v2Fragment.flagsBlock}            $selfFrag/nix-support/v2-frag/flags
-      cp ${builtins.toFile "ghc-options"       v2Fragment.ghcOptionsBlock}       $selfFrag/nix-support/v2-frag/ghc-options
-      cp ${builtins.toFile "configure-options" v2Fragment.configureOptionsBlock} $selfFrag/nix-support/v2-frag/configure-options
-      cp ${builtins.toFile "program-options"   v2Fragment.programOptionsBlock}   $selfFrag/nix-support/v2-frag/program-options
-      cp ${builtins.toFile "doc"               v2Fragment.docBlock}              $selfFrag/nix-support/v2-frag/doc
-      cp ${builtins.toFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $selfFrag/nix-support/v2-frag/extra-lib-dirs
-      cp ${builtins.toFile "config"            v2Fragment.configBlock}           $selfFrag/nix-support/v2-frag/config
-      cp ${builtins.toFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
+      cp ${textFile "flags"             v2Fragment.flagsBlock}            $selfFrag/nix-support/v2-frag/flags
+      cp ${textFile "ghc-options"       v2Fragment.ghcOptionsBlock}       $selfFrag/nix-support/v2-frag/ghc-options
+      cp ${textFile "configure-options" v2Fragment.configureOptionsBlock} $selfFrag/nix-support/v2-frag/configure-options
+      cp ${textFile "program-options"   v2Fragment.programOptionsBlock}   $selfFrag/nix-support/v2-frag/program-options
+      cp ${textFile "doc"               v2Fragment.docBlock}              $selfFrag/nix-support/v2-frag/doc
+      cp ${textFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $selfFrag/nix-support/v2-frag/extra-lib-dirs
+      cp ${textFile "config"            v2Fragment.configBlock}           $selfFrag/nix-support/v2-frag/config
+      cp ${textFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
         $selfFrag/nix-support/v2-frag/setup-constraints
       cp ${pkgs.writeText "source-repo-block" v2Fragment.sourceRepoBlock} \
         $selfFrag/nix-support/v2-frag/source-repo-block
@@ -1605,7 +1615,7 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       # local skeleton (via file — no shell escaping) + composed sections.
       # Use a redirect (not `cp`, which would create cabal.project with
       # the store file's read-only mode and break the `>>` append).
-      cat ${builtins.toFile "local-cabal-project" v2Fragment.localCabalProject} > cabal.project
+      cat ${textFile "local-cabal-project" v2Fragment.localCabalProject} > cabal.project
       cat cabal.project.closure >> cabal.project
 
     ''}
@@ -2407,18 +2417,18 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       ${metadataFragExport}
       # Per-package cabal.project blocks (emitted as separate files so a
       # consumer can group by block-type across the closure, matching the
-      # current cabal.project byte-layout).  Written via `toFile` so the
+      # current cabal.project byte-layout).  Written via `textFile` so the
       # multi-line block text needs no shell escaping.
       printf '%s' ${lib.escapeShellArg v2Fragment.pkgName}        > $out/nix-support/v2-frag/pkg-name
-      cp ${builtins.toFile "flags"             v2Fragment.flagsBlock}            $out/nix-support/v2-frag/flags
-      cp ${builtins.toFile "ghc-options"       v2Fragment.ghcOptionsBlock}       $out/nix-support/v2-frag/ghc-options
-      cp ${builtins.toFile "configure-options" v2Fragment.configureOptionsBlock} $out/nix-support/v2-frag/configure-options
-      cp ${builtins.toFile "program-options"   v2Fragment.programOptionsBlock}   $out/nix-support/v2-frag/program-options
-      cp ${builtins.toFile "doc"               v2Fragment.docBlock}              $out/nix-support/v2-frag/doc
-      cp ${builtins.toFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $out/nix-support/v2-frag/extra-lib-dirs
-      cp ${builtins.toFile "config"            v2Fragment.configBlock}           $out/nix-support/v2-frag/config
+      cp ${textFile "flags"             v2Fragment.flagsBlock}            $out/nix-support/v2-frag/flags
+      cp ${textFile "ghc-options"       v2Fragment.ghcOptionsBlock}       $out/nix-support/v2-frag/ghc-options
+      cp ${textFile "configure-options" v2Fragment.configureOptionsBlock} $out/nix-support/v2-frag/configure-options
+      cp ${textFile "program-options"   v2Fragment.programOptionsBlock}   $out/nix-support/v2-frag/program-options
+      cp ${textFile "doc"               v2Fragment.docBlock}              $out/nix-support/v2-frag/doc
+      cp ${textFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $out/nix-support/v2-frag/extra-lib-dirs
+      cp ${textFile "config"            v2Fragment.configBlock}           $out/nix-support/v2-frag/config
       printf '%s' ${lib.escapeShellArg v2Fragment.constraintLine} > $out/nix-support/v2-frag/constraint
-      cp ${builtins.toFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
+      cp ${textFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
         $out/nix-support/v2-frag/setup-constraints
       cp ${pkgs.writeText "source-repo-block" v2Fragment.sourceRepoBlock} \
         $out/nix-support/v2-frag/source-repo-block
