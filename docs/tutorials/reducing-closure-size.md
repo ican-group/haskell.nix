@@ -22,7 +22,7 @@ Use `nix why-depends` to confirm what is pulling `gcc` (or any other
 unwanted path) into the closure:
 
 ```shell
-for dep in $(nix-store -q --references ./result | grep gcc); do
+for dep in $(nix-store -q --requisites ./result | grep gcc); do
   nix why-depends ./result "$dep"
 done
 ```
@@ -33,7 +33,10 @@ comparing against `nixpkgs#gcc`: that is the compiler *wrapper*,
 possibly from a different Nixpkgs revision, so `why-depends` can find
 no dependency even when the executable retains the full compiler.
 There may be more than one match (for instance `gcc-…` and
-`gcc-…-lib`); look at each of them.
+`gcc-…-lib`); look at each of them.  `--requisites` lists the whole
+closure, so this also finds a `gcc` that is only reached indirectly
+(`why-depends` then shows the chain); the recipes below only remove
+references held by the executable itself.
 
 The output usually points at a reference embedded in the executable
 itself (frequently via the bundled RTS include files), rather than a
@@ -71,11 +74,28 @@ linking are left untouched.
 `Setup` (instead of the `--disable-...` flags it passes by default), so
 Cabal strips as well.
 
+The `.dwarf` variant of the component (`your-exe.dwarf`) inherits these
+options, so with `dontStrip = false` its debug information is stripped
+again.  If you also use `.dwarf`, set `dontStrip` back to `true` for it,
+e.g. `your-exe.dwarf.override { dontStrip = true; }`.
+
 These component options (and `postInstall` below) are applied by the
 default per-component builder (`builderVersion = 1`).  The v2 slice
 builder (`builderVersion = 2`, the default for the stable-haskell
 compilers such as `ghc914-sh`) does not strip its outputs and ignores
-them; see [Post-processing a built executable](#post-processing-a-built-executable)
+them.  With v2 you can ask Cabal itself to strip the executable by
+adding a per-package setting to `cabalProjectLocal`, which is passed
+through to the slice's `cabal` invocation:
+
+```nix
+  cabalProjectLocal = ''
+    package your-package
+      executable-stripping: True
+  '';
+```
+
+Check the result with the [diagnosis](#diagnosis) steps above.  See
+[Post-processing a built executable](#post-processing-a-built-executable)
 for an approach that works with either builder.
 
 ## Fully static executables
@@ -138,15 +158,16 @@ in pkgs.runCommand "your-exe-slim" {
 } ''
   mkdir -p $out/bin
   cp ${exe.exePath} $out/bin/
-  chmod +w $out/bin/your-exe
-  remove-references-to -t ${pkgs.stdenv.cc.cc} $out/bin/your-exe
+  chmod +w $out/bin/${exe.exeName}
+  remove-references-to -t ${pkgs.stdenv.cc.cc} $out/bin/${exe.exeName}
 ''
 ```
 
 As above, use the store paths `nix why-depends` reported.
 `runCommand` does not run the stdenv fixup phase, so the binary is not
 stripped; to strip it as well, use `pkgs.runCommandCC` and add
-`$STRIP $out/bin/your-exe`.  Data files and other runtime
+`$STRIP $out/bin/${exe.exeName}`.  (`exe.exeName` includes the
+`.exe` suffix when building for Windows.)  Data files and other runtime
 dependencies of the executable are not copied, so check that it still
 runs.
 
