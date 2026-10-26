@@ -99,6 +99,28 @@ in {
     || isBenchmark componentId;
   mayHaveExecutable = isExecutableType;
 
+  # Names in `nonReinstallablePkgs` that a project pins to a version other than
+  # the one shipped with the compiler.  Such overrides are silently dropped by
+  # the `nonReinstallablePkgs` shadow in `config.hsPkgs`, so callers warn about
+  # them rather than letting the build fail later with an opaque
+  # `installed package ... is broken due to missing package X-<ver>` error
+  # (see #1657).  `packages` maps a package name to its module config (or null,
+  # for a shadowed entry); `compilerPackages` maps a name to the version string
+  # the compiler ships.  Only packages actually pinned to a differing version
+  # are returned, so a normal project yields `[]`.
+  shadowedNonReinstallablePkgs = { nonReinstallablePkgs, packages, compilerPackages }:
+    lib.filter (name:
+         packages ? ${name}
+      && packages.${name} != null
+      # A `packages.<name>` record that only carries by-name overrides has
+      # no `package.identifier` (see `hasPackageDefinition` in
+      # modules/package.nix); reading its version would throw.
+      && (packages.${name}.hasPackageDefinition or true)
+      && compilerPackages ? ${name}
+      && (packages.${name}.package.identifier.version or null) != null
+      && packages.${name}.package.identifier.version != compilerPackages.${name}
+    ) nonReinstallablePkgs;
+
   # Was there a reference to the package source in the `cabal.project` or `stack.yaml` file.
   # This is used to make the default `packages` list for `shellFor`.
   isLocalPackage = p: p.isLocal or false;

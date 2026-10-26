@@ -7,6 +7,40 @@ let
     inherit (config) nonReinstallablePkgs hsPkgs compiler evalPackages builderVersion crossTemplateHaskellSupport v2LocalPackageSlices v2LocalPackageSliceNames cabalProjectLocal withBuildCompiler;
   };
 
+  # Packages listed in `nonReinstallablePkgs` are forced to the copy shipped
+  # with the compiler (see the `genAttrs ... (_: null)` shadow in `config.hsPkgs`
+  # below).  If the project's plan pins such a package to a *different* version
+  # (via a local package, source-repository-package or extra-hackage) that
+  # override is silently discarded and the build later fails with an opaque
+  # `installed package ... is broken due to missing package <pkg>-<ver>` error.
+  # Warn about that here rather than leaving the user to debug the broken
+  # package-db (see #1657).  The detection lives in `haskellLib` (and is unit
+  # tested); it only considers `nonReinstallablePkgs`, and only fires when the
+  # planned version differs from the compiler-shipped one, so a normal project
+  # (planned version == shipped version) never triggers this.
+  shadowedNonReinstallable = haskellLib.shadowedNonReinstallablePkgs {
+    inherit (config) nonReinstallablePkgs;
+    packages = config.packages;
+    compilerPackages = config.compiler.packages;
+  };
+
+  warnShadowedNonReinstallable = value: lib.foldr (name: acc:
+    lib.warn ''
+      haskell.nix: package '${name}' is listed in `nonReinstallablePkgs`, but this
+      project pins it to version ${config.packages.${name}.package.identifier.version} (the compiler ships ${config.compiler.packages.${name}}).
+      The pinned version will be ignored and the compiler's copy used instead, which
+      usually surfaces later as an opaque
+        `installed package ... is broken due to missing package ${name}-...`
+      error.  To use your version, set `nonReinstallablePkgs` in a project module to an
+      explicit list that omits '${name}'.  The option replaces rather than merges (the
+      last definition wins), so a plain assignment is enough — but do not derive the
+      new list from `config.nonReinstallablePkgs`, that is self-referential and will
+      loop.${lib.optionalString (lib.elem name config.bootPkgs) ''
+          '${name}' is also in `bootPkgs`, which shadows it the same way, so
+        set `bootPkgs` using `lib.mkForce` and an explicit list that omits it too.''}  Otherwise drop the
+      override to keep using the compiler's copy.'' acc)
+    value shadowedNonReinstallable;
+
 in
 
 {
@@ -191,7 +225,7 @@ in
     type = lib.types.unspecified;
   };
 
-  config.hsPkgs =
+  config.hsPkgs = warnShadowedNonReinstallable (
     { inherit (builder) shellFor makeConfigFiles ghcWithPackages ghcWithHoogle;
       buildPackages = buildModules.config.hsPkgs; # TODO perhaps remove this
       pkgsBuildBuild = buildModules.config.hsPkgs;
@@ -207,5 +241,5 @@ in
       # that throws on first use, and the throw names an option
       # (`packages.alex.package.identifier.version'), not the lookup.
       (name: pkg: if !(options.packages.${name}.isDefined or true) || pkg == null || !(pkg.hasPackageDefinition or true) then null else builder.build-package config pkg)
-      (config.packages // lib.genAttrs (config.nonReinstallablePkgs ++ config.bootPkgs) (_: null));
+      (config.packages // lib.genAttrs (config.nonReinstallablePkgs ++ config.bootPkgs) (_: null)));
 }
