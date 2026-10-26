@@ -7,14 +7,14 @@ license:             BSD-3-Clause
 license-file:        LICENSE
 author:              Moritz Angermann
 maintainer:          moritz.angermann@gmail.com
-homepage:            https://github.com/input-output-hk/haskell.nix
-bug-reports:         https://github.com/input-output-hk/haskell.nix/issues
+homepage:            https://github.com/ican-group/haskell.nix
+bug-reports:         https://github.com/ican-group/haskell.nix/issues
 category:            Distribution
 build-type:          Simple
 
 source-repository head
   type:              git
-  location:          https://github.com/input-output-hk/haskell.nix
+  location:          https://github.com/ican-group/haskell.nix
   subdir:            nix-tools/nix-tools
 
 common warnings
