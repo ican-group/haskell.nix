@@ -329,17 +329,21 @@ test-suite stack-ghc-options-tests
   hs-source-dirs:      tests
   default-language:    Haskell2010
 
--- Pure unit tests for the stack.yaml/snapshot dependency merge precedence
+-- Unit tests for the stack.yaml/snapshot dependency merge precedence
 -- (haskell.nix issue #1690). Unlike the golden `tests` suite these need no
--- network access or external tools.
+-- network access or external tools (the snapshot is a local temp file).
 test-suite unit-tests
   import:              warnings
                      , cabal-deps
   type:                exitcode-stdio-1.0
   main-is:             Unit.hs
   build-depends:       base
+                     , bytestring
+                     , directory
+                     , filepath
                      , nix-tools
                      , tasty
                      , tasty-hunit
+                     , yaml
   hs-source-dirs:      tests
   default-language:    Haskell2010

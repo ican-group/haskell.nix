@@ -1,13 +1,18 @@
 module Main (main) where
 
+import qualified Data.ByteString.Char8 as BS
 import Data.Maybe (mapMaybe)
+import Data.Yaml (decodeEither')
+import System.Directory (getTemporaryDirectory, removeFile)
+import System.FilePath (takeDirectory, takeFileName, (</>))
+import System.IO (hClose, hPutStr, openTempFile)
 
 import Distribution.Pretty (prettyShow)
 import Distribution.Types.PackageId (PackageIdentifier (..))
 import Distribution.Types.PackageName (PackageName)
 
-import Stack2nix.External.Resolve (dependencyPackageName, mergeDependencies)
-import Stack2nix.Stack (Dependency (..), parsePackageIdentifier)
+import Stack2nix.External.Resolve (dependencyPackageName, mergeDependencies, resolveSnapshot)
+import Stack2nix.Stack (Dependency (..), Stack (..), parsePackageIdentifier)
 
 import Test.Tasty (TestTree, defaultMain, testGroup)
 import Test.Tasty.HUnit (assertEqual, testCase, (@?=))
@@ -35,7 +40,36 @@ main :: IO ()
 main = defaultMain tests
 
 tests :: TestTree
-tests = testGroup "Stack2nix.External.Resolve.mergeDependencies"
+tests = testGroup "Stack2nix.External.Resolve"
+  [ mergeTests
+  , testCase "resolveSnapshot: stack.yaml extra-dep wins over the snapshot" $ do
+      -- End to end through resolveSnapshot with a local snapshot file, so
+      -- the argument order at the call site is covered too.
+      tmp <- getTemporaryDirectory
+      (snapshotPath, h) <- openTempFile tmp "snapshot.yaml"
+      hPutStr h $ unlines
+        [ "resolver: lts-22.0"
+        , "packages:"
+        , "- foo-1.0"
+        , "- bar-1.0"
+        ]
+      hClose h
+      let stackYaml = BS.pack $ unlines
+            [ "resolver: " ++ takeFileName snapshotPath
+            , "extra-deps:"
+            , "- foo-2.0"
+            ]
+      stack <- either (fail . show) pure (decodeEither' stackYaml)
+      Stack _ _ deps _ _ <-
+        resolveSnapshot (takeDirectory snapshotPath </> "stack.yaml") stack
+      removeFile snapshotPath
+      map prettyName (names deps) @?= ["foo", "bar"]
+      assertEqual "foo resolves to the extra-dep version"
+        ["2.0"] (lookupVersion (packageName "foo") deps)
+  ]
+
+mergeTests :: TestTree
+mergeTests = testGroup "mergeDependencies"
   [ testCase "extra-dep shadows overlapping snapshot package (issue #1690)" $ do
       -- stack.yaml extra-deps take precedence over snapshot packages.
       let stackDeps = [pkgIndex "foo-2.0"]
