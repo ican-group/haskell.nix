@@ -13,6 +13,7 @@ module Distribution.Nixpkgs.Fetch
 
 import Control.Applicative
 import Control.DeepSeq
+import Control.Exception ( evaluate )
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Trans.Maybe
@@ -125,16 +126,19 @@ fetchWith (supportsRev, kind, addArgs) source = do
       , std_out = CreatePipe
       }
 
+    -- Read all of stdout before waiting, otherwise a script that writes more
+    -- than the pipe buffer blocks forever.
+    buf <- BS.hGetContents stdoutH
+    _ <- evaluate (BS.length buf)
     exitCode <- waitForProcess processH
-    case exitCode of
-      ExitFailure _ -> return Nothing
-      ExitSuccess   -> do
-        buf <- BS.hGetContents stdoutH
-        let (l:ls) = reverse (BS.lines buf)
-            buf'   = BS.unlines (reverse ls)
-        case length ls of
-          0 -> return Nothing
-          1 -> return (Just (DerivationSource kind (sourceUrl source) "" (BS.unpack (head ls))  , sourceUrl source))
+    case (exitCode, reverse (BS.lines buf)) of
+      (ExitFailure _, _) -> return Nothing
+      (ExitSuccess, []) -> return Nothing
+      (ExitSuccess, l:ls) -> do
+        let buf' = BS.unlines (reverse ls)
+        case ls of
+          [] -> return Nothing
+          [sha] -> return (Just (DerivationSource kind (sourceUrl source) "" (BS.unpack sha), sourceUrl source))
           _ -> case eitherDecode buf' of
                  Left err -> error ("invalid JSON: " ++ err ++ " in " ++ show buf')
                  Right ds -> return (Just (ds { derivKind = kind }, BS.unpack l))
