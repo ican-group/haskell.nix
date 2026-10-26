@@ -450,7 +450,8 @@ in {
   unplannedLibraryMessage = name:
     let pkg = if name == null then "<name>" else name;
     in "haskell.nix: the library of package '${if name == null then "<unknown>" else name}'"
-      + " is not available. Either the package is not in the install plan"
+      + " is not available. Either the package has no library at all (for"
+      + " example it only has executables), it is not in the install plan"
       + " (often because it was given overrides via `modules` /"
       + " `packages.${pkg}` without being a dependency of the project),"
       + " its library is not buildable (`packages.${pkg}.package.buildable`"
