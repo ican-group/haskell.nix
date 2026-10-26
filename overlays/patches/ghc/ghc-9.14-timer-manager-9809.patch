@@ -1,0 +1,71 @@
+diff --git a/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs b/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs
+--- a/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs
++++ b/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs
+@@ -13,8 +13,10 @@
+ {-# LANGUAGE CPP #-}
+ {-# LANGUAGE ExistentialQuantification #-}
+ {-# LANGUAGE FlexibleInstances #-}
++{-# LANGUAGE MagicHash #-}
+ {-# LANGUAGE NoImplicitPrelude #-}
+ {-# LANGUAGE Trustworthy #-}
++{-# LANGUAGE UnboxedTuples #-}
+ 
+ -- TODO: use the new Windows IO manager
+ module GHC.Internal.Event.TimerManager
+@@ -53,6 +55,9 @@
+ import GHC.Internal.Data.IORef (IORef, atomicModifyIORef', mkWeakIORef, newIORef, readIORef,
+                    writeIORef)
+ import GHC.Internal.Base
++import GHC.Internal.IORef (IORef(..))
++import GHC.Internal.Prim (casMutVar#, readMutVar#)
++import GHC.Internal.STRef (STRef(..))
+ import GHC.Internal.Clock (getMonotonicTimeNSec)
+ import GHC.Internal.Conc.Signal (runHandlers)
+ import GHC.Internal.Enum (maxBound)
+@@ -257,7 +262,7 @@
+ 
+ editTimeouts :: TimerManager -> TimeoutEdit -> IO ()
+ editTimeouts mgr g = do
+-  wake <- atomicModifyIORef' (emTimeouts mgr) f
++  wake <- modifyTimeouts (emTimeouts mgr) f
+   when wake (wakeManager mgr)
+   where
+     f q = (q', wake)
+@@ -273,4 +278,37 @@
+                       t0 /= t1
+                     _ -> True
+ 
++-- | Atomically replace the timeout queue with the first component of
++-- @f old@ and return the second component.
++--
++-- Unlike 'atomicModifyIORef'', the new queue is evaluated /before/ it is
++-- published, using a compare-and-swap loop. 'atomicModifyIORef'' installs
++-- the new contents as a thunk and only evaluates it afterwards, so when many
++-- threads register timeouts at once (#9809) each one builds its insert on
++-- top of the previous thread's unevaluated insert, giving long thunk chains,
++-- threads blocking on each other's half evaluated updates and lots of extra
++-- GC work. Since 'Q.IntPSQ' is spine strict, WHNF means fully evaluated, and
++-- other threads only ever see a fully evaluated queue.
++--
++-- The cost is that a thread whose compare-and-swap loses a race has to redo
++-- its O(log n) update. The update runs in constant stack (see #7653).
++--
++-- Only the short edits made by registering threads use this. The timer
++-- manager's own update in 'mkTimeout' (removing every expired timeout) can
++-- take much longer, and under a stream of registrations from other
++-- capabilities its compare-and-swap would almost never succeed, starving it
++-- so that expired timeouts don't fire. It therefore keeps using
++-- 'atomicModifyIORef'', which never retries: it publishes a single thunk and
++-- evaluates it straight away. A registering thread that reads that thunk
++-- evaluates it (or waits for the manager to) before publishing its own fully
++-- evaluated queue, so thunks still cannot pile up.
++modifyTimeouts :: IORef TimeoutQueue -> (TimeoutQueue -> (TimeoutQueue, b)) -> IO b
++modifyTimeouts (IORef (STRef ref)) f = IO loop
++  where
++    loop s0 = case readMutVar# ref s0 of
++      (# s1, old #) -> case f old of
++        (new, r) -> new `seq` case casMutVar# ref old new s1 of
++          (# s2, 0#, _ #) -> (# s2, r #)
++          (# s2, _, _ #) -> loop s2
++
+ #endif
