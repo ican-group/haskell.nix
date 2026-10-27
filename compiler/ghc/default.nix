@@ -136,6 +136,24 @@ let
     then bootPkgs.ghc.evalWith.${evalSystem} or (bootPkgs.ghc.override { inherit evalSystem; })
     else bootPkgs.ghc;
 
+  # Boot compiler for `configured-src` and `generated-light`, the trees read at
+  # eval time.  For a cross target `bootPkgs.ghc` is our own native GHC of the
+  # same version, so realising them would build that whole compiler during
+  # evaluation whenever it is not cached (any change to `ghc-patches`).  Neither
+  # needs it: configure only probes the boot compiler, and the generated-source
+  # tools run in stage0Boot.  Use the native compiler's own (nixpkgs) boot
+  # compiler instead.  The real build below keeps `ghc`.
+  configureGhc =
+    let go = g: if g.isHaskellNixCompiler or false then go g.bootPkgs.ghc else g;
+    in go ghc;
+
+  nativeBuildInputsWith = bootGhc: [
+    perl autoconf automake m4 python3 sphinx
+    bootGhc bootPkgs.alex bootPkgs.happy bootPkgs.hscolour
+    autoreconfHook ]
+  ++ lib.optional useLdLld llvmPackages.bintools
+  ++ lib.optional (targetPlatform.isWasm) nodejs;
+
   ghcHasNativeBignum = builtins.compareVersions ghc-version "9.0" >= 0;
   hadrianHasNativeBignumFlavour = builtins.compareVersions ghc-version "9.6" >= 0;
 
@@ -715,12 +733,7 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
   # Don’t add -liconv to LDFLAGS automatically so that GHC will add it itself.
   dontAddExtraLibs = true;
 
-  nativeBuildInputs = [
-    perl autoconf automake m4 python3 sphinx
-    ghc bootPkgs.alex bootPkgs.happy bootPkgs.hscolour
-    autoreconfHook ]
-  ++ lib.optional useLdLld llvmPackages.bintools
-  ++ lib.optional (targetPlatform.isWasm) nodejs;
+  nativeBuildInputs = nativeBuildInputsWith ghc;
 
   # For building runtime libs
   depsBuildTarget = toolsForTarget;
@@ -941,10 +954,11 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     };
     configured-src = stdenv.mkDerivation ({
       name = name + "-configured-src";
+      # See `configureGhc`.
+      nativeBuildInputs = nativeBuildInputsWith configureGhc;
       inherit
         buildInputs
         version
-        nativeBuildInputs
         patches
         src
         strictDeps
@@ -1013,6 +1027,8 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     # cacheable.
     generated-light = stdenv.mkDerivation ({
       name = name + "-generated";
+      # See `configureGhc`.
+      nativeBuildInputs = nativeBuildInputsWith configureGhc;
       inherit
         buildInputs
         version
@@ -1022,7 +1038,6 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
         depsBuildTarget
         depsTargetTarget
         depsTargetTargetPropagated
-        nativeBuildInputs
         postPatch
         preConfigure
         configurePlatforms
