@@ -1149,9 +1149,14 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     # Checks that configuring with `configureGhc` instead of `ghc` does not
     # change the eval-time trees: builds both again with `ghc` and compares.
     # A plain derivation (`ghc` is only needed when this is built), so it adds
-    # no GHC build to evaluation.  In `configured-src`, files may differ only
-    # where they record which boot compiler configure probed (they name its
-    # store path); `generated-light` must be identical.
+    # no GHC build to evaluation.  `generated-light` must be identical.  In
+    # `configured-src` only what eval-time consumers read must match: every
+    # `.cabal` file (ghc-extra-pkgs / boot-packages-nix) and the `compiler/`
+    # tree (`useLocalGhcLib`).  The rest may legitimately differ: configure
+    # records the boot compiler and its toolchain (config.status,
+    # hadrian/cfg/system.config, default.host.target, patched shebangs) and
+    # hadrian's own build state (.shake.database, sphinx caches) is not
+    # reproducible.  Those are listed but do not fail the check.
     configured-src-check =
       let
         reference = drv: drv.overrideAttrs (old: {
@@ -1160,16 +1165,22 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
         });
       in buildPackages.runCommand (name + "-configured-src-check") {} ''
         compare() {
-          local ref=$1 new=$2 allowBootGhc=$3 failed=
+          local ref=$1 new=$2 evalOnly=$3 failed= path
           while IFS= read -r line; do
-            if [[ $line =~ ^Files\ (.*)\ and\ (.*)\ differ$ ]] && [[ -n $allowBootGhc ]] \
-                && { grep -qF ${ghc} "''${BASH_REMATCH[1]}" || grep -qF ${configureGhc} "''${BASH_REMATCH[2]}"; }; then
-              echo "allowed (names the boot compiler): ''${BASH_REMATCH[2]#$new/}"
+            if [[ $line =~ ^Files\ (.*)\ and\ (.*)\ differ$ ]]; then
+              path=''${BASH_REMATCH[2]#$new/}
+            elif [[ $line =~ ^Only\ in\ ([^:]*):\ (.*)$ ]]; then
+              path=''${BASH_REMATCH[1]#$ref}; path=''${path#$new}; path=''${path#/}/''${BASH_REMATCH[2]}; path=''${path#/}
+            else
+              path=$line
+            fi
+            if [[ -n $evalOnly && $path != *.cabal && $path != compiler/* ]]; then
+              echo "ignored (not read at eval): $line"
             else
               echo "MISMATCH: $line"
               failed=1
             fi
-          done < <(diff -rq "$ref" "$new" || true)
+          done < <(diff -rq --no-dereference "$ref" "$new" 2>&1 || true)
           [[ -z $failed ]]
         }
         compare ${reference passthru.configured-src} ${passthru.configured-src} 1
