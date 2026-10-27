@@ -1145,6 +1145,37 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     smallAddressSpace = lib.makeOverridable self (args // {
       disableLargeAddressSpace = true;
     });
+  } // lib.optionalAttrs (ghc.isHaskellNixCompiler or false) {
+    # Checks that configuring with `configureGhc` instead of `ghc` does not
+    # change the eval-time trees: builds both again with `ghc` and compares.
+    # A plain derivation (`ghc` is only needed when this is built), so it adds
+    # no GHC build to evaluation.  In `configured-src`, files may differ only
+    # where they record which boot compiler configure probed (they name its
+    # store path); `generated-light` must be identical.
+    configured-src-check =
+      let
+        reference = drv: drv.overrideAttrs (old: {
+          name = old.name + "-reference";
+          nativeBuildInputs = nativeBuildInputsWith ghc;
+        });
+      in buildPackages.runCommand (name + "-configured-src-check") {} ''
+        compare() {
+          local ref=$1 new=$2 allowBootGhc=$3 failed=
+          while IFS= read -r line; do
+            if [[ $line =~ ^Files\ (.*)\ and\ (.*)\ differ$ ]] && [[ -n $allowBootGhc ]] \
+                && { grep -qF ${ghc} "''${BASH_REMATCH[1]}" || grep -qF ${configureGhc} "''${BASH_REMATCH[2]}"; }; then
+              echo "allowed (names the boot compiler): ''${BASH_REMATCH[2]#$new/}"
+            else
+              echo "MISMATCH: $line"
+              failed=1
+            fi
+          done < <(diff -rq "$ref" "$new" || true)
+          [[ -z $failed ]]
+        }
+        compare ${reference passthru.configured-src} ${passthru.configured-src} 1
+        compare ${reference passthru.generated-light} ${passthru.generated-light} ""
+        touch $out
+      '';
   } // extra-passthru // {
     buildGHC = extra-passthru.buildGHC.evalWith.${evalSystem} or (extra-passthru.buildGHC.override { inherit evalSystem; });
   };
