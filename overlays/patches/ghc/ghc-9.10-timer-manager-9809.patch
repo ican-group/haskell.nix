@@ -33,7 +33,7 @@ diff --git a/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs b/lib
    when wake (wakeManager mgr)
    where
      f q = (q', wake)
-@@ -270,4 +274,80 @@
+@@ -270,4 +274,75 @@
                        t0 /= t1
                      _ -> True
  
@@ -62,55 +62,50 @@ diff --git a/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs b/lib
 +-- evaluates it (or waits for the manager to) before publishing its own fully
 +-- evaluated queue, so thunks still cannot pile up.
 +--
-+-- See Note [CAS tickets for timeout queues].
++-- 'casMutVar#' compares pointers, so the expected value must be exactly the
++-- pointer read from the 'MutVar#'. See Note [Pointer equality in
++-- modifyTimeouts] for why this function is OPAQUE.
++{-# OPAQUE modifyTimeouts #-}
 +modifyTimeouts :: IORef TimeoutQueue -> (TimeoutQueue -> (TimeoutQueue, b)) -> IO b
 +modifyTimeouts (IORef (STRef ref)) f = IO modLoop
 +  where
 +    modLoop s0 = case readMutVar# ref s0 of
-+      (# s1, oldVar #) ->
-+        -- Freeze the pointer before 'f' inspects the queue. See the Note.
-+        case mkTimeoutTicket oldVar of
-+          ticket -> case f oldVar of
-+            (newVar, r) -> newVar `seq`
-+              case casTimeoutQueue ref ticket newVar s1 of
-+                (# s2, 0#, _ #) -> (# s2, r #)
-+                -- Yield so a failed CAS cannot pin the capability. Without
-+                -- this, rts_pause and the timer manager can starve on -N1
-+                -- (see pause_resume_via_safe_ffi_concurrent).
-+                (# s2, _, _ #) -> case yield# s2 of
-+                  s3 -> modLoop s3
++      (# s1, oldVar #) -> case f oldVar of
++        (newVar, r) -> newVar `seq` case casMutVar# ref oldVar newVar s1 of
++          (# s2, 0#, _ #) -> (# s2, r #)
++          (# s2, _, _ #) -> modLoop s2
 +
-+-- | Opaque pointer-identity wrapper for 'casMutVar#'.
-+--
-+-- Note [CAS tickets for timeout queues]
-+-- ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-+-- 'casMutVar#' compares heap pointers. If we pass the value we just
-+-- inspected with 'Q.minView' / 'Q.unsafeInsertNew' as the expected
-+-- pointer, GHC may case-split the 'IntPSQ' and reconstruct a 'Tip' or
-+-- 'Bin' with a *new* address. The compare-and-swap then never succeeds
-+-- and the registering thread spins. That livelock showed up as
-+-- 'pause_resume_via_safe_ffi_concurrent' timing out: 'threadDelay'
-+-- never finished registering, so 'rts_pause' waited for those threads
-+-- until 'System.Timeout.timeout' fired.
-+--
-+-- The ticket is allocated by a NOINLINE wrapper *before* the queue is
-+-- inspected, and the CAS lives in another NOINLINE wrapper. GHC cannot
-+-- reconstruct the expected pointer across those boundaries. 'Any' /
-+-- 'unsafeCoerce#' would also work, but would make this Trustworthy
-+-- module import an Unsafe one.
-+data TimeoutTicket = TimeoutTicket TimeoutQueue
++{- Note [Pointer equality in modifyTimeouts]
++~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
++'casMutVar#' succeeds only if the expected value is the very pointer stored
++in the 'MutVar#', so all the difficulties of 'reallyUnsafePtrEquality#'
++apply to it. In 'modifyTimeouts' the expected value is @oldVar@, exactly as
++'readMutVar#' returned it, and that must survive optimisation.
 +
-+{-# NOINLINE mkTimeoutTicket #-}
-+mkTimeoutTicket :: TimeoutQueue -> TimeoutTicket
-+mkTimeoutTicket = TimeoutTicket
++The danger is the optimiser seeing a @case@ on @oldVar@ in the same function
++as the 'casMutVar#'. That would happen if 'modifyTimeouts' were inlined or
++specialised at a call site, bringing in the body of @f@ (in 'editTimeouts',
++@f@ inspects the queue to decide whether to wake the manager). The binder
++swap (Note [Binder swap] in GHC.Core.Opt.OccurAnal) may then replace @oldVar@
++by the case binder, which is the /evaluated/ queue. That is a different
++pointer whenever the 'MutVar#' holds a thunk or an indirection, for example
++the selector thunk that 'atomicModifyIORef'' in 'mkTimeout' leaves behind.
++Case-of-known-constructor can likewise replace it by a freshly built
++constructor. Either way the compare-and-swap would keep failing and the
++registering thread would spin.
 +
-+{-# NOINLINE casTimeoutQueue #-}
-+casTimeoutQueue
-+  :: MutVar# RealWorld TimeoutQueue
-+  -> TimeoutTicket
-+  -> TimeoutQueue
-+  -> State# RealWorld
-+  -> (# State# RealWorld, Int#, TimeoutQueue #)
-+casTimeoutQueue ref (TimeoutTicket old) new s = casMutVar# ref old new s
++The OPAQUE pragma keeps @f@ an unknown function inside 'modifyTimeouts', so
++there is never a @case@ on @oldVar@ to rewrite. OPAQUE rather than NOINLINE:
++both stop inlining and specialisation, but NOINLINE still allows the
++worker/wrapper transformation. Today that is harmless (the worker only
++unboxes the 'IORef' and still takes @f@ as an argument), but OPAQUE states
++the requirement directly: the body must be compiled as written and every call
++must go to it. It also costs nothing, since 'editTimeouts' passes a closure
++anyway.
++
++An alternative is to hide the expected pointer in a box built by a NOINLINE
++function before @f@ runs (like the @Ticket@ type of the atomic-primops
++package), but that allocates on every attempt.
++-}
 +
  #endif

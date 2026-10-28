@@ -30,8 +30,9 @@
       #   * TimerManager: registering threads publish only evaluated timeout
       #     queues (GHC #9809, ghc!16863), so many threads registering
       #     timeouts at once no longer build thunk chains and blow up the heap.
-      #     The CAS takes its expected pointer through NOINLINE wrappers and
-      #     yields on failure, so it cannot livelock (stable-haskell/ghc#201).
+      #     `modifyTimeouts` is OPAQUE so the optimiser cannot rewrite the
+      #     pointer its CAS expects, which would livelock it
+      #     (stable-haskell/ghc#201).
       #   * TimerManager: on x86_64 Linux cap each backend wait at one second
       #     so a GHC running under Rosetta cannot sit in an indefinite poll
       #     after consuming a suspension request (haskell.nix #2609).
