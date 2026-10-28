@@ -1130,6 +1130,16 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
       postPatch = ''
         cp config.sub config.sub.ghcjs
       '';
+    } // lib.optionalAttrs (ghc.isHaskellNixCompiler or false) {
+      # Config.hs records the boot compiler's version as `cBooterVersion`.
+      # Make it the real boot compiler's (`ghc`), not `configureGhc`'s, so this
+      # matches the `generated` output of the full build.
+      postBuild = ''
+        sed -i -E 's/^(cBooterVersion *= *)"${configureGhc.version}"$/\1"${ghc.version}"/' \
+          _build/stage1/compiler/build/GHC/Settings/Config.hs
+        grep -qE '^cBooterVersion *= *"${ghc.version}"$' \
+          _build/stage1/compiler/build/GHC/Settings/Config.hs
+      '';
     });
 
     # Used to detect non haskell-nix compilers (accidental use of nixpkgs compilers can lead to unexpected errors)
