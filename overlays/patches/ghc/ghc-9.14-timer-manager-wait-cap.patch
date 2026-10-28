@@ -1,7 +1,7 @@
 diff --git a/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs b/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs
 --- a/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs
 +++ b/libraries/ghc-internal/src/GHC/Internal/Event/TimerManager.hs
-@@ -183,7 +183,21 @@
+@@ -182,7 +182,21 @@
  step :: TimerManager -> IO Bool
  step mgr = do
    timeout <- mkTimeout
