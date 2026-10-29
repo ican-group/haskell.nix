@@ -44,6 +44,11 @@ let self =
 
 , enableLibraryProfiling ? true
 
+# When false, Haddock documentation is not generated, reducing build time
+# and download size. For the legacy make build system this sets HADDOCK_DOCS=NO;
+# for Hadrian this switches from --docs=no-sphinx to --docs=nothing.
+, enableHaddockDocs ? true
+
 , enableDWARF ? false
 
 , enableIPE ? false
@@ -255,7 +260,7 @@ let
     CrossCompilePrefix = ${targetPrefix}
   '' + lib.optionalString isCrossTarget ''
     Stage1Only = ${if targetPlatform.system == hostPlatform.system then "NO" else "YES"}
-  '' + lib.optionalString (isCrossTarget || targetPlatform.isMusl) ''
+  '' + lib.optionalString (isCrossTarget || targetPlatform.isMusl || !enableHaddockDocs) ''
     HADDOCK_DOCS = NO
   '' + ''
     BUILD_SPHINX_HTML = NO
@@ -442,10 +447,15 @@ let
           + lib.optionalString useLLVM "+llvm"
           + lib.optionalString enableDWARF "+debug_info"
           + lib.optionalString ((enableNativeBignum && hadrianHasNativeBignumFlavour) || targetPlatform.isGhcjs || targetPlatform.isWasm) "+native_bignum"
-          + lib.optionalString (targetPlatform.isGhcjs || targetPlatform.isWasm) "+no_profiled_libs"
+          # +no_profiled_libs must be applied whenever profiling is disabled,
+          # not just for GHCJS/Wasm. The legacy BUILD_PROF_LIBS=NO in buildMK
+          # is ignored by Hadrian; this transformer is the Hadrian-native way.
+          + lib.optionalString (!enableLibraryProfiling || targetPlatform.isGhcjs || targetPlatform.isWasm) "+no_profiled_libs"
           + lib.optionalString enableIPE "+ipe"
           + lib.concatStrings extraFlavourTransformers
-      } --docs=no-sphinx -j --verbose"
+      # --docs=no-sphinx: skip Sphinx but still build Haddock HTML (default)
+      # --docs=nothing: skip all docs including Haddock (for .small variant)
+      } --docs=${if enableHaddockDocs then "no-sphinx" else "nothing"} -j --verbose"
       # This is needed to prevent $GCC from emitting out of line atomics.
       # Those would then result in __aarch64_ldadd1_sync and others being referenced, which
       # we don't handle in the RTS properly yet. Until we figure out how to _properly_ deal
@@ -716,9 +726,13 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
   dontAddExtraLibs = true;
 
   nativeBuildInputs = [
-    perl autoconf automake m4 python3 sphinx
-    ghc bootPkgs.alex bootPkgs.happy bootPkgs.hscolour
+    perl autoconf automake m4 python3
+    ghc bootPkgs.alex bootPkgs.happy
     autoreconfHook ]
+  # sphinx generates Sphinx (reST) docs; always disabled in practice but kept
+  # as a build input for completeness. hscolour provides hyperlinked source
+  # for Haddock. Neither is needed without documentation.
+  ++ lib.optionals enableHaddockDocs [ sphinx bootPkgs.hscolour ]
   ++ lib.optional useLdLld llvmPackages.bintools
   ++ lib.optional (targetPlatform.isWasm) nodejs;
 
@@ -1129,6 +1143,17 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     # The same GHC, but without the large (1TB) address space reservation
     smallAddressSpace = lib.makeOverridable self (args // {
       disableLargeAddressSpace = true;
+    });
+
+    # A minimal GHC variant without profiling libraries or Haddock documentation.
+    # Significantly reduces closure size and download requirements, suitable for
+    # CI caches, Docker images, and cross-compilation toolchains where profiling
+    # and documentation are not needed.
+    #
+    # Usage: pkgs.haskell-nix.compiler.ghc967.small
+    small = lib.makeOverridable self (args // {
+      enableLibraryProfiling = false;
+      enableHaddockDocs = false;
     });
   } // extra-passthru // {
     buildGHC = extra-passthru.buildGHC.evalWith.${evalSystem} or (extra-passthru.buildGHC.override { inherit evalSystem; });
