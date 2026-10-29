@@ -136,6 +136,24 @@ let
     then bootPkgs.ghc.evalWith.${evalSystem} or (bootPkgs.ghc.override { inherit evalSystem; })
     else bootPkgs.ghc;
 
+  # Boot compiler for `configured-src` and `generated-light`, the trees read at
+  # eval time.  For a cross target `bootPkgs.ghc` is our own native GHC of the
+  # same version, so realising them would build that whole compiler during
+  # evaluation whenever it is not cached (any change to `ghc-patches`).  Neither
+  # needs it: configure only probes the boot compiler, and the generated-source
+  # tools run in stage0Boot.  Use the native compiler's own (nixpkgs) boot
+  # compiler instead.  The real build below keeps `ghc`.
+  configureGhc =
+    let go = g: if g.isHaskellNixCompiler or false then go g.bootPkgs.ghc else g;
+    in go ghc;
+
+  nativeBuildInputsWith = bootGhc: [
+    perl autoconf automake m4 python3 sphinx
+    bootGhc bootPkgs.alex bootPkgs.happy bootPkgs.hscolour
+    autoreconfHook ]
+  ++ lib.optional useLdLld llvmPackages.bintools
+  ++ lib.optional (targetPlatform.isWasm) nodejs;
+
   ghcHasNativeBignum = builtins.compareVersions ghc-version "9.0" >= 0;
   hadrianHasNativeBignumFlavour = builtins.compareVersions ghc-version "9.6" >= 0;
 
@@ -715,12 +733,7 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
   # Don’t add -liconv to LDFLAGS automatically so that GHC will add it itself.
   dontAddExtraLibs = true;
 
-  nativeBuildInputs = [
-    perl autoconf automake m4 python3 sphinx
-    ghc bootPkgs.alex bootPkgs.happy bootPkgs.hscolour
-    autoreconfHook ]
-  ++ lib.optional useLdLld llvmPackages.bintools
-  ++ lib.optional (targetPlatform.isWasm) nodejs;
+  nativeBuildInputs = nativeBuildInputsWith ghc;
 
   # For building runtime libs
   depsBuildTarget = toolsForTarget;
@@ -941,10 +954,11 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     };
     configured-src = stdenv.mkDerivation ({
       name = name + "-configured-src";
+      # See `configureGhc`.
+      nativeBuildInputs = nativeBuildInputsWith configureGhc;
       inherit
         buildInputs
         version
-        nativeBuildInputs
         patches
         src
         strictDeps
@@ -1013,6 +1027,8 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     # cacheable.
     generated-light = stdenv.mkDerivation ({
       name = name + "-generated";
+      # See `configureGhc`.
+      nativeBuildInputs = nativeBuildInputsWith configureGhc;
       inherit
         buildInputs
         version
@@ -1022,7 +1038,6 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
         depsBuildTarget
         depsTargetTarget
         depsTargetTargetPropagated
-        nativeBuildInputs
         postPatch
         preConfigure
         configurePlatforms
@@ -1115,6 +1130,16 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
       postPatch = ''
         cp config.sub config.sub.ghcjs
       '';
+    } // lib.optionalAttrs (ghc.isHaskellNixCompiler or false) {
+      # Config.hs records the boot compiler's version as `cBooterVersion`.
+      # Make it the real boot compiler's (`ghc`), not `configureGhc`'s, so this
+      # matches the `generated` output of the full build.
+      postBuild = ''
+        sed -i -E 's/^(cBooterVersion *= *)"${configureGhc.version}"$/\1"${ghc.version}"/' \
+          _build/stage1/compiler/build/GHC/Settings/Config.hs
+        grep -qE '^cBooterVersion *= *"${ghc.version}"$' \
+          _build/stage1/compiler/build/GHC/Settings/Config.hs
+      '';
     });
 
     # Used to detect non haskell-nix compilers (accidental use of nixpkgs compilers can lead to unexpected errors)
@@ -1130,6 +1155,48 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     smallAddressSpace = lib.makeOverridable self (args // {
       disableLargeAddressSpace = true;
     });
+  } // lib.optionalAttrs (ghc.isHaskellNixCompiler or false) {
+    # Checks that configuring with `configureGhc` instead of `ghc` does not
+    # change the eval-time trees: builds both again with `ghc` and compares.
+    # A plain derivation (`ghc` is only needed when this is built), so it adds
+    # no GHC build to evaluation.  `generated-light` must be identical.  In
+    # `configured-src` only what eval-time consumers read must match: every
+    # `.cabal` file (ghc-extra-pkgs / boot-packages-nix) and the `compiler/`
+    # tree (`useLocalGhcLib`).  The rest may legitimately differ: configure
+    # records the boot compiler and its toolchain (config.status,
+    # hadrian/cfg/system.config, default.host.target, patched shebangs) and
+    # hadrian's own build state (.shake.database, sphinx caches) is not
+    # reproducible.  Those are listed but do not fail the check.
+    configured-src-check =
+      let
+        reference = drv: drv.overrideAttrs (old: {
+          name = old.name + "-reference";
+          nativeBuildInputs = nativeBuildInputsWith ghc;
+        });
+      in buildPackages.runCommand (name + "-configured-src-check") {} ''
+        compare() {
+          local ref=$1 new=$2 evalOnly=$3 failed= path
+          while IFS= read -r line; do
+            if [[ $line =~ ^Files\ (.*)\ and\ (.*)\ differ$ ]]; then
+              path=''${BASH_REMATCH[2]#$new/}
+            elif [[ $line =~ ^Only\ in\ ([^:]*):\ (.*)$ ]]; then
+              path=''${BASH_REMATCH[1]#$ref}; path=''${path#$new}; path=''${path#/}/''${BASH_REMATCH[2]}; path=''${path#/}
+            else
+              path=$line
+            fi
+            if [[ -n $evalOnly && $path != *.cabal && $path != compiler/* ]]; then
+              echo "ignored (not read at eval): $line"
+            else
+              echo "MISMATCH: $line"
+              failed=1
+            fi
+          done < <(diff -rq --no-dereference "$ref" "$new" 2>&1 || true)
+          [[ -z $failed ]]
+        }
+        compare ${reference passthru.configured-src} ${passthru.configured-src} 1
+        compare ${reference passthru.generated-light} ${passthru.generated-light} ""
+        touch $out
+      '';
   } // extra-passthru // {
     buildGHC = extra-passthru.buildGHC.evalWith.${evalSystem} or (extra-passthru.buildGHC.override { inherit evalSystem; });
   };

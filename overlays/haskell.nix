@@ -1760,6 +1760,10 @@ final: prev: {
             # and `ghc-boot-packages`); caching the derivation here means those
             # evals substitute it instead of rebuilding it via IFD.
             ghc-generated = ghc.generated-light;
+          } // final.lib.optionalAttrs (ifdLevel > 0 && ghc ? configured-src-check) {
+            # Cross compilers configure those eval-time trees with a nixpkgs
+            # boot GHC; check they match what the real boot GHC gives.
+            inherit (ghc) configured-src-check;
           } // final.lib.optionalAttrs (ifdLevel > 1) {
             # Things that require two levels of IFD to build (inputs should be in level 1)
             nix-tools-unchecked = final.pkgsBuildBuild.haskell-nix.nix-tools-unchecked;
