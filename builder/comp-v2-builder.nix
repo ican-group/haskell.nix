@@ -2505,6 +2505,36 @@ let
         find $out/store \( -type f -o -type l \) >&2
         exit 1
       fi
+    '' + lib.optionalString stdenv.hostPlatform.isDarwin ''
+      # Cabal (the stable-haskell fork) records the dependency rpaths
+      # relative to the install dir (`@loader_path/../..`, because macOS
+      # 15's dyld treats an unresolvable absolute rpath as fatal), and in a
+      # slice they do not resolve: dyld then fails to find
+      # `@rpath/libHSrts-fs-...dylib`.  Each still names its target -- a
+      # dep slice's store path (`<hash>-<name>/store/...`) or this slice's
+      # own `store/...` -- so make them absolute again.
+      for f in $out/lib/*.dylib; do
+        [ -f "$f" ] && [ ! -L "$f" ] || continue
+        chmod u+w "$f"
+        otool -l "$f" | awk '/cmd LC_RPATH/ { r=1; next } r && /path / { print $2; r=0 }' \
+          | while IFS= read -r rp; do
+          rel=$(printf '%s\n' "''${rp#@loader_path/}" | sed -E 's|^(\.\./)*||')
+          case "$rp" in
+            @loader_path/*) ;;
+            *) continue ;;
+          esac
+          if [[ "$rel" =~ ^[0-9a-z]{32}- ]]; then
+            new="${builtins.storeDir}/$rel"
+          elif [[ "$rel" == store/* ]]; then
+            new="$out/$rel"
+          else
+            continue
+          fi
+          install_name_tool -rpath "$rp" "$new" "$f" 2>/dev/null \
+            || install_name_tool -delete_rpath "$rp" "$f"
+        done
+      done
+    '' + ''
       ${trimDistNewstyle}
     '' else if useTarball then ''
 
