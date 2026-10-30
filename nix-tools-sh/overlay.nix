@@ -4,7 +4,28 @@ let
   compiler-nix-name = "ghc96";
 
   nix-tools = nix-tools-set {
-    nix-tools = nix-tools-unchecked;
+    nix-tools = nix-tools-unchecked // {
+      exes = nix-tools-unchecked.exes // {
+        make-install-plan = make-install-plan-with-gcc;
+      };
+    };
+  };
+
+  # The stable-haskell cabal fork configures a C toolchain while elaborating
+  # the plan and does `requireProgram gcc`, but plan-to-nix runs with only a
+  # dummy GHC on PATH:
+  #   Error: [Cabal-6666]
+  #   The program 'gcc' is required but it could not be found.
+  # haskell.nix adds a `gcc` for the fork itself (lib/call-cabal-project-to-nix.nix),
+  # but only for v2 projects and stable-haskell compilers, not for this ghc96
+  # project planned by its own (fork-based) make-install-plan.  The planner's
+  # bin/ is on that PATH, so ship the same shim next to it.
+  make-install-plan-with-gcc = final.buildPackages.symlinkJoin {
+    name = "make-install-plan-with-gcc";
+    paths = [
+      nix-tools-unchecked.exes.make-install-plan
+      (final.buildPackages.writeShellScriptBin "gcc" ''exec ${final.buildPackages.stdenv.cc}/bin/cc "$@"'')
+    ];
   };
 
   nix-tools-unchecked = nix-tools-set {};

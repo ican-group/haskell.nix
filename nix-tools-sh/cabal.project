@@ -60,7 +60,8 @@ source-repository-package
 -- Host-stage scoping of executable-static, and a per-stage `shared`
 -- default for targets whose RTS linker only loads shared libraries
 -- (wasm), so a wasm Host plans shared libraries while its native Build
--- stage does not; the SAME rev the v2
+-- stage does not, and shared libraries for the dependencies of a
+-- native-shared foreign library; the SAME rev the v2
 -- builder's cabal-install is pinned to in builder/default.nix, so
 -- plan-time and slice-time elaboration can never skew).  This is the
 -- cabal that ships the cross-compilation "stage" system
@@ -72,8 +73,8 @@ source-repository-package
 source-repository-package
     type: git
     location: https://github.com/stable-haskell/Cabal.git
-    tag: ad937de5b7cf2140ba55130d60b06f83af7fab90
-    --sha256: sha256-khDkYbQMgm0Cj0DBJStkagj147Nh9+QLAOnk4eRyEXc=
+    tag: 2decf1a57208a7c136dc41a2bcf82a30eef546cc
+    --sha256: sha256-BKIRLzK4vFLgJY2QiN9+vVcwiEy6+Szq9ROYjANow0Y=
     subdir: Cabal
             Cabal-syntax
             cabal-install
