@@ -869,6 +869,18 @@ let
           ''}
         fi
       '')
+      # On darwin a foreign library finds its Haskell dependencies through
+      # an rpath to `$configFiles/lib/links` (see make-config-files.nix),
+      # which is a temporary directory unless `keepConfigFiles` is set.
+      # Install those links next to the library and point the rpath there.
+      + (lib.optionalString (stdenv.hostPlatform.isDarwin && componentId.ctype == "flib") ''
+        mkdir -p $out/lib/links
+        cp -P $configFiles/lib/links/*.dylib $out/lib/links/
+        for f in $out/lib/*.dylib; do
+          ${stdenv.cc.bintools.targetPrefix}install_name_tool \
+            -rpath $configFiles/lib/links $out/lib/links "$f"
+        done
+      '')
       # In case `setup copy` did not create this
       + (lib.optionalString enableSeparateDataOutput ''
          mkdir -p $data
