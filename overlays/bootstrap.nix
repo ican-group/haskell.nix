@@ -330,7 +330,17 @@ in {
                 ++ fromUntil "9.12"  "9.12.4"  ./patches/ghc/ghc-9.12-Cabal-3.14.patch
                 ++ fromUntil "9.12.4"  "9.13"  ./patches/ghc/ghc-9.12.4-Cabal-3.14.patch
                 ++ fromUntil "9.12"  "9.12.3"  ./patches/ghc/ghc-9.12-alex-3.5.2.0.patch
-                ++ fromUntil "9.14"  "9.15"  ./patches/ghc/ghc-9.14-Cabal-3.14.patch
+                ++ fromUntil "9.14"  "9.14.2"  ./patches/ghc/ghc-9.14-Cabal-3.14.patch
+                # 9.14.2 dropped genprimopcode's gen_hs_source (the GHC.Prim
+                # source generator), so the --prim-module half of the 9.14.1
+                # patch no longer applies. This variant keeps only the
+                # --wrappers-module additions.
+                ++ fromUntil "9.14.2"  "9.15"  ./patches/ghc/ghc-9.14.2-Cabal-3.14.patch
+                # The wip/9.14.2-backports branch still declares 9.14.1 in
+                # configure.ac, so GHC installs into lib/ghc-9.14.1 and the
+                # derivation (which expects 9.14.2) fails. Bump the source
+                # version to match. Drop this once the branch bumps itself.
+                ++ fromUntil "9.14.2"  "9.14.3"  ./patches/ghc/ghc-9.14.2-version.patch
 
                 # This patch will make windows stop emitting absolute relocations. This is one way in which binutils 2.36+ (with ASLR enabled), will just choke on the
                 # assembly we generate because it's always absolute (32bit) addressing modes.
@@ -1290,6 +1300,49 @@ in {
 
                 ghc-patches = ghc-patches "9.14.1";
             });
+            # 9.14.2 is not released yet; it tracks the wip/9.14.2-backports
+            # branch on gitlab.haskell.org. It is intentionally not wrapped in
+            # traceWarnOld: latestVerMap stays at the latest *release* (9.14.1),
+            # so traceWarnOld would otherwise tag 9.14.2 with a backwards
+            # "out of date, upgrade to 9.14.1" hint.
+            ghc9142 = final.callPackage ../compiler/ghc {
+                extra-passthru = { buildGHC = final.buildPackages.haskell-nix.compiler.ghc9142; };
+
+                bootPkgs = bootPkgsGhc94 // {
+                  ghc = if final.stdenv.buildPlatform != final.stdenv.targetPlatform
+                    then final.buildPackages.buildPackages.haskell-nix.compiler.ghc9142
+                    else final.buildPackages.buildPackages.haskell.compiler.ghc9142
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc9141
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc9124
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc9123
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc9122
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc9121
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc9101
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc984
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc983
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc982
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc981
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc967
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc966
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc965
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc964
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc963
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc962
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc945
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc944
+                          or final.buildPackages.buildPackages.haskell.compiler.ghc943;
+                };
+                inherit sphinx;
+
+                buildLlvmPackages = final.buildPackages.llvmPackages_19;
+                llvmPackages = final.llvmPackages_19;
+
+                src-spec.file = final.haskell-nix.sources.ghc9142;
+                src-spec.version = "9.14.2";
+                src-spec.needsBooting = true;
+
+                ghc-patches = ghc-patches "9.14.2";
+            };
         } // (__listToAttrs (final.lib.mapAttrsToList (source-name: ver:
           let
             src = final.haskell-nix.sources.${source-name};
