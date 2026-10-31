@@ -7,7 +7,7 @@
 with lib;
 
 let
-  repoSSH = "git@github.com:input-output-hk/${name}.nix.git";
+  repoSSH = "git@github.com:ican-group/${name}.nix.git";
   sshKey = "/run/keys/buildkite-${name}-ssh-private";
 in
   writeScript "update-${name}-nix.sh" ''

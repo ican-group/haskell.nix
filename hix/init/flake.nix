@@ -1,6 +1,6 @@
 {
   # This is a template created by `hix init`
-  inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
+  inputs.haskellNix.url = "github:ican-group/haskell.nix";
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
   # nixpkgs unstable (26.11) dropped x86_64-darwin, and `eachSystem` below
   # evaluates *every* supported system to collect its output names — so one

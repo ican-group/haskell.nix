@@ -13,7 +13,7 @@ import ./update-external.nix
       git pull --ff-only
       cd ..
     else
-      git clone git@github.com:input-output-hk/hackage.nix.git --depth 1
+      git clone git@github.com:ican-group/hackage.nix.git --depth 1
     fi
 
     set -x

@@ -30,7 +30,7 @@ if [ "$TESTS" == "nix-build" ] || [ "$TESTS" == "all" ]; then
       --accept-flake-config \
       -I . -I .. \
       --option restrict-eval true \
-      --option allowed-uris "https://github.com/NixOS https://github.com/input-output-hk" \
+      --option allowed-uris "https://github.com/NixOS https://github.com/input-output-hk https://github.com/ican-group" \
       --no-link --keep-going -f default.nix \
       --argstr compiler-nix-name "$GHC" \
       --arg CADerivationsEnabled $NIX_CA_DERIVATIONS
@@ -84,7 +84,7 @@ fi
 
 if [ "$TESTS" == "tests-benchmarks" ] || [ "$TESTS" == "all" ]; then
   printf "*** Checking that a nix-shell works for a project with test-suite build-tools and benchmarks...\n" >& 2
-  printf "!!! This is expected to fail until https://github.com/input-output-hk/haskell.nix/issues/231 is resolved! \n" >& 2
+  printf "!!! This is expected to fail until https://github.com/ican-group/haskell.nix/issues/231 is resolved! \n" >& 2
   nix-shell $NIX_BUILD_ARGS \
       --pure ./default.nix \
       --argstr compiler-nix-name "$GHC" \

@@ -1,7 +1,7 @@
 {
   inputs = {
     nixpkgs.follows = "haskellNix/nixpkgs";
-    haskellNix.url = "github:input-output-hk/haskell.nix";
+    haskellNix.url = "github:ican-group/haskell.nix";
   };
 
   

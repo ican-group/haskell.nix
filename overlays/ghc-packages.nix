@@ -138,7 +138,7 @@ in rec {
       (pkgName: subDir: rec {
         src =
           # TODO remove once nix >=2.4 is widely adopted (will trigger rebuilds of everything).
-          # See https://github.com/input-output-hk/haskell.nix/issues/1459
+          # See https://github.com/ican-group/haskell.nix/issues/1459
           let nix24srcFix = src: src // { filterPath = { path, ... }: path; };
           # Add in the generated files needed by ghc-boot
           in if subDir == "libraries/ghc-boot"

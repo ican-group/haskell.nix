@@ -24,7 +24,7 @@ Start from a normal haskell.nix Cabal project flake and add `p.wasi32` to
 {
   description = "My Haskell project";
 
-  inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
+  inputs.haskellNix.url = "github:ican-group/haskell.nix";
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
 

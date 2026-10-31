@@ -126,7 +126,7 @@ attrsets and try examples.
 # example.nix
 { nixpkgs ? <nixpkgs> }:
 rec {
-  haskell = import nixpkgs (import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz) {}).nixpkgsArgs;
+  haskell = import nixpkgs (import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz) {}).nixpkgsArgs;
   pkgNames = haskell.pkgs.lib.attrNames haskell.haskell-nix.snapshots."lts-13.18";
 }
 ```
@@ -152,4 +152,4 @@ nix-repl> :q
 Now that you have `nix-tools` and are able to import [Haskell.nix][],
 you can continue to the next chapter.
 
-[haskell.nix]: https://github.com/input-output-hk/haskell.nix
+[haskell.nix]: https://github.com/ican-group/haskell.nix

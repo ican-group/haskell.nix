@@ -518,4 +518,4 @@ The same as `ghcWithPackages`, except, a `hoogle` command with a
 Hoogle documentation index of the packages will be included in the
 shell.
 
-[haskell.nix]: https://github.com/input-output-hk/haskell.nix
+[haskell.nix]: https://github.com/ican-group/haskell.nix

@@ -13,7 +13,7 @@ writeScript "check-hydra.sh" ''
   echo '~~~ Evaluating release.nix with' "$@"
   HYDRA_CONFIG= command time --format '%e' -o eval-time.txt \
       nix-eval-jobs \
-      --option allowed-uris "https://github.com/NixOS/ https://github.com/input-output-hk/ github:NixOS/nixpkgs/ github:input-output-hk/hackage.nix/ github:input-output-hk/stackage.nix/ github:input-output-hk/flake-compat/ github:stable-haskell/iserv-proxy/ github:haskell/haskell-language-server/" \
+      --option allowed-uris "https://github.com/NixOS/ https://github.com/input-output-hk/ https://github.com/ican-group/ github:NixOS/nixpkgs/ github:ican-group/hackage.nix/ github:ican-group/stackage.nix/ github:input-output-hk/flake-compat/ github:stable-haskell/iserv-proxy/ github:haskell/haskell-language-server/" \
       --flake $(pwd)#hydraJobs --force-recurse > eval.json
   EVAL_EXIT_CODE="$?"
   if [ "$EVAL_EXIT_CODE" != 0 ]

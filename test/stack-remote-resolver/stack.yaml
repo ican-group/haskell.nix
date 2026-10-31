@@ -1,4 +1,4 @@
-resolver: https://raw.githubusercontent.com/input-output-hk/haskell.nix/master/test/stack-local-resolver/snapshot.yaml
+resolver: https://raw.githubusercontent.com/ican-group/haskell.nix/master/test/stack-local-resolver/snapshot.yaml
 
 packages:
 - .

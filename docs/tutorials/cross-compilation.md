@@ -28,7 +28,7 @@ command-line utility, which is a Haskell program.
 ```nix
 { pkgs ? import <nixpkgs> {} }:
 let
-  haskellNix = import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz);
+  haskellNix = import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz);
   native = haskellNix { inherit pkgs; };
 in
   native.haskellPackages.bench.components.exes.bench
@@ -39,7 +39,7 @@ Now switch the package set as in the previous example:
 ```nix
 { pkgs ? import <nixpkgs> {} }:
 let
-  haskellNix = import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz);
+  haskellNix = import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz);
   raspberryPi = haskellNix { pkgs = pkgs.pkgsCross.raspberryPi; };
 in
   raspberryPi.haskellPackages.bench.components.exes.bench
@@ -77,7 +77,7 @@ binaries for Linux. For information about how to do that with the
 ```nix
 { pkgs ? import <nixpkgs> {} }:
 let
-  haskellNix = import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz);
+  haskellNix = import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz);
   musl64 = haskellNix { pkgs = pkgs.pkgsCross.musl64; };
 in
   musl64.haskellPackages.bench.components.exes.bench
@@ -294,6 +294,6 @@ for emulator overrides and instructions for rerunning an existing test output.
 
 [nh2]: https://github.com/nh2/static-haskell-nix
 [vaibhav]: https://vaibhavsagar.com/blog/2018/01/03/static-haskell-nix/
-[haskell.nix]: https://github.com/input-output-hk/haskell.nix
+[haskell.nix]: https://github.com/ican-group/haskell.nix
 [bench]: https://hackage.haskell.org/package/bench
 [nixpkgs]: https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure

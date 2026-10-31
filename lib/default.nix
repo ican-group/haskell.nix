@@ -426,8 +426,8 @@ in {
   # the a projectType module (../modules/cabal-project.nix or ../modules/stack-project.nix).
   # The resulting config is then passed to the project function's implementation.
   evalProjectModule = projectType: m: f:
-    let project = f
-      (lib.evalModules {
+    let
+      evaluated = lib.evalModules {
         modules = (if builtins.isList m then m else [m]) ++ [
           # Include ../modules/cabal-project.nix or ../modules/stack-project.nix
           (import ../modules/project-common.nix)
@@ -442,8 +442,12 @@ in {
             inherit (project) hsPkgs;
           })
         ];
-      });
-    in project;
+      };
+      project = f evaluated;
+    in import ./check-org-move.nix { inherit lib; } {
+      inherit (evaluated.config) src;
+      silence = evaluated.config.silenceOrgMoveWarning;
+    } project;
 
   # Converts from a `compoent.depends` value to a library derivation.
   # In the case of sublibs the `depends` value should already be the derivation.

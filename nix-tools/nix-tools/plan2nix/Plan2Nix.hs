@@ -319,7 +319,7 @@ value2plan plan = Plan { packages, components, extras, compilerVersion, compiler
 
 defaultNixContents :: String
 defaultNixContents = unlines
-  [ "{ haskellNixSrc ? builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz"
+  [ "{ haskellNixSrc ? builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz"
   , ", haskellNix ? import haskellNixSrc {}"
   , ", nixpkgs ? haskellNix.sources.nixpkgs }:"
   , ""

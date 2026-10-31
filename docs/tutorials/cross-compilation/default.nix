@@ -2,7 +2,7 @@
 { pkgs ? import <nixpkgs> {}}:
 let
   # Import the Haskell.nix library,
-  haskell = import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {
+  haskell = import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {
     inherit pkgs;
   };
 

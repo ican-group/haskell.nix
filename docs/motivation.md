@@ -83,7 +83,7 @@ Stackage snapshots).
 
 - `haskell.nix` allows any form of package set.
 
-First [hackage.nix](https://github.com/input-output-hk/hackage.nix) exposes the
+First [hackage.nix](https://github.com/ican-group/hackage.nix) exposes the
 `nix` expressions of every revision of every package from Hackage.
 
 As the Hackage index is an ever growing repository of Haskell packages,
@@ -91,7 +91,7 @@ As the Hackage index is an ever growing repository of Haskell packages,
 and letting Cabal's solver resolve the dependencies in a reproducible way.
 
 An alternative is to start with a curated package set. For example,
-[stackage.nix](https://github.com/input-output-hk/stackage.nix) exposes the
+[stackage.nix](https://github.com/ican-group/stackage.nix) exposes the
 `nix` expressions of every Stackage Snapshot.
 
 In addition, it is possible to explicitly specify a package version and

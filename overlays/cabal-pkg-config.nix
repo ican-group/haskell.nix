@@ -171,7 +171,7 @@ in
   #     fail with `--static`.  Keep the historical workaround: make
   #     cabal lazy by returning a single (hopefully self-describing)
   #     fake option on failure.
-  #     See https://github.com/input-output-hk/haskell.nix/issues/1642
+  #     See https://github.com/ican-group/haskell.nix/issues/1642
   #
   # One derivation serves every slice — the metadata list is the full
   # `lib/pkgconf-nixpkgs-map.nix` universe, not a per-slice set, so

@@ -63,6 +63,6 @@ snapshots (lts, and nightly) as nix expressions.  It naturally depends
 on hackage.nix to resolve package names, versions and revisions to the
 respective packages from hackage.nix.
 
-[haskell.nix]: https://github.com/input-output-hk/haskell.nix
-[hackage.nix]: https://github.com/input-output-hk/hackage.nix
-[stackage.nix]: https://github.com/input-output-hk/stackage.nix
+[haskell.nix]: https://github.com/ican-group/haskell.nix
+[hackage.nix]: https://github.com/ican-group/hackage.nix
+[stackage.nix]: https://github.com/ican-group/stackage.nix

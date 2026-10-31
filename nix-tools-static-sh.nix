@@ -5,7 +5,7 @@
 # purpose: these tools must NOT become the default for the existing GHC
 # versions.  Opt in per project with haskell-nix.nix-tools-unchecked-sh; see
 # overlays/default.nix.
-pkgs: let baseurl = "https://github.com/input-output-hk/haskell.nix/releases/download/nix-tools-sh-0.2.3/"; in {
+pkgs: let baseurl = "https://github.com/ican-group/haskell.nix/releases/download/nix-tools-sh-0.2.3/"; in {
   aarch64-darwin = pkgs.fetchurl { 
      name = "aarch64-darwin-nix-tools-static-sh";
      url = "${baseurl}aarch64-darwin-nix-tools-static-sh.zip";

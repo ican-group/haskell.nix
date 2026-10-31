@@ -33,7 +33,7 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.hostPlatform.isMusl ({
     configureFlags = (oldAttrs.configureFlags or []) ++ ["--enable-static"];
   });
 
-  # See https://github.com/input-output-hk/haskell.nix/issues/948
+  # See https://github.com/ican-group/haskell.nix/issues/948
   postgresql = (prev.postgresql.overrideAttrs (_old: {
       dontDisableStatic = true;
       # the following is needed because libicu links against stdc++

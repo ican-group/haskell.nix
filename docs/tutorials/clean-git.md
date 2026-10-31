@@ -8,10 +8,10 @@ First it filters just the files needed to run `git index`, then
 it uses the results of that to filter your directory.  It does not
 need to parse the `.gitignore` files at all, but we do need to
 `git add` our files before they will be included.
-[cleanGit source](https://github.com/input-output-hk/haskell.nix/blob/master/lib/clean-git.nix).
+[cleanGit source](https://github.com/ican-group/haskell.nix/blob/master/lib/clean-git.nix).
 
 In addition haskell.nix (including `cleanGit`) uses a version
-of [`cleanSourceWith`](https://github.com/input-output-hk/haskell.nix/blob/master/lib/clean-source-with.nix)
+of [`cleanSourceWith`](https://github.com/ican-group/haskell.nix/blob/master/lib/clean-source-with.nix)
 with a `subdir` argument to filter out just the package it is
 building.  Then it uses the info from the `cabal` file to filter
 just the source dirs for the component it is building.  That way

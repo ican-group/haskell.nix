@@ -899,7 +899,7 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
         ''
     }
 
-    # Sanity checks for https://github.com/input-output-hk/haskell.nix/issues/660
+    # Sanity checks for https://github.com/ican-group/haskell.nix/issues/660
     if ! "$out/bin/${targetPrefix}ghc" --version; then
       echo "ERROR: Missing file $out/bin/${targetPrefix}ghc"
       exit 1

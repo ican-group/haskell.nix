@@ -14,7 +14,7 @@ import ./update-external.nix args {
       git submodule update --init
       git submodule foreach git pull origin master
     else
-      git clone git@github.com:input-output-hk/stackage.nix.git --depth 1
+      git clone git@github.com:ican-group/stackage.nix.git --depth 1
       cd stackage.nix
       git submodule update --init
       git submodule foreach git pull origin master

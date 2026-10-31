@@ -27,7 +27,7 @@ really should use an instance of Nixpkgs provided by `haskell.nix` itself.
 | unstable         | `nixpkgs-unstable` | 9.10.3      | `ghc910` or `ghc9103` | Yes           |
 | unstable         | `nixpkgs-unstable` | 9.12.4      | `ghc912` or `ghc9124` | Yes           |
 
-See [ci.nix](https://github.com/input-output-hk/haskell.nix/blob/master/ci.nix)
+See [ci.nix](https://github.com/ican-group/haskell.nix/blob/master/ci.nix)
 for the source of truth about what is built and tested (in the off chance this
 document is out-of-sync with your checkout).
 
@@ -38,7 +38,7 @@ settings from the table above.  For further information, see the [instructions
 for how to pin Nixpkgs](../dev/nixpkgs-pin.md).
 
 See
-[overlays/bootstrap.nix](https://github.com/input-output-hk/haskell.nix/blob/master/overlays/bootstrap.nix)
+[overlays/bootstrap.nix](https://github.com/ican-group/haskell.nix/blob/master/overlays/bootstrap.nix)
 for a full list of all the valid `compiler-nix-name`s beyond what's
 cached/tested in CI.  You're free to use these, but be ready for longer build
 times.

@@ -28,7 +28,7 @@ let
 
 in lib.recurseIntoAttrs {
   # DWARF only works on linux with GHC 8.10.2 and newer
-  # GHC 9.2.1 disabled because of https://github.com/input-output-hk/haskell.nix/issues/1332
+  # GHC 9.2.1 disabled because of https://github.com/ican-group/haskell.nix/issues/1332
   meta.disabled = __elem compiler-nix-name ["ghc921" "ghc922" "ghc923" "ghc924" "ghc925" "ghc926" "ghc927"]
     || !stdenv.hostPlatform.isLinux || haskellLib.isCrossHost || stdenv.hostPlatform.isMusl || stdenv.hostPlatform.isAarch64
     || lib.hasSuffix "llvm" compiler-nix-name

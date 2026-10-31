@@ -142,8 +142,8 @@ in let
   #
   # Instead we treat `cabalProject == null` as if it was `packages: ./*.cabal`.
   #
-  # See: https://github.com/input-output-hk/haskell.nix/pull/1588
-  #      https://github.com/input-output-hk/haskell.nix/pull/1639
+  # See: https://github.com/ican-group/haskell.nix/pull/1588
+  #      https://github.com/ican-group/haskell.nix/pull/1639
   #
   rawCabalProject = ''
     ${
@@ -171,7 +171,7 @@ in let
   # use that will contain all the packages we need.  By using the
   # first one after the desired index-state we can avoid recalculating
   # when new index-state-hashes are added.
-  # See https://github.com/input-output-hk/haskell.nix/issues/672
+  # See https://github.com/ican-group/haskell.nix/issues/672
   cached-index-state = if index-sha256 != null
     then index-state-max
     else
