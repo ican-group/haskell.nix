@@ -62,11 +62,6 @@ Legend: ✅ built & cached · ⚠️ dependency failed · ❌ failed · ⚪ abor
 | unstable | `aarch64-darwin` → aarch64-musl | ✅ | · | · | · | · | ✅ | · |
 | unstable | `aarch64-darwin` → javascript | ✅ | ✅ | ✅ | · | ✅ | ✅ | · |
 | unstable | `aarch64-darwin` → wasm | ✅ | · | · | · | ✅ | ✅ | · |
-| unstable | `x86_64-darwin` | · | · | · | · | · | · | · |
-| unstable | `x86_64-darwin` → javascript | · | · | · | · | · | · | · |
-| R2511 | `x86_64-linux` | · | · | · | · | · | · | · |
-| R2511 | `aarch64-darwin` | · | · | · | · | · | · | · |
-| R2511 | `x86_64-darwin` | · | · | · | · | · | · | · |
 <!-- CI-STATUS:END -->
 
 ## Related repos
