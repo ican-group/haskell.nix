@@ -68,7 +68,7 @@ jobs:
         run: |
           set -euo pipefail
           hydra=https://ci.zw3rk.com
-          project=input-output-hk-haskell-nix
+          project=ican-group-haskell-nix
 
           jobs="aarch64-darwin.nix-tools-sh.static.zipped.nix-tools-static-sh
           x86_64-darwin.nix-tools-sh.static.zipped.nix-tools-static-sh
