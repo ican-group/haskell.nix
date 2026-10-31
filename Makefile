@@ -27,6 +27,8 @@ check: ## Check whitespace, Nix syntax, emulator selection, and dependencies
 	nix-instantiate --parse modules/stable-haskell-rts-comdat.nix >/dev/null
 	nix-instantiate --parse test/elf-comdat-functions.nix >/dev/null
 	nix-instantiate --extra-experimental-features flakes --eval --strict --expr 'import ./test/elf-comdat-scope.nix {}'
+	nix-instantiate --parse modules/stable-haskell-rts-macho-signed-addends.nix >/dev/null
+	nix-instantiate --extra-experimental-features flakes --eval --strict --expr 'import ./test/macho-signed-addends-scope.nix {}'
 	nix-instantiate --parse test/qemu-linux-user.nix >/dev/null
 	nix-instantiate --parse test/qemu-arm32-personality.nix >/dev/null
 	nix-instantiate --eval --strict test/qemu-selection.nix
