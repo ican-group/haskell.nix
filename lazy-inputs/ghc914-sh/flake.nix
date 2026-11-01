@@ -33,9 +33,11 @@
       #   * The dyn way defines DYNAMIC (as the prof way defines PROFILING), so
       #     the boot libraries' shared rts loads (`__fini_array_start`) while
       #     the vanilla rts that ghc links stays non-dynamic.
-      #   * ghc-bin and the ghc-toolchain packages declare BSD-3-Clause.  With
-      #     no license nixpkgs' check-meta counts them as unfree and refuses
-      #     to evaluate the ghc executable.
+      #   * ghc-bin, the ghc-toolchain packages, rts-fs and system-cxx-std-lib
+      #     declare licenses Cabal reads as BSD-3-Clause.  With none (or, for
+      #     the cabal-version 2.0 system-cxx-std-lib, an SPDX name read as a
+      #     legacy one) nixpkgs' check-meta counts them as unfree and refuses
+      #     to evaluate them.
       url = "git+https://github.com/stable-haskell/ghc?ref=stable-ghc-9.14-hn";
     };
   };

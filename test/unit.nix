@@ -32,8 +32,41 @@ let
     rev = "487eea1c249537d34c27f6143dff2b9d5586c657";
     sha256 = "077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123";
   };
+
+  # Whether a derivation carrying cabal license `lic` (mapped the way the
+  # component builders map it) gets past nixpkgs' check-meta.  The test
+  # package set does not allow unfree packages.
+  licenseEvaluates = lic: (builtins.tryEval
+    (pkgs.runCommand "haskell-nix-license-check" {
+      meta.license = haskellLib.cabalToNixpkgsLicense lic;
+    } "touch $out").drvPath).success;
 in
 lib.runTests {
+  # Free licenses must stay free under nixpkgs' check-meta, which treats a
+  # license in a list (what `cabalToNixpkgsLicense` returns) without `free` as
+  # unfree.  Cabal turns the legacy unversioned `license: LGPL` into
+  # `LicenseRef-LGPL` (cpphs, polyparse).
+  testLicenseLegacyLGPLEvaluates = {
+    expr = licenseEvaluates "LicenseRef-LGPL";
+    expected = true;
+  };
+  testLicenseCompoundEvaluates = {
+    expr = licenseEvaluates "BSD-3-Clause AND MIT AND ISC";
+    expected = true;
+  };
+  # ...while a license that really is unfree is refused, so the checks above
+  # go through check-meta rather than passing vacuously.
+  testLicenseUnfreeIsRefused = {
+    expr = licenseEvaluates "CC-BY-NC-4.0";
+    expected = false;
+  };
+  # `NONE` (no license declared) is named, not `null`, so a refusal reports
+  # it as such rather than as "unfree license ('unknown')".
+  testLicenseNoneIsNamed = {
+    expr = map (l: l.shortName) (haskellLib.cabalToNixpkgsLicense "NONE");
+    expected = [ "NONE" ];
+  };
+
   # `shadowedNonReinstallablePkgs` flags names in `nonReinstallablePkgs` that the
   # project pins to a version different from the compiler-shipped one (#1657).
 
