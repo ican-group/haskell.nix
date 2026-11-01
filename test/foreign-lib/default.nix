@@ -36,7 +36,20 @@ let
         exit 1
       fi
 
-      $CC ${./c-test/main.c} -o main -L${flib}/lib -lhsflib -Wl,-rpath,${flib}/lib
+    ''
+    # The linker checks the undefined symbols of the Haskell libraries the
+    # foreign library depends on, so it must find their own dependencies
+    # (libHSbase needs libHSghc-internal and the rts).  A native GNU ld
+    # follows each library's RUNPATH for that; a cross ld does not, and
+    # fails with "undefined reference to `ghczminternal_...'".  Pass the
+    # absolute RUNPATH entries as -rpath-link (the `$ORIGIN` ones are
+    # relative to the store unit and not needed here).
+    + lib.optionalString stdenv.hostPlatform.isLinux ''
+      rpathLink=$(${stdenv.cc.bintools.targetPrefix}readelf -d "$lib" \
+        | sed -n 's/.*(RUNPATH).*\[\(.*\)\]/\1/p' | tr ':' '\n' \
+        | sed -n 's|^/|-Wl,-rpath-link,/|p' | tr '\n' ' ')
+    '' + ''
+      $CC ${./c-test/main.c} -o main -L${flib}/lib -lhsflib -Wl,-rpath,${flib}/lib ''${rpathLink:-}
     '' + lib.optionalString (stdenv.buildPlatform.canExecute stdenv.hostPlatform) ''
       ./main
     '' + ''

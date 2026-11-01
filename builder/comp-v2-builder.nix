@@ -2534,6 +2534,27 @@ let
             || install_name_tool -delete_rpath "$rp" "$f"
         done
       done
+    '' + lib.optionalString stdenv.hostPlatform.isLinux ''
+      # A cross build composes every dep's `.so` into this slice's flat
+      # `store/<stage>/<plat>/lib`, so cabal records only `$ORIGIN`-relative
+      # paths to it; the installPhase then drops those dep links, leaving
+      # libHSghc-internal, the rts, ... unreachable (a cross ld cannot link
+      # against the library, and it would not load).  Add the dep slice dir
+      # that provides each Haskell library this one needs.
+      for f in $out/lib/*.so*; do
+        [ -f "$f" ] && [ ! -L "$f" ] || continue
+        chmod u+w "$f"
+        for needed in $(patchelf --print-needed "$f"); do
+          for dep in $(cat $out/nix-support/transitive-deps 2>/dev/null); do
+            for found in $dep/store/*/*/lib/$needed; do
+              [ -e "$found" ] || continue
+              dir=$(dirname "$found")
+              patchelf --print-rpath "$f" | tr ':' '\n' | grep -qxF "$dir" \
+                || patchelf --add-rpath "$dir" "$f"
+            done
+          done
+        done
+      done
     '' + ''
       ${trimDistNewstyle}
     '' else if useTarball then ''
