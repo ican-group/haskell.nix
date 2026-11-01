@@ -1,0 +1,18 @@
+cabal-version: 2.2
+name:          foreign-lib
+version:       0.1.0.0
+build-type:    Simple
+
+library
+  exposed-modules:  Adder
+  build-depends:    base
+  hs-source-dirs:   lib
+  default-language: Haskell2010
+
+foreign-library hsflib
+  type:             native-shared
+  other-modules:    FLib
+  build-depends:    base, foreign-lib
+  hs-source-dirs:   flib
+  c-sources:        cbits/init.c
+  default-language: Haskell2010

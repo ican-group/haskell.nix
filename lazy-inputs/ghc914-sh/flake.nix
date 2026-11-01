@@ -40,6 +40,9 @@
       #     types, ELF visibility macros, ARM PREL31, skip libc.a), MinGW
       #     symbol exports, bare `android` in GHC_CONVERT_OS, AVX flags on
       #     32-bit x86, and `--abi-hash` not claiming an executable link.
+      #   * The dyn way defines DYNAMIC (as the prof way defines PROFILING), so
+      #     the boot libraries' shared rts loads (`__fini_array_start`) while
+      #     the vanilla rts that ghc links stays non-dynamic.
       url = "git+https://github.com/stable-haskell/ghc?ref=stable-ghc-9.14-hn";
     };
   };

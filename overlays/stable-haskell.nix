@@ -115,7 +115,7 @@ let
   # missing dynamic way (`tests.check-datadir.run`: "Failed to load dynamic
   # interface file for Prelude ... base-4.22.0.0/Prelude.dyn_hi").  False is
   # the honest answer to that, and the one that matches what we build.
-  enableSharedStage2 = false;
+  enableSharedStage2 = true;
   # One string for the native compiler and every `-target` wrapper: they are
   # all the same stage2 `ghc-bin` binary, so their settings files all get this
   # (see the comment in lib/dummy-ghc.nix, which echoes it back).  A cross
@@ -518,6 +518,16 @@ let
       library-profiling: True
       profiling-detail: none
   '') bootLibraries;
+
+  # The dyn way of every boot library (see `enableSharedStage2`).  Only the
+  # libraries: `executable-dynamic` stays False, and there is no `rts
+  # +dynamic` constraint, so the stage2 `ghc` is still a static executable
+  # linked against an rts built without `-DDYNAMIC`.
+  bootLibShared = lib.optionalString enableSharedStage2
+    (lib.concatMapStrings (p: ''
+      package ${p}
+        shared: True
+    '') bootLibraries);
 
   # ── Dump source for plan-time "installed packages" ────────────────────────
   # call-cabal-project-to-nix.nix synthesises the dummy `ghc-pkg dump` (what
@@ -1228,6 +1238,7 @@ ENDSCRIPT
     # so no `package rts` ghc-options workaround is needed here.
     cabalProjectLocal = ''
       ${bootLibProfiling}
+      ${bootLibShared}
       package ghc-bin
         flags: -debug
       package haskeline

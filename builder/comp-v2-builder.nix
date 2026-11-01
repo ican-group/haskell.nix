@@ -194,6 +194,7 @@ let
     let comps = cfg.components or {};
     in lib.optional (comps ? library) { name = "library"; comp = comps.library; }
        ++ lib.mapAttrsToList (n: c: { name = "sublib:${n}"; comp = c; }) (comps.sublibs or {})
+       ++ lib.mapAttrsToList (n: c: { name = "flib:${n}";   comp = c; }) (comps.foreignlibs or {})
        ++ lib.mapAttrsToList (n: c: { name = "exe:${n}";    comp = c; }) (comps.exes or {})
        ++ lib.mapAttrsToList (n: c: { name = "test:${n}";   comp = c; }) (comps.tests or {})
        ++ lib.mapAttrsToList (n: c: { name = "bench:${n}";  comp = c; }) (comps.benchmarks or {});
@@ -1608,15 +1609,20 @@ let
   isMainLib  = ctype == "lib" && cname == pkgName;
   isSublib   = ctype == "lib" && cname != pkgName;
   isLibrary   = isMainLib || isSublib;
+  # `foreign-library` components.  Like exes they never register a
+  # `.conf`; `Setup copy` installs the shared object into the store
+  # unit's `lib/` (cabal's `flibdir` defaults to `$libdir`).
+  isForeignLib = ctype == "flib";
   # Native exe slices ship the binary inside the cabal-store unit
   # dir under `$out/store/.../<unit>/bin/`.  Cross exe slices target
   # `<exe>.exe` (or platform equivalent) which can't run on the
   # build platform anyway, so we capture from `dist-newstyle/`
   # instead.  Same shape as test/bench slices.
-  useTarball  = isLibrary || ctype == "exe";
+  useTarball  = isLibrary || ctype == "exe" || isForeignLib;
   targetPrefix =
     if ctype == "lib"   then "lib:"  # main lib + sublib both arrive as ctype="lib"
     else if ctype == "exe"   then "exe:"
+    else if ctype == "flib"  then "flib:"
     else if ctype == "test"  then "test:"
     else "bench:";
   extraProject =
@@ -1733,6 +1739,7 @@ let
         # does carry every component's deps).
         planCompName =
           if ctype == "exe" then "exe:${cname}"
+          else if ctype == "flib" then "flib:${cname}"
           else if ctype == "test" then "test:${cname}"
           else if ctype == "bench" then "bench:${cname}"
           else null;
@@ -2478,7 +2485,79 @@ let
   # `.exe` on native Windows, `.wasm` for wasm, etc.).
   kindSpecificInstallPhase =
     if isLibrary then hpcCopyForLibrary + trimDistNewstyle
-    else if useTarball then ''
+    else if isForeignLib then ''
+
+      # Surface the shared object at `$out/lib/` (where v1's
+      # `Setup copy` puts it).  Cabal names it `lib<name>.so` /
+      # `lib<name>.dylib`, plus `.so.X.Y.Z` and its symlinks when
+      # `lib-version-info` is set, or `<name>.dll` on Windows.
+      # `cp -P` keeps those symlinks relative to each other.
+      mkdir -p $out/lib
+      found=
+      for f in $(find $out/store \( -type f -o -type l \) \
+                   \( -path "*/lib/lib${cname}${stdenv.hostPlatform.extensions.sharedLibrary}*" \
+                      -o -path "*/lib/${cname}.dll*" \)); do
+        cp -P "$f" $out/lib/
+        found=1
+      done
+      if [ -z "$found" ]; then
+        echo "FAIL: ${componentKindLabel} ${cname} shared library not found in $out/store" >&2
+        find $out/store \( -type f -o -type l \) >&2
+        exit 1
+      fi
+    '' + lib.optionalString stdenv.hostPlatform.isDarwin ''
+      # Cabal (the stable-haskell fork) records the dependency rpaths
+      # relative to the install dir (`@loader_path/../..`, because macOS
+      # 15's dyld treats an unresolvable absolute rpath as fatal), and in a
+      # slice they do not resolve: dyld then fails to find
+      # `@rpath/libHSrts-fs-...dylib`.  Each still names its target -- a
+      # dep slice's store path (`<hash>-<name>/store/...`) or this slice's
+      # own `store/...` -- so make them absolute again.
+      for f in $out/lib/*.dylib; do
+        [ -f "$f" ] && [ ! -L "$f" ] || continue
+        chmod u+w "$f"
+        otool -l "$f" | awk '/cmd LC_RPATH/ { r=1; next } r && /path / { print $2; r=0 }' \
+          | while IFS= read -r rp; do
+          rel=$(printf '%s\n' "''${rp#@loader_path/}" | sed -E 's|^(\.\./)*||')
+          case "$rp" in
+            @loader_path/*) ;;
+            *) continue ;;
+          esac
+          if [[ "$rel" =~ ^[0-9a-z]{32}- ]]; then
+            new="${builtins.storeDir}/$rel"
+          elif [[ "$rel" == store/* ]]; then
+            new="$out/$rel"
+          else
+            continue
+          fi
+          install_name_tool -rpath "$rp" "$new" "$f" 2>/dev/null \
+            || install_name_tool -delete_rpath "$rp" "$f"
+        done
+      done
+    '' + lib.optionalString stdenv.hostPlatform.isLinux ''
+      # A cross build composes every dep's `.so` into this slice's flat
+      # `store/<stage>/<plat>/lib`, so cabal records only `$ORIGIN`-relative
+      # paths to it; the installPhase then drops those dep links, leaving
+      # libHSghc-internal, the rts, ... unreachable (a cross ld cannot link
+      # against the library, and it would not load).  Add the dep slice dir
+      # that provides each Haskell library this one needs.
+      for f in $out/lib/*.so*; do
+        [ -f "$f" ] && [ ! -L "$f" ] || continue
+        chmod u+w "$f"
+        for needed in $(patchelf --print-needed "$f"); do
+          for dep in $(cat $out/nix-support/transitive-deps 2>/dev/null); do
+            for found in $dep/store/*/*/lib/$needed; do
+              [ -e "$found" ] || continue
+              dir=$(dirname "$found")
+              patchelf --print-rpath "$f" | tr ':' '\n' | grep -qxF "$dir" \
+                || patchelf --add-rpath "$dir" "$f"
+            done
+          done
+        done
+      done
+    '' + ''
+      ${trimDistNewstyle}
+    '' else if useTarball then ''
 
       mkdir -p $out/bin
       # `\( -type f -o -type l \)` because cabal may say "Up to date"
