@@ -36,6 +36,11 @@ themselves. This is what the [`shellFor`][shellFor] function does.
 {{#include development/shell.nix}}
 ```
 
+Calling `shellFor` re-evaluates the project with the shell arguments
+added.  If evaluation time matters, pass the same arguments as the
+`shell` argument when creating the project and use its `shell` attribute
+instead (for example `project.shell`).
+
 See also: [Haskell.nix Library Reference: `shellFor`][shellFor]
 
 [shellFor]: ../reference/library.md#shellfor

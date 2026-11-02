@@ -144,6 +144,7 @@ Then feeding its result into [mkStackPkgSet](#mkstackpkgset) passing also
 | `hsPkgs`          | Attrset of [Haskell Packages](#haskell-package)  | Buildable packages, created from `packages`                                |
 | `stack-nix`       |                                                  | `projectNix` attribute of [`callStackToNix`](#callstacktonix) return value |
 | `shellFor`        | Function                                         | [`shellFor`](#shellfor)                                                    |
+| `shell`           | Derivation                                       | Shell made with the project `shell` argument (see [`shellFor`](#shellfor)) |
 | `ghcWithHoogle`   | Function                                         | [`ghcWithHoogle`](#ghcwithhoogle)                                          |
 | `ghcWithPackages` | Function                                         | [`ghcWithPackages`](#ghcwithpackages)                                      |
 
@@ -163,6 +164,7 @@ Then feeding its result into [mkCabalProjectPkgSet](#mkcabalprojectpkgset) passi
 | `plan-nix`        |                                                  | `projectNix` attribute of [`callCabalProjectToNix`](#callcabalprojecttonix) return value  |
 | `index-state`     |                                                  | `index-state` attribute of [`callCabalProjectToNix`](#callcabalprojecttonix) return value |
 | `shellFor`        | Function                                         | [`shellFor`](#shellfor)                                                     |
+| `shell`           | Derivation                                       | Shell made with the project `shell` argument (see [`shellFor`](#shellfor))  |
 | `ghcWithHoogle`   | Function                                         | [`ghcWithHoogle`](#ghcwithhoogle)                                           |
 | `ghcWithPackages` | Function                                         | [`ghcWithPackages`](#ghcwithpackages)                                       |
 | `projectCross`    | Attrset                                          | Like `pkgs.pkgsCross.<system>` from nixpkgs `p.projectCross.<system>` returns the project results for cross compilation (where system is a member of nixpkgs lib.systems.examples).  So `p.projectCross.ghcjs.hsPkgs` is the same as `hsPkgs` but compiled with ghcjs |
@@ -466,24 +468,35 @@ or
 ```
 
 The `shellFor` arguments can also be passed to the project `shell`
-argument.  For instance:
+argument and the resulting shell used via the project's `shell`
+attribute.  For instance:
 
 ```
 (pkgs.haskell-nix.project {
   ...
-  shell.tools.cabal = {}
-).shellFor {}
+  shell.tools.cabal = {};
+}).shell
 ```
 
-Is the same as:
+Gives the same shell as:
 
 ```
 (pkgs.haskell-nix.project {
   ...
-).shellFor {
-  tools.cabal = {}
+}).shellFor {
+  tools.cabal = {};
 }
 ```
+
+> **Note:** Prefer the `shell` argument and `.shell` attribute.
+>
+> `shellFor` is implemented as
+> `extraArgs: (appendModule { shell = extraArgs; }).shell`, so every call
+> to it re-evaluates the whole project with the extra module.  For large
+> projects (or if `shellFor` is called more than once, for instance once
+> per system in a flake) this can add significantly to evaluation time and
+> memory use.  Passing the arguments as `shell` when the project is first
+> created avoids that extra evaluation.
 
 **Return value**: a derivation
 
