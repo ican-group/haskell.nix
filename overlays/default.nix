@@ -123,6 +123,7 @@ let
     armv6l-linux = import ./armv6l-linux.nix;
     hyper-linux = import ./hyper-linux.nix { inherit sources; };
     musl = import ./musl.nix;
+    tzdata = import ./tzdata.nix;
     android = import ./android.nix;
     tools = import ./tools.nix;
     emscripten = import ./emscripten.nix;
@@ -165,6 +166,7 @@ let
     armv6l-linux
     hyper-linux
     musl
+    tzdata
     android
     tools
     head-hackage
