@@ -29,20 +29,32 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
   # sources are the same as nixpkgs' too.
   llvmPackages =
     let
+      # In `prePatch`, i.e. before nixpkgs' own patches, which is the order it
+      # had on the monorepo: nixpkgs' gnu-install-dirs.patch also changes
+      # llvm's cmake/modules/AddLLVM.cmake, and after it this hunk no longer
+      # applies.
       withHaskellPatch = p: drv: drv.overrideAttrs (old: {
-        postPatch = (old.postPatch or "") + ''
+        prePatch = (old.prePatch or "") + ''
           patch -p2 < ${./patches/wasm/llvm + "/haskell-wasm-${p}.patch"}
         '';
       });
       g = _: llvmPrev: {
-        libllvm = withHaskellPatch "llvm" llvmPrev.libllvm;
+        # nixpkgs' llvm gnu-install-dirs.patch and the haskell-wasm patch both
+        # change cmake/modules/AddLLVM.cmake and do not apply together;
+        # ./patches/wasm/llvm/gnu-install-dirs.patch is the version that
+        # applies after it.  Swap it in directly: `patchesFn` no longer
+        # reaches the patches through `llvmPackages_21.override`.
+        libllvm = (withHaskellPatch "llvm" llvmPrev.libllvm).overrideAttrs (old: {
+          patches = map (p:
+            if final.lib.hasSuffix "-gnu-install-dirs.patch" (toString p)
+            then ./patches/wasm/llvm/gnu-install-dirs.patch
+            else p) old.patches;
+        });
         libclang = withHaskellPatch "clang" llvmPrev.libclang;
         lld = withHaskellPatch "lld" llvmPrev.lld;
       };
       # Preserve `.override` after `overrideScope`, as for llvmPackages_21.
-      override = args: (final.llvmPackages_21.override ({
-        patchesFn = p: p // { "llvm/gnu-install-dirs.patch" = [{path = ./patches/wasm;}]; };
-      } // args)).overrideScope g;
+      override = args: (final.llvmPackages_21.override args).overrideScope g;
     in prev.lib.makeOverridable
       (prev.lib.mirrorFunctionArgs final.llvmPackages_21.override override)
       { };
