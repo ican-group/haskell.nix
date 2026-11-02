@@ -27,11 +27,6 @@
           dontDisableStatic = true;
           configureFlags = (old.configureFlags or [])
             ++ final.lib.optional final.stdenv.hostPlatform.isAndroid "--disable-shared";
-        } // final.lib.optionalAttrs (final.stdenv.hostPlatform != final.stdenv.buildPlatform) {
-          # As for libsodium in overlays/cross-checks.nix (which does not reach
-          # this copy): the Apple builders' Linux VMs cannot run the i686 test
-          # binaries ("Exec format error").
-          doCheck = false;
         });
       })
     ];
