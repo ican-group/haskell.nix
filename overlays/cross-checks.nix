@@ -27,4 +27,11 @@ final: prev: prev.lib.optionalAttrs (prev.stdenv.hostPlatform != prev.stdenv.bui
   openssl = prev.openssl.overrideAttrs (_: { doCheck = false; });
   gnugrep = prev.gnugrep.overrideAttrs (_: { doCheck = false; });
   gdbm = prev.gdbm.overrideAttrs (_: { doCheck = false; });
+
+  # The Apple builders' Linux VMs cannot run i686 binaries at all, so on an
+  # i686 (e.g. musl32) cross build their checks fail with "cannot execute
+  # binary file: Exec format error" (zlib's minigzip, libsodium's tests),
+  # while an x86_64 Linux machine runs them.
+  zlib = prev.zlib.overrideAttrs (_: { doCheck = false; });
+  libsodium = prev.libsodium.overrideAttrs (_: { doCheck = false; });
 }
