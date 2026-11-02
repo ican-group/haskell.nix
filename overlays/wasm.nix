@@ -95,6 +95,23 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
       runHook preConfigure
       patchShebangs ./scripts
       export BUILTINS_LIB=$($CC --print-libgcc-file-name)
+      # The extra shared libraries (libdl.so, libwasi-emulated-*.so, ...) are
+      # linked with `--target=wasm32-wasi -resource-dir <the Makefile's own>`
+      # so that clang finds compiler-rt there.  But the cc-wrapper appends its
+      # `-resource-dir=<wrapper>/resource-root` after the Makefile's flags, so
+      # the wrapper's wins, and that only has compiler-rt where clang looks
+      # for the wrapper's own target (lib/wasip1/), not for wasm32-wasi
+      # (lib/wasm32-unknown-wasi/libclang_rt.builtins.a):
+      #   wasm-ld: error: cannot open .../resource-root/lib/wasm32-unknown-wasi/libclang_rt.builtins.a
+      # Use a copy of the wrapper's resource dir with the builtins also where
+      # wasm32-wasi looks, appended after the wrapper's flag so that it wins.
+      wrapperResourceDir=$($CC -print-resource-dir)
+      wantedBuiltins=$($CC --target=wasm32-wasi --print-libgcc-file-name)
+      resourceDir=$PWD/nix-resource-dir
+      cp -rL --no-preserve=mode "$wrapperResourceDir/." "$resourceDir/"
+      mkdir -p "$(dirname "$resourceDir/''${wantedBuiltins#$wrapperResourceDir/}")"
+      ln -sf "$BUILTINS_LIB" "$resourceDir/''${wantedBuiltins#$wrapperResourceDir/}"
+      export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE-} -resource-dir=$resourceDir"
       runHook postConfigure
     '';
     # No CHECK_SYMBOLS=yes: that self-test diffs clang's predefined macros
