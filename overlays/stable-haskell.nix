@@ -2121,6 +2121,10 @@ ENDSCRIPT
         (pkgs.buildPackages.haskell-nix.tool bootGhcName "libffi-wasm" {
           src = pkgs.buildPackages.haskell-nix.sources.libffi-wasm;
           inherit evalSystem;
+          # libffi-wasm.cabal has no `license:` field, so it reads as NONE,
+          # which nixpkgs' check-meta refuses as unfree.  Upstream added an MIT
+          # LICENSE file in 788aec0a ("add missing license") but not the field.
+          modules = [{ packages.libffi-wasm.package.license = pkgs.lib.mkForce "MIT"; }];
           compilerSelection = bootCompilerSelection;
         })
         pkgs.targetPackages.buildPackages.llvmPackages.clang
