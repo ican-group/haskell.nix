@@ -1,4 +1,5 @@
 name: stack-symlink-yaml
+license:             BSD3
 
 dependencies:
 - base

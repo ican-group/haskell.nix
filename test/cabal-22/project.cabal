@@ -8,7 +8,7 @@ version:             0.1.0.0
 -- synopsis:
 -- description:
 -- bug-reports:
-license:             NONE
+license:             BSD-3-Clause
 author:              Rodney Lorrimar
 maintainer:          rodney.lorrimar@iohk.io
 -- copyright:
