@@ -32,7 +32,8 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
         version = final.llvmPackages_21.llvm.version + "-haskell";
         src = final.llvmPackages_21.llvm.monorepoSrc;
         # Copy only the subprojects the wasm toolchain's LLVM packages read
-        # (llvm, clang, lld, compiler-rt, libc++/libc++abi/libunwind), not the
+        # (llvm, clang, lld, compiler-rt, libc++/libc++abi/libunwind; libc++
+        # also copies `libc` for LLVM >= 20), not the
         # whole ~150k-file monorepo: every package takes its own subdirs out
         # of `monorepoSrc` anyway, and copying all of it twice (unpack and
         # install) is what runs the Apple builders' Linux VMs out of file
@@ -42,7 +43,7 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
           runHook preUnpack
           mkdir source
           for d in cmake llvm third-party runtimes utils clang clang-tools-extra \
-                   lld compiler-rt libcxx libcxxabi libunwind; do
+                   lld compiler-rt libcxx libcxxabi libunwind libc; do
             cp -r "$src/$d" source/
           done
           chmod -R u+w source
