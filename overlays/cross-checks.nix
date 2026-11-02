@@ -17,14 +17,4 @@ final: prev: prev.lib.optionalAttrs (prev.stdenv.hostPlatform != prev.stdenv.bui
   # sanitizer fuzz checks (`fuzzcheck-%san`); those fail against musl
   # (main.mk `devtest` Error 1).
   sqlite = prev.sqlite.overrideAttrs (_: { doCheck = false; });
-
-  # These pass on real x86_64 Linux but fail when the x86_64-linux build runs
-  # in the Linux VMs on the Apple builders, which differ in signals, sockets
-  # and stack limits:
-  #  * openssl: `bio_dgram_test` and the s_server OCSP test.
-  #  * gnugrep: `stack-overflow`.
-  #  * gdbm: `lock_wait=signal` and the `cloexec` tests.
-  openssl = prev.openssl.overrideAttrs (_: { doCheck = false; });
-  gnugrep = prev.gnugrep.overrideAttrs (_: { doCheck = false; });
-  gdbm = prev.gdbm.overrideAttrs (_: { doCheck = false; });
 }
