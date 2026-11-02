@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-5040a2d1.js";
+            window.path_to_searchindex_js = "searchindex-694a945c.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-3cfc0b9c.js"></script>
@@ -449,10 +449,14 @@ in
     exactDeps = true;
   }
 </code></pre>
-<p>Calling <code>shellFor</code> re-evaluates the project with the shell arguments
-added.  If evaluation time matters, pass the same arguments as the
-<code>shell</code> argument when creating the project and use its <code>shell</code> attribute
-instead (for example <code>project.shell</code>).</p>
+<p>Calling <code>shellFor</code> evaluates a new copy of the project with the shell
+arguments added.  That is fine for a <code>shell.nix</code> like this one, which
+uses nothing else from the project.  If the same evaluation also uses
+other outputs of the project (for instance a flake that exposes its
+packages as well as a dev shell), pass the arguments as the <code>shell</code>
+argument when creating the project and use its <code>shell</code> attribute
+instead (for example <code>project.shell</code>), so the project is only evaluated
+once.</p>
 <p>See also: <a href="#shellfor">Haskell.nix Library Reference: <code>shellFor</code></a></p>
 <h2 id="how-to-get-a-local-hoogle-index"><a class="header" href="#how-to-get-a-local-hoogle-index">How to get a local Hoogle index</a></h2>
 <p>If you need a local Hoogle for all the dependencies of your project create this file</p>
@@ -2147,6 +2151,17 @@ will be passed to it:</p>
   };
 }
 </code></pre>
+<p><strong>The <code>shell</code> argument</strong>: <code>project'</code>, <code>cabalProject'</code> and <code>stackProject'</code>
+(and their unprimed versions) all accept a <code>shell</code> argument.  It takes
+the same options as <a href="#shellfor"><code>shellFor</code></a> (they are checked by
+<code>modules/shell.nix</code>), and the resulting shell is the project’s <code>shell</code>
+attribute.  It is also the default <code>devShell</code> of the project’s <code>flake</code>
+output.</p>
+<pre><code class="language-nix">(pkgs.haskell-nix.project' {
+  src = ./.;
+  shell.tools.cabal = {};
+}).shell
+</code></pre>
 <h2 id="stackproject"><a class="header" href="#stackproject">stackProject’</a></h2>
 <p>A function calling <a href="#callstacktonix">callStackToNix</a> with all arguments.</p>
 <p>Then feeding its result into <a href="#mkstackpkgset">mkStackPkgSet</a> passing also
@@ -2457,15 +2472,32 @@ attribute.  For instance:</p>
   tools.cabal = {};
 }
 </code></pre>
+<p>The arguments passed to <code>shellFor</code> are merged with the project’s
+<code>shell</code> argument rather than replacing it.  For instance, a
+project-level <code>shell.tools.cabal = {};</code> still applies when calling
+<code>shellFor { withHoogle = false; }</code>.</p>
 <blockquote>
 <p><strong>Note:</strong> Prefer the <code>shell</code> argument and <code>.shell</code> attribute.</p>
-<p><code>shellFor</code> is implemented as
-<code>extraArgs: (appendModule { shell = extraArgs; }).shell</code>, so every call
-to it re-evaluates the whole project with the extra module.  For large
-projects (or if <code>shellFor</code> is called more than once, for instance once
-per system in a flake) this can add significantly to evaluation time and
-memory use.  Passing the arguments as <code>shell</code> when the project is first
-created avoids that extra evaluation.</p>
+<p><code>shellFor</code> makes a new project (using <a href="#cabalproject&#39;"><code>appendModule</code></a>)
+with the arguments added to <code>shell</code>, and returns that project’s
+<code>shell</code>.  The new project shares nothing with the original one, so
+its package set, plan and components are all evaluated again.  Nix
+does not memoize function calls either, so each <code>shellFor</code> call
+repeats this work, even with identical arguments.  By contrast,
+<code>project.shell</code> is an attribute of the project: it is evaluated
+at most once and reuses the project’s own evaluation.</p>
+<p>This only costs extra when the original project is evaluated too.
+A <code>shell.nix</code> that does nothing but call <code>project.shellFor {...}</code>
+evaluates about one project either way.  The cost shows up when the
+same evaluation also uses other outputs of the project (for instance
+a flake that exposes <code>hsPkgs</code> packages or checks and also builds its
+dev shell with <code>shellFor</code>, or CI jobs that include both), or when
+<code>shellFor</code> is called more than once on the same project.  For large
+projects this can add significantly to evaluation time and memory
+use.</p>
+<p><code>crossPlatforms</code> has a similar cost even when using <code>.shell</code>: the
+shell for each selected platform is made by calling <code>shellFor</code> on the
+corresponding <code>projectCross</code> project.</p>
 </blockquote>
 <p><strong>Return value</strong>: a derivation</p>
 <blockquote>

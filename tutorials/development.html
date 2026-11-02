@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5040a2d1.js";
+            window.path_to_searchindex_js = "../searchindex-694a945c.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-3cfc0b9c.js"></script>
@@ -243,10 +243,14 @@ in
     exactDeps = true;
   }
 </code></pre>
-<p>Calling <code>shellFor</code> re-evaluates the project with the shell arguments
-added.  If evaluation time matters, pass the same arguments as the
-<code>shell</code> argument when creating the project and use its <code>shell</code> attribute
-instead (for example <code>project.shell</code>).</p>
+<p>Calling <code>shellFor</code> evaluates a new copy of the project with the shell
+arguments added.  That is fine for a <code>shell.nix</code> like this one, which
+uses nothing else from the project.  If the same evaluation also uses
+other outputs of the project (for instance a flake that exposes its
+packages as well as a dev shell), pass the arguments as the <code>shell</code>
+argument when creating the project and use its <code>shell</code> attribute
+instead (for example <code>project.shell</code>), so the project is only evaluated
+once.</p>
 <p>See also: <a href="../reference/library.html#shellfor">Haskell.nix Library Reference: <code>shellFor</code></a></p>
 <h2 id="how-to-get-a-local-hoogle-index"><a class="header" href="#how-to-get-a-local-hoogle-index">How to get a local Hoogle index</a></h2>
 <p>If you need a local Hoogle for all the dependencies of your project create this file</p>
