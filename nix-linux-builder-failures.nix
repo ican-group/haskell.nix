@@ -12,6 +12,34 @@
 #
 # A single attribute reproduces one failure (on a fixed `nix-linux-builder`
 # it should then succeed).
+#
+# What to do when a linux derivation fails on `nix-linux-builder`
+# ---------------------------------------------------------------
+#
+# First rebuild the same drv on linux-0 with `--builders ''`.  If it builds
+# there, the VM is to blame, not the derivation, and there are two options:
+#
+#  * Route it to linux-0 with `requiredSystemFeatures = [ "recursive-nix" ]`.
+#    The feature is only a marker: on the zw3rk Hydra only linux-0's own
+#    (localhost) entry advertises it for linux systems, so a linux drv that
+#    requires it can only be built there.  For haskell.nix's checks this is
+#    `haskell-nix.emulatorSystemFeatures` (set by `ci-nixpkgs-args.nix`; see
+#    overlays/haskell.nix), which today covers only the checks matched by
+#    `emulatorNativeBuilderCheck` (i686 linux).  Anything else needs its own
+#    rule.  For a nixpkgs derivation it means an overlay, which changes the
+#    drv hash: harmless for cross derivations (cache.nixos.org does not have
+#    them), but native ones would stop coming from the cache.
+#
+#  * Add it here.  This does NOT change where Hydra builds it -- this output
+#    is not part of `hydraJobs`, so Hydra still sends it to a VM.  It is a
+#    list to pre-build on linux-0 by hand (Hydra then finds the output in
+#    linux-0's store and skips the build), which has to be redone whenever
+#    the drv hash changes (e.g. a nixpkgs bump), and a reproducer set for
+#    testing a fixed `nix-linux-builder`.
+#
+# List the root cause, not the jobs that depend on it, and check it is the
+# drv Hydra failed: its path should appear in Hydra's `buildsteps` table with
+# status 1.  Drop an entry once the VMs build it.
 { haskellNix, system, evalSystem }:
 let
   inherit (haskellNix) inputs;
