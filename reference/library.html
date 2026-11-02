@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-33775f2b.js";
+            window.path_to_searchindex_js = "../searchindex-5040a2d1.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-3cfc0b9c.js"></script>
@@ -300,6 +300,7 @@ will be passed to it:</p>
 <tr><td><code>hsPkgs</code></td><td>Attrset of <a href="#haskell-package">Haskell Packages</a></td><td>Buildable packages, created from <code>packages</code></td></tr>
 <tr><td><code>stack-nix</code></td><td></td><td><code>projectNix</code> attribute of <a href="#callstacktonix"><code>callStackToNix</code></a> return value</td></tr>
 <tr><td><code>shellFor</code></td><td>Function</td><td><a href="#shellfor"><code>shellFor</code></a></td></tr>
+<tr><td><code>shell</code></td><td>Derivation</td><td>Shell made with the project <code>shell</code> argument (see <a href="#shellfor"><code>shellFor</code></a>)</td></tr>
 <tr><td><code>ghcWithHoogle</code></td><td>Function</td><td><a href="#ghcwithhoogle"><code>ghcWithHoogle</code></a></td></tr>
 <tr><td><code>ghcWithPackages</code></td><td>Function</td><td><a href="#ghcwithpackages"><code>ghcWithPackages</code></a></td></tr>
 </tbody>
@@ -320,6 +321,7 @@ will be passed to it:</p>
 <tr><td><code>plan-nix</code></td><td></td><td><code>projectNix</code> attribute of <a href="#callcabalprojecttonix"><code>callCabalProjectToNix</code></a> return value</td></tr>
 <tr><td><code>index-state</code></td><td></td><td><code>index-state</code> attribute of <a href="#callcabalprojecttonix"><code>callCabalProjectToNix</code></a> return value</td></tr>
 <tr><td><code>shellFor</code></td><td>Function</td><td><a href="#shellfor"><code>shellFor</code></a></td></tr>
+<tr><td><code>shell</code></td><td>Derivation</td><td>Shell made with the project <code>shell</code> argument (see <a href="#shellfor"><code>shellFor</code></a>)</td></tr>
 <tr><td><code>ghcWithHoogle</code></td><td>Function</td><td><a href="#ghcwithhoogle"><code>ghcWithHoogle</code></a></td></tr>
 <tr><td><code>ghcWithPackages</code></td><td>Function</td><td><a href="#ghcwithpackages"><code>ghcWithPackages</code></a></td></tr>
 <tr><td><code>projectCross</code></td><td>Attrset</td><td>Like <code>pkgs.pkgsCross.&lt;system&gt;</code> from nixpkgs <code>p.projectCross.&lt;system&gt;</code> returns the project results for cross compilation (where system is a member of nixpkgs lib.systems.examples).  So <code>p.projectCross.ghcjs.hsPkgs</code> is the same as <code>hsPkgs</code> but compiled with ghcjs</td></tr>
@@ -580,19 +582,30 @@ packages with <code>ghci</code> or <code>cabal v2-build</code> (but not Stack).<
 }
 </code></pre>
 <p>The <code>shellFor</code> arguments can also be passed to the project <code>shell</code>
-argument.  For instance:</p>
+argument and the resulting shell used via the project’s <code>shell</code>
+attribute.  For instance:</p>
 <pre><code>(pkgs.haskell-nix.project {
   ...
-  shell.tools.cabal = {}
-).shellFor {}
+  shell.tools.cabal = {};
+}).shell
 </code></pre>
-<p>Is the same as:</p>
+<p>Gives the same shell as:</p>
 <pre><code>(pkgs.haskell-nix.project {
   ...
-).shellFor {
-  tools.cabal = {}
+}).shellFor {
+  tools.cabal = {};
 }
 </code></pre>
+<blockquote>
+<p><strong>Note:</strong> Prefer the <code>shell</code> argument and <code>.shell</code> attribute.</p>
+<p><code>shellFor</code> is implemented as
+<code>extraArgs: (appendModule { shell = extraArgs; }).shell</code>, so every call
+to it re-evaluates the whole project with the extra module.  For large
+projects (or if <code>shellFor</code> is called more than once, for instance once
+per system in a flake) this can add significantly to evaluation time and
+memory use.  Passing the arguments as <code>shell</code> when the project is first
+created avoids that extra evaluation.</p>
+</blockquote>
 <p><strong>Return value</strong>: a derivation</p>
 <blockquote>
 <p>⚠️ <strong>Warning:</strong></p>
