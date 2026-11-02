@@ -130,6 +130,20 @@ pkgs.haskell-nix.project' {
 }
 ```
 
+**The `shell` argument**: `project'`, `cabalProject'` and `stackProject'`
+(and their unprimed versions) all accept a `shell` argument.  It takes
+the same options as [`shellFor`](#shellfor) (they are checked by
+`modules/shell.nix`), and the resulting shell is the project's `shell`
+attribute.  It is also the default `devShell` of the project's `flake`
+output.
+
+```nix
+(pkgs.haskell-nix.project' {
+  src = ./.;
+  shell.tools.cabal = {};
+}).shell
+```
+
 ## stackProject'
 
 A function calling [callStackToNix](#callstacktonix) with all arguments.
@@ -488,15 +502,35 @@ Gives the same shell as:
 }
 ```
 
+The arguments passed to `shellFor` are merged with the project's
+`shell` argument rather than replacing it.  For instance, a
+project-level `shell.tools.cabal = {};` still applies when calling
+`shellFor { withHoogle = false; }`.
+
 > **Note:** Prefer the `shell` argument and `.shell` attribute.
 >
-> `shellFor` is implemented as
-> `extraArgs: (appendModule { shell = extraArgs; }).shell`, so every call
-> to it re-evaluates the whole project with the extra module.  For large
-> projects (or if `shellFor` is called more than once, for instance once
-> per system in a flake) this can add significantly to evaluation time and
-> memory use.  Passing the arguments as `shell` when the project is first
-> created avoids that extra evaluation.
+> `shellFor` makes a new project (using [`appendModule`](#cabalproject'))
+> with the arguments added to `shell`, and returns that project's
+> `shell`.  The new project shares nothing with the original one, so
+> its package set, plan and components are all evaluated again.  Nix
+> does not memoize function calls either, so each `shellFor` call
+> repeats this work, even with identical arguments.  By contrast,
+> `project.shell` is an attribute of the project: it is evaluated
+> at most once and reuses the project's own evaluation.
+>
+> This only costs extra when the original project is evaluated too.
+> A `shell.nix` that does nothing but call `project.shellFor {...}`
+> evaluates about one project either way.  The cost shows up when the
+> same evaluation also uses other outputs of the project (for instance
+> a flake that exposes `hsPkgs` packages or checks and also builds its
+> dev shell with `shellFor`, or CI jobs that include both), or when
+> `shellFor` is called more than once on the same project.  For large
+> projects this can add significantly to evaluation time and memory
+> use.
+>
+> `crossPlatforms` has a similar cost even when using `.shell`: the
+> shell for each selected platform is made by calling `shellFor` on the
+> corresponding `projectCross` project.
 
 **Return value**: a derivation
 
