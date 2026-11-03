@@ -95,6 +95,7 @@ let
 
     # i686 test binaries: "Exec format error".
     musl32-zlib = musl32.zlib;
+    musl32-openssl = musl32.openssl;
     # The libsodium test/overlay.nix substitutes for the tests.
     musl32-libsodium-18 = musl32.libsodium-18;
   };
