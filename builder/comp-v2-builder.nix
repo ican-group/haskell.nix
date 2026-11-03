@@ -1103,13 +1103,28 @@ let
   # headers: "fatal error: WebView2.h: No such file or directory".
   # Re-attach context to each path's store root so it becomes an input.
   # Only this package's slice changes (and only if it names such a path).
+  #
+  # A root that is an output of one of the slice's own inputs (e.g. the
+  # wasm rts's libffi-wasm, which comes in through `libs` and whose dirs the
+  # generated cabal.project names without context) is mapped back to that
+  # output, so it keeps its derivation context.  Opaque `path` context only
+  # suits paths that already exist: nix can substitute such a path but never
+  # build it, so for an output not built yet evaluation fails with "path ...
+  # is required, but there is no substituter that can build it".
   extraDirInputs =
     let
       roots = lib.unique (lib.concatMap (d:
         let m = builtins.match "(${builtins.storeDir}/[^/]+).*" d;
         in if m == null then [] else m)
         (extraLibDirsOf pkgName ++ extraIncludeDirsOf pkgName));
-    in map (r: builtins.appendContext r { ${r} = { path = true; }; }) roots;
+      inputOutputs = builtins.listToAttrs (lib.concatMap (d:
+        map (o: {
+          name = builtins.unsafeDiscardStringContext d.${o}.outPath;
+          value = d.${o};
+        }) (d.outputs or [ "out" ]))
+        (lib.filter lib.isDerivation extraBuildInputs));
+    in map (r: inputOutputs.${r}
+      or (builtins.appendContext r { ${r} = { path = true; }; })) roots;
 
   # Mirror v1's `make-config-files.nix:65-85`: emit cabal.project
   # `extra-include-dirs:` and `extra-lib-dirs:` for every C-lib /
