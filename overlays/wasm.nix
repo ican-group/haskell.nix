@@ -5,30 +5,20 @@ final: prev: let
   # signal mask that leaves SIGTERM blocked in the worker, so `pool.terminate()`
   # can't kill it. nix-shell builds complete fine; only nix-build hangs.
   #
-  # Idempotent, because it is applied twice: on `llvmPackages_21` and again
-  # on the patched `llvmPackages` below.  On darwin the stdenv's final stage
-  # replaces `llvmPackages_21`'s libllvm with the bootstrap stage's (its
-  # `llvmVersion` is 21), after the user overlays, so the first application
-  # is lost there and the patched darwin LLVM hung in this test on Hydra.
-  withoutMaxTimeTest = drv:
-    if prev.lib.hasInfix "utils/lit/tests/max-time.py" (drv.postPatch or "")
-    then drv
-    else drv.overrideAttrs (old: {
-      postPatch = (old.postPatch or "") + ''
-        rm utils/lit/tests/max-time.py
-      '';
-    });
+  # Only on the haskell-wasm-patched libllvm below, the one LLVM we build
+  # ourselves.  It used to be applied to `llvmPackages_21` as well, but there
+  # it changed the hash of an otherwise stock LLVM that cache.nixos.org has
+  # (nixpkgs' wasm build-platform LLVM is the same derivation as the
+  # top-level one), so we rebuilt -- and re-tested -- it for nothing.  On
+  # darwin that application was lost anyway: the stdenv's final stage
+  # replaces `llvmPackages_21`'s libllvm with the bootstrap stage's, after the
+  # user overlays, and the patched LLVM then hung in this test on Hydra.
+  withoutMaxTimeTest = drv: drv.overrideAttrs (old: {
+    postPatch = (old.postPatch or "") + ''
+      rm utils/lit/tests/max-time.py
+    '';
+  });
 in prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
-  llvmPackages_21 =
-    let
-      f = llvmFinal: llvmPrev: {
-        libllvm = withoutMaxTimeTest llvmPrev.libllvm;
-      };
-      # Preserve `.override` after `overrideScope`; see nixpkgs#447012.
-      override = args: (prev.llvmPackages_21.override args).overrideScope f;
-    in prev.lib.makeOverridable
-      (prev.lib.mirrorFunctionArgs prev.llvmPackages_21.override override)
-      { };
   # The haskell-wasm LLVM patch, applied to llvm, clang and lld only (the
   # subprojects it touches).  Each of those builds from its own subdirectory
   # of nixpkgs' monorepo source (`sourceRoot = <src>/llvm` etc.), so `-p2`
@@ -64,7 +54,7 @@ in prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
         libclang = withHaskellPatch "clang" llvmPrev.libclang;
         lld = withHaskellPatch "lld" llvmPrev.lld;
       };
-      # Preserve `.override` after `overrideScope`, as for llvmPackages_21.
+      # Preserve `.override` after `overrideScope`; see nixpkgs#447012.
       override = args: (final.llvmPackages_21.override args).overrideScope g;
     in prev.lib.makeOverridable
       (prev.lib.mirrorFunctionArgs final.llvmPackages_21.override override)
