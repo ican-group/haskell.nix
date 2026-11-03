@@ -640,13 +640,25 @@ in {
       # stripping applies to nested `''` strings separately, which would
       # push these lines to column 0 and change their cabal scope from the
       # stanza to the whole project.
+      #
+      # The two paths are interpolated WITHOUT their string context.  With
+      # it, the project text -- and so every wasm plan-to-nix IFD, plus the
+      # dot-cabal repos built from it -- depended on actually building
+      # libffi-wasm, i.e. the whole wasm LLVM/clang/lld chain, before any
+      # wasm project could even be planned at evaluation time.  The solver
+      # never reads these dirs (libffi-wasm is plain C: no .cabal, no .pc);
+      # only the rts build does.  The context would not reach the build
+      # anyway -- plan-to-nix round-trips this text through a file -- and the
+      # rts slices already get libffi-wasm into their sandbox through the
+      # component `libs` set further down.  The text is byte-identical, so
+      # plan.json and every UnitId are unchanged.
       rtsWasmExtras = lib.optionalString isWasm ("\n"
         + "  -- GHC's wasm backend uses JSFFI, but the rts C sources still\n"
         + "  -- include ffi.h; nixpkgs' wasi toolchain ships no libffi, so\n"
         + "  -- point at the libffi-wasm build (same one hadrian wasm\n"
         + "  -- bindists use).\n"
-        + "  extra-include-dirs: ${shGhc.libffi-wasm.dev}/include\n"
-        + "  extra-lib-dirs: ${shGhc.libffi-wasm.out}/lib");
+        + "  extra-include-dirs: ${builtins.unsafeDiscardStringContext "${shGhc.libffi-wasm.dev}"}/include\n"
+        + "  extra-lib-dirs: ${builtins.unsafeDiscardStringContext "${shGhc.libffi-wasm.out}"}/lib");
       # Whether to build the dynamic/shared way for the TARGET's boot
       # libraries.  This must key off the target platform (`tp`), NOT
       # `shGhc.enableShared`: `shGhc` is the BUILD compiler (selected from
