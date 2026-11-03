@@ -1,0 +1,21 @@
+--- a/m4/ghc_convert_os.m4
++++ b/m4/ghc_convert_os.m4
+@@ -49,7 +49,7 @@
+       nto-qnx*)
+         $3="nto-qnx"
+         ;;
+-      wasi)
++      wasi|wasip1)
+         $3="wasi"
+         ;;
+       ghcjs*)
+--- a/utils/ghc-toolchain/src/GHC/Toolchain/ParseTriple.hs
++++ b/utils/ghc-toolchain/src/GHC/Toolchain/ParseTriple.hs
+@@ -79,6 +79,7 @@
+       "aix" -> pure OSAIX
+       "gnu" -> pure OSHurd
+       "wasi" -> pure OSWasi
++      "wasip1" -> pure OSWasi
+       "ghcjs" -> pure OSGhcjs
+       _ -> throwE $ "Unknown operating system " ++ os
+ 

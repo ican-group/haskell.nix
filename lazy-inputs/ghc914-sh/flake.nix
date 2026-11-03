@@ -38,6 +38,8 @@
       #     the cabal-version 2.0 system-cxx-std-lib, an SPDX name read as a
       #     legacy one) nixpkgs' check-meta counts them as unfree and refuses
       #     to evaluate them.
+      #   * Triples whose OS is `wasip1` (nixpkgs' current spelling of the
+      #     wasi32 target) parse as wasi, in configure and ghc-toolchain.
       url = "git+https://github.com/stable-haskell/ghc?ref=stable-ghc-9.14-hn";
     };
   };
