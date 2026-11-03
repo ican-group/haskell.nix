@@ -1,17 +1,28 @@
-final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
+final: prev: let
   # Remove lit's max-time.py self-test. It hangs in the nix build sandbox
   # due to a Python multiprocessing.Pool deadlock (`_help_stuff_finish`
   # acquires `inqueue._rlock` without releasing it) combined with a leaked
   # signal mask that leaves SIGTERM blocked in the worker, so `pool.terminate()`
   # can't kill it. nix-shell builds complete fine; only nix-build hangs.
+  #
+  # Idempotent, because it is applied twice: on `llvmPackages_21` and again
+  # on the patched `llvmPackages` below.  On darwin the stdenv's final stage
+  # replaces `llvmPackages_21`'s libllvm with the bootstrap stage's (its
+  # `llvmVersion` is 21), after the user overlays, so the first application
+  # is lost there and the patched darwin LLVM hung in this test on Hydra.
+  withoutMaxTimeTest = drv:
+    if prev.lib.hasInfix "utils/lit/tests/max-time.py" (drv.postPatch or "")
+    then drv
+    else drv.overrideAttrs (old: {
+      postPatch = (old.postPatch or "") + ''
+        rm utils/lit/tests/max-time.py
+      '';
+    });
+in prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
   llvmPackages_21 =
     let
       f = llvmFinal: llvmPrev: {
-        libllvm = llvmPrev.libllvm.overrideAttrs (old: {
-          postPatch = (old.postPatch or "") + ''
-            rm utils/lit/tests/max-time.py
-          '';
-        });
+        libllvm = withoutMaxTimeTest llvmPrev.libllvm;
       };
       # Preserve `.override` after `overrideScope`; see nixpkgs#447012.
       override = args: (prev.llvmPackages_21.override args).overrideScope f;
@@ -44,7 +55,7 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
         # ./patches/wasm/llvm/gnu-install-dirs.patch is the version that
         # applies after it.  Swap it in directly: `patchesFn` no longer
         # reaches the patches through `llvmPackages_21.override`.
-        libllvm = (withHaskellPatch "llvm" llvmPrev.libllvm).overrideAttrs (old: {
+        libllvm = (withHaskellPatch "llvm" (withoutMaxTimeTest llvmPrev.libllvm)).overrideAttrs (old: {
           patches = map (p:
             if final.lib.hasSuffix "-gnu-install-dirs.patch" (toString p)
             then ./patches/wasm/llvm/gnu-install-dirs.patch
