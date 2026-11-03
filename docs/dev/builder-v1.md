@@ -118,7 +118,7 @@ line from a fixed set of inputs:
   `${ghc.targetPrefix}`),
 - `--with-gcc=`, `--with-ar=`, `--with-strip=`, `--with-ld=` from the
   cross stdenv's `cc.targetPrefix` / `cc.bintools.targetPrefix`,
-- `--with-pkg-config=` from `buildPackages.cabalPkgConfigWrapper` (only
+- `--with-pkg-config=` from `buildPackages.cabalPkgConfigWrapperReal` (only
   when the component has `pkgconfig-depends`),
 - `--enable-library-vanilla`, `--enable-shared`, profiling /
   documentation toggles from the module config,
