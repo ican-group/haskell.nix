@@ -1954,13 +1954,17 @@ let
   #     `host/<native-platform>/`, which a host slice's build-stage
   #     lookups reach through the compose step's `build` → `host` link.
   isTwoStagePlan = ghc.emptyGlobalPackageDb or false;
-  # plan.json carries no top-level stage key; the stage is the first path
-  # component under dist-newstyle/build/ in the unit's dist-dir
-  # (`./dist-newstyle/build/<stage>/<platform>/<unit>`).
+  # The unit's stage, from its plan.json entry: `stage` (the
+  # stable-haskell/merge cabal and nix-tools-sh's make-install-plan), or
+  # `machine` (upstream haskell/cabal#12356's later name for the same
+  # field).  Older forks wrote neither but put the stage first under
+  # dist-newstyle/build/ in the dist-dir
+  # (`./dist-newstyle/build/<stage>/<platform>/<unit>`); the merge dropped
+  # that segment, so it is only a fallback.
   planStage =
-    let dd = (planJsonByPlanId.${package.identifier.unit-id or ""} or {}).dist-dir or "";
-        m  = builtins.match "[.]/dist-newstyle/build/([a-z]+)/.*" dd;
-    in if m == null then null else builtins.head m;
+    let entry = planJsonByPlanId.${package.identifier.unit-id or ""} or {};
+        m = builtins.match "[.]/dist-newstyle/build/(build|host)/.*" (entry.dist-dir or "");
+    in entry.stage or entry.machine or (if m == null then null else builtins.head m);
   isBuildStageUnit = isTwoStagePlan && planStage == "build";
 
   # A `build-type: Custom` package's `setup` runs on the BUILD machine, so it

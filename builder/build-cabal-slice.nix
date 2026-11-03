@@ -1733,10 +1733,28 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       expected_pkg=${lib.escapeShellArg expectedPackage}
       allowed_build_tools=${lib.escapeShellArg
         (lib.concatStringsSep " " allowedBuildToolPackages)}
-      extras=$(awk -v expected="$expected_pkg" -v allowed="$allowed_build_tools" '
+      # The stable-haskell/merge cabal no longer prints a stage keyword in
+      # that block, but its plan.json (written by the same dry run) has a
+      # `stage` per unit.  A `<pkg>-<ver>` planned ONLY at the build stage
+      # is a build-stage unit (see the BUILD-stage note below); one that is
+      # also planned at the host stage stays subject to the check.
+      build_only_pkg_vers=""
+      if [ -f "$distDir/cache/plan.json" ]; then
+        build_only_pkg_vers=$(jq -r '
+          [.["install-plan"][] | {s: (.stage // .machine // "host"),
+                                  pv: "\(.["pkg-name"])-\(.["pkg-version"])"}]
+          | (map(select(.s == "host") | .pv) | unique) as $host
+          | map(select(.s == "build") | .pv) | unique
+          | map(select(. as $pv | $host | index($pv) | not)) | .[]' \
+          "$distDir/cache/plan.json" 2>/dev/null | tr '\n' ' ' || true)
+      fi
+      extras=$(awk -v expected="$expected_pkg" -v allowed="$allowed_build_tools" \
+                   -v build_only="$build_only_pkg_vers" '
         BEGIN {
           n = split(allowed, a, " ")
           for (i = 1; i <= n; i++) allowed_set[a[i]] = 1
+          n = split(build_only, b, " ")
+          for (i = 1; i <= n; i++) build_only_set[b[i]] = 1
         }
         /^In order, the following / { capturing=1; next }
         capturing && /^$/ { capturing=0; next }
@@ -1757,6 +1775,7 @@ ${lib.optionalString (metadataSourceFrags != []) ''
           # Only HOST-stage extras indicate a real composition failure.
           if (pkg_ver == "build") next
           if (pkg_ver == "host" || pkg_ver == "target") pkg_ver = $3
+          if (pkg_ver in build_only_set) next
           n = split(pkg_ver, parts, "-")
           for (i = n; i > 0; i--) if (parts[i] ~ /^[0-9]+(\.[0-9]+)*$/) break
           if (i <= 1) { name = pkg_ver }

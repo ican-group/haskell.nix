@@ -1250,17 +1250,18 @@ final: prev: {
         withInputs = final.lib.recurseIntoAttrs;
 
         # The v2 builder's `cabal-install`, built via `haskell-nix.tool`:
-        # the stable-haskell cabal fork (3.17, branch stable-haskell/master)
+        # the stable-haskell cabal fork (3.19, branch hkm/sh-merge-ports)
         # pulled via source-repository-package — the same sources
-        # make-install-plan links (see nix-tools/cabal.project).  This
-        # gives the per-slice `cabal v2-build` the cross-compilation
-        # "stage" system (--with-build-compiler / build:/host: constraints)
-        # so build-time tool deps resolve in the build scope.
-        # Branch `hkm/installed-sublibs` (2 commits on top of
-        # stable-haskell/master 01d053ac): lets installed instances satisfy
-        # named sub-library deps — required by the ghc-bin slice, whose
-        # +threaded/+debug flags depend on the composed installed rts's
-        # flavour sublibs (rts:threaded-nodebug etc.).
+        # make-install-plan links (see nix-tools-sh/cabal.project).  That
+        # branch is Andrea Bedini's `stable-haskell/merge` (upstream master
+        # plus the cross-compilation series haskell/cabal#12356) with
+        # haskell.nix's fork commits on top.  It gives the per-slice
+        # `cabal v2-build` the cross-compilation "stage" system
+        # (--with-build-compiler / build: constraints) so build-time tool
+        # deps resolve in the build scope, and lets installed instances
+        # satisfy named sub-library deps — required by the ghc-bin slice,
+        # whose +threaded/+debug flags depend on the composed installed
+        # rts's flavour sublibs (rts:threaded-nodebug etc.).
         #
         # Two pins here:
         #
@@ -1305,7 +1306,7 @@ final: prev: {
                           + "in `overlays/haskell.nix`.")
                  else picked;
             mkTool = evalSystem: final.pkgsBuildBuild.haskell-nix.tool compiler-nix-name "cabal" {
-              version = "3.17.0.1";
+              version = "3.19.0.0";
               builderVersion = 1;
               # Run the tool project's plan-to-nix on the consumer's eval
               # platform.  Without this it defaults to the pkgsBuildBuild
@@ -1317,20 +1318,18 @@ final: prev: {
                 source-repository-package
                     type: git
                     location: https://github.com/stable-haskell/Cabal.git
-                    tag: 2decf1a57208a7c136dc41a2bcf82a30eef546cc
-                    --sha256: sha256-BKIRLzK4vFLgJY2QiN9+vVcwiEy6+Szq9ROYjANow0Y=
+                    tag: 5e3f44173c5bed0c7eed4f7e6281f1479da2f80c
+                    --sha256: sha256-v6g4gRiV+GVmDkizKJVY7lRaMyHjrd9Rq6U+vOq2Kmk=
                     subdir: Cabal
                             Cabal-syntax
                             cabal-install
                             cabal-install-solver
                             hooks-exe
 
-                source-repository-package
-                    type: git
-                    location: https://github.com/stable-haskell/hackage-security.git
-                    tag: baaad2e189a8203966f7d3f752a348f02eefd1b2
-                    --sha256: sha256-mVWZCWGJKsSjQSqb5iw0Q8fmV+4aFZVL4zOmMaNnEhA=
-                    subdir: hackage-security
+                -- hackage-security's releases bound Cabal/Cabal-syntax below
+                -- the fork's 3.19 (the stable-haskell/hackage-security fork
+                -- this used to pin is 0.6.3.2, capped at < 3.18).
+                allow-newer: hackage-security:Cabal, hackage-security:Cabal-syntax
               '';
               modules = [{
                 # (No sublib-pruning patch: a slice's solve needs the deps of
@@ -1341,8 +1340,6 @@ final: prev: {
                 packages.cabal-install.patches = [
                   ../builder/cabal-install-patches/skip-installed-revdeps-in-completed.patch
                   ../builder/cabal-install-patches/setup-build-num-jobs-env.patch
-                  ../builder/cabal-install-patches/inlibrary-build-stage-exe-platform.patch
-                  ../builder/cabal-install-patches/haddock-toolchain-self-reference.patch
                 ];
                 # The Cabal LIBRARY, not the tool: `v2-build` links it in and
                 # uses it as the build system for `build-type: Simple`, so a
