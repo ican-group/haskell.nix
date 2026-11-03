@@ -202,7 +202,13 @@ dimension "Nixpkgs version" nixpkgsVersions (nixpkgsName: pinnedNixpkgsSrc:
         })
         # GHCJS builds its own template haskell runner.
         // pkgs.lib.optionalAttrs (ifdLevel >= 2 && !builtins.elem crossSystemName ["ghcjs" "wasi32"])
-            pkgs.haskell-nix.iserv-proxy-exes.${compiler-nix-name}
+            # The `evalSystem` variant, not the default: the default is the
+            # build platform's (`pkgsBuildBuild`) variant, so on an
+            # x86_64-linux job its iserv-proxy plan-to-nix IFDs ran as
+            # x86_64-linux while everything else in the eval ran on
+            # `evalSystem`.  The exe derivations are the same either way.
+            (pkgs.haskell-nix.iserv-proxy-exes.${compiler-nix-name}.evalWith.${evalSystem}
+              or pkgs.haskell-nix.iserv-proxy-exes.${compiler-nix-name})
         // pkgs.lib.optionalAttrs (ifdLevel >= 3) {
           hello = (pkgs.haskell-nix.hackage-package { name = "hello"; version = "1.0.0.2"; inherit evalSystem compiler-nix-name; }).getComponent "exe:hello";
         })
