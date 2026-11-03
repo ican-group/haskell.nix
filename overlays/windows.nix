@@ -41,8 +41,14 @@ final: prev:
   # > 32 bit pseudo relocation at 0000000140117CE6 out of range, targeting 00006FFFFFF18160, yielding the value 00006FFEBFE00476.
   #
   # This however also means, pretty much all of our haskell packages will need to be built with this as well.
-  libffi = prev.libffi.overrideAttrs (_: {
-    LDFLAGS = "-Wl,--disable-dynamicbase,--disable-high-entropy-va,--image-base=0x400000";
+  #
+  # Set through `env`: libffi 3.8 uses `__structuredAttrs`, where a plain
+  # top-level `LDFLAGS` attribute is no longer exported to the builder, so
+  # the DLL silently went back to a high, relocatable image base.
+  libffi = prev.libffi.overrideAttrs (old: {
+    env = (old.env or {}) // {
+      LDFLAGS = "-Wl,--disable-dynamicbase,--disable-high-entropy-va,--image-base=0x400000";
+    };
   });
 } // {
    libmpc = if !prev.stdenv.hostPlatform.isWindows then prev.libmpc else prev.libmpc.overrideAttrs (drv: {
