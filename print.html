@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-c3a759c4.js";
+            window.path_to_searchindex_js = "searchindex-43f91352.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-3cfc0b9c.js"></script>
+        <script src="toc-5b1b9093.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -1250,7 +1250,8 @@ package set. Your project will have a <a href="#mkstackpkgset"><code>mkStackPkgS
 <blockquote>
 <p><strong>Note:</strong></p>
 <p>Note that <code>haskell.nix</code> will automatically use <code>qemu</code> to emulate the target
-when necessary to run Template Haskell splices.</p>
+when necessary to run Template Haskell splices.  See
+<a href="#cross-compiling-template-haskell-how-it-works">Cross-compiling Template Haskell: how it works</a>.</p>
 </blockquote>
 <h3 id="static-executables-with-musl-libc"><a class="header" href="#static-executables-with-musl-libc">Static executables with Musl libc</a></h3>
 <p>Another application of cross-compiling is to produce fully static
@@ -1479,6 +1480,384 @@ The test compiles with the pinned Android API 26 NDK. It checks Bionic startup
 and the personality semantics above; it does not substitute for a real
 cross-Template-Haskell build. See <a href="../test/README.html">the regression instructions</a>
 for emulator overrides and instructions for rerunning an existing test output.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="cross-compiling-template-haskell-how-it-works"><a class="header" href="#cross-compiling-template-haskell-how-it-works">Cross-compiling Template Haskell: how it works</a></h1>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Term</th><th>Meaning</th><th>GHC’s name</th></tr>
+</thead>
+<tbody>
+<tr><td><strong>build machine</strong></td><td>where GHC and cabal run</td><td>host</td></tr>
+<tr><td><strong>host machine</strong></td><td>where the compiled program will run</td><td>target</td></tr>
+</tbody>
+</table>
+</div>
+<p>GHC names machines from the compiler’s point of view; cabal and this page
+name them from the package’s.</p>
+<p>This page is for people who ship GHC or cabal and want cross-compiled
+Template Haskell (TH) to work.  It covers what to build and install: first
+for plain GHC, then for GHC with a cross-aware cabal.  haskell.nix is the
+reference implementation; links point at its source.</p>
+<p>Rows and stanzas marked <em>stable-haskell GHC</em> apply only to the stable-haskell
+fork of GHC; packagers of upstream GHC can skip them.</p>
+<h2 id="the-problem"><a class="header" href="#the-problem">The problem</a></h2>
+<p>A splice runs <em>while</em> GHC compiles the module.  When cross compiling, the
+splice and everything it calls are compiled for the host machine, and a cross
+GHC cannot load host code into its own process.</p>
+<p>GHC’s answer is the <strong>external interpreter</strong>: a separate program, built for
+the host, that loads the splice’s object code and runs it.  GHC talks to it
+over a pipe (the <code>iserv</code> protocol).  What is left is starting a host program
+on the build machine.</p>
+<h2 id="the-pieces"><a class="header" href="#the-pieces">The pieces</a></h2>
+<pre><code> build machine
+ ─────────────────────────────────────────────────────────────────────
+   cross GHC ──(-pgmi)──▶ wrapper script
+                              │ exec
+                              ▼
+                          iserv-proxy                 [build-machine binary]
+                              │ starts it under a runner (qemu / wine / hl)
+                              ▼
+                          iserv-proxy-interpreter     [host binary, emulated]
+
+   GHC ◀── iserv protocol ──▶ proxy ◀── pipe + .o/.a/.so files ──▶ interpreter
+</code></pre>
+<ul>
+<li><strong>iserv-proxy</strong> sits between GHC and the interpreter.  It starts the
+interpreter and forwards GHC’s messages.  When the interpreter asks for an
+object, archive or DLL it cannot see, the proxy sends the file over.  (It
+can also reach an interpreter on a real device over TCP; haskell.nix only
+uses the pipe.)</li>
+<li><strong>iserv-proxy-interpreter</strong> is a host executable linked against GHC’s
+<code>ghci</code> library.  It loads host code with GHC’s runtime linker and runs the
+splice.</li>
+<li><strong>The runner</strong> makes the host binary executable on the build machine.</li>
+</ul>
+<p>Both programs come from
+<a href="https://github.com/stable-haskell/iserv-proxy">stable-haskell/iserv-proxy</a>,
+branch <code>iserv-syms</code>.  That branch also compiles a table of libc symbols into
+the interpreter (<code>cbits/symbols.&lt;host&gt;.c</code>, for musl, Android and Windows), so
+the runtime linker can resolve them for the code a splice loads.</p>
+<h2 id="step-1-plain-ghc"><a class="header" href="#step-1-plain-ghc">Step 1: plain GHC</a></h2>
+<ol>
+<li>
+<p><strong>A cross GHC</strong> for the host.</p>
+</li>
+<li>
+<p><strong><code>iserv-proxy-interpreter</code>, built for the host with that same GHC.</strong>  It
+must speak the compiler’s <code>iserv</code> protocol, so build one per GHC version,
+host and way.  It does not depend on the user’s project.</p>
+</li>
+<li>
+<p><strong><code>iserv-proxy</code>, built for the build machine</strong> with any native GHC.</p>
+</li>
+<li>
+<p><strong>A runner</strong> for the host:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Host</th><th>Runner</th></tr>
+</thead>
+<tbody>
+<tr><td>any Linux the build machine can’t run natively</td><td><code>qemu-&lt;arch&gt;</code> (user mode)</td></tr>
+<tr><td>musl Linux, on a macOS build machine</td><td><code>hl</code> from <a href="https://github.com/zw3rk/hyper-linux">hyper-linux</a> (must be installed)</td></tr>
+<tr><td>Windows</td><td><code>wine</code></td></tr>
+<tr><td>a host the build machine can run (e.g. x86_64 musl on x86_64 Linux)</td><td>none</td></tr>
+<tr><td>JavaScript, WebAssembly</td><td>GHC’s own interpreter under <code>node</code> (<a href="#javascript-and-webassembly">below</a>)</td></tr>
+</tbody>
+</table>
+</div>
+<p>A dynamically linked interpreter needs the host’s dynamic loader and libc
+under qemu: pass the host sysroot (<code>qemu-aarch64 -L &lt;sysroot&gt;</code>, or set
+<code>QEMU_LD_PREFIX</code>), or link the interpreter statically.  haskell.nix links
+it statically for Android and musl hosts (stable-haskell GHC: libc
+dynamic, see <a href="#building-the-interpreter">Appendix A</a>), and dynamically
+for glibc hosts, where it gets away without a sysroot because the ELF
+interpreter is an absolute path that exists on the build machine.</p>
+</li>
+<li>
+<p><strong>A wrapper script per host triple</strong>, which GHC starts as <code>-pgmi</code>.  The
+short version (full scripts in <a href="#wrapper-scripts">Appendix A</a>):</p>
+<pre><code class="language-sh">#!/bin/sh
+exec iserv-proxy "$@" --pipe qemu-aarch64 iserv-proxy-interpreter tmp --stdio
+</code></pre>
+</li>
+<li>
+<p><strong>The flags</strong>, plus <a href="#ghc-flags-per-host">the per-host ones</a>:</p>
+<pre><code class="language-sh">aarch64-unknown-linux-gnu-ghc -fexternal-interpreter -pgmi ./iserv-wrapper Main.hs
+</code></pre>
+</li>
+</ol>
+<p>GHC picks the program by <em>way</em>: it runs <code>&lt;pgmi&gt;-prof</code> for profiled code,
+<code>&lt;pgmi&gt;-dyn</code> for <code>-dynamic</code> code and <code>&lt;pgmi&gt;-prof-dyn</code> for both
+(<code>GHC.Runtime.Interpreter.Init</code>).  Ship at least the plain and <code>-prof</code> wrappers
+(the <code>-prof</code> interpreter must be built against profiled libraries).  Ship
+<code>-dyn</code> only if your users build with <code>-dynamic</code>.</p>
+<h3 id="what-to-ship"><a class="header" href="#what-to-ship">What to ship</a></h3>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>File</th><th>Built for</th><th>Install at</th></tr>
+</thead>
+<tbody>
+<tr><td><code>iserv-proxy</code></td><td>build machine</td><td>anywhere; the wrapper names it</td></tr>
+<tr><td><code>iserv-proxy-interpreter</code> (and <code>-prof</code>)</td><td>host</td><td>anywhere; the wrapper names it</td></tr>
+<tr><td>wrapper script, named <code>ghc-iserv</code> (and <code>ghc-iserv-prof</code>, …)</td><td>—</td><td><code>$(ghc --print-libdir)/../bin/</code>, next to <code>unlit</code></td></tr>
+</tbody>
+</table>
+</div>
+<p>Without <code>-pgmi</code>, GHC runs <code>$topdir/../bin/ghc-iserv</code> (<code>$topdir</code> is
+<code>ghc --print-libdir</code>), adding the way suffix as above.  Install the wrappers
+there and users only add <code>-fexternal-interpreter</code>.  Elsewhere, users pass
+<code>-pgmi</code> too.</p>
+<p>What the user’s machine needs at build time:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Host</th><th>Needs</th></tr>
+</thead>
+<tbody>
+<tr><td>Linux, other architecture</td><td><code>qemu-&lt;arch&gt;</code> (qemu user mode)</td></tr>
+<tr><td>musl Linux, macOS build machine</td><td><code>hl</code> (hyper-linux)</td></tr>
+<tr><td>Windows</td><td><code>wine</code></td></tr>
+<tr><td>JavaScript, WebAssembly</td><td><code>node</code></td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="javascript-and-webassembly"><a class="header" href="#javascript-and-webassembly">JavaScript and WebAssembly</a></h3>
+<p>GHC has its own external interpreter for these and always uses it.  Don’t set
+<code>-pgmi</code>.</p>
+<ul>
+<li><strong>JavaScript:</strong> <code>node</code> on <code>PATH</code>.</li>
+<li><strong>WebAssembly:</strong> <code>node</code> on <code>PATH</code> (haskell.nix uses Node.js 24).  GHC runs
+<code>dyld.mjs</code> with <strong>one</strong> library directory: the last <code>libraries:</code> entry of
+the C compiler’s <code>-print-search-dirs</code>.  <code>libc.so</code> and <code>libffi.so</code> must both
+be in it; haskell.nix symlinks them into one directory (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/stable-haskell.nix#L2154-L2190">link</a>).</li>
+<li>Both load the <code>ghci</code> package at splice time, so it must be built for the
+host (<a href="#step-2-ghc-and-cabal">Step 2</a>).</li>
+</ul>
+<h2 id="step-2-ghc-and-cabal"><a class="header" href="#step-2-ghc-and-cabal">Step 2: GHC and cabal</a></h2>
+<p>This assumes the cabal from the stable-haskell cross-compilation branch
+(<code>stable-haskell/merge</code>, the cabal side of
+<a href="https://github.com/haskell/cabal/pull/12356">haskell/cabal#12356</a>).</p>
+<p>Every unit in its plan belongs to a machine (<code>"machine"</code> in <code>plan.json</code>):</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Built for</th><th>What</th><th>Compiled by</th></tr>
+</thead>
+<tbody>
+<tr><td>host</td><td>everything you asked for, <strong>including all a splice imports</strong></td><td>the cross GHC (<code>--with-compiler</code>)</td></tr>
+<tr><td>build</td><td>custom <code>Setup.hs</code>, <code>build-tool-depends</code> executables (alex, happy, hsc2hs, …) and their libraries</td><td>the native GHC (<code>--with-build-compiler</code>)</td></tr>
+</tbody>
+</table>
+</div>
+<p>Splices need <strong>no build-machine copy</strong> of their dependencies: a <code>lens</code> used in
+a splice is compiled once, for the host, and loaded into the interpreter.</p>
+<p>A complete invocation:</p>
+<pre><code class="language-sh">cabal build all \
+  --with-compiler=aarch64-unknown-linux-gnu-ghc \
+  --with-hc-pkg=aarch64-unknown-linux-gnu-ghc-pkg \
+  --with-build-compiler=ghc \
+  --with-build-hc-pkg=ghc-pkg \
+  --with-build-hsc2hs=hsc2hs
+</code></pre>
+<p>with this in <code>cabal.project</code>:</p>
+<pre><code class="language-cabal">-- Host units only: `package *` would also reach the build-machine units.
+package host:*
+  ghc-options: -fexternal-interpreter -pgmi /path/to/iserv-wrapper
+</code></pre>
+<p>(haskell.nix wraps <code>ghc</code> to add these flags instead; you don’t need to.)
+<code>--with-build-PROG</code> sets any other build-machine program.</p>
+<p>Per target:</p>
+<ul>
+<li>
+<p><strong>JavaScript and WebAssembly:</strong> add <code>extra-packages: ghci</code> and leave out
+the <code>ghc-options</code> above.  JavaScript also needs <code>constraints: ghcjs installed</code> (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/test/js-template-haskell/default.nix#L16-L25">test</a>).</p>
+</li>
+<li>
+<p><strong>WebAssembly:</strong> the runtime linker only loads <code>.so</code> files, so host
+libraries must be shared:</p>
+<pre><code class="language-cabal">package host:*
+  shared: True
+</code></pre>
+</li>
+<li>
+<p><strong>Other hosts:</strong> a statically linked interpreter loads <code>.a</code> / GHCi <code>.o</code>
+files, so cabal’s defaults work.</p>
+</li>
+</ul>
+<p>Keep host-only settings (<code>executable-static:</code>, <code>shared:</code>, the flags above) in
+<code>package host:*</code>.</p>
+<p><strong>Build the interpreter without TH-over-iserv</strong>, or it depends on itself: the
+iserv-proxy build must not get the <code>-fexternal-interpreter -pgmi</code> flags.</p>
+<h2 id="appendix-a-per-target-reference"><a class="header" href="#appendix-a-per-target-reference">Appendix A: per-target reference</a></h2>
+<h3 id="wrapper-scripts"><a class="header" href="#wrapper-scripts">Wrapper scripts</a></h3>
+<p><strong>Linux (qemu or hl)</strong>, from <a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/linux-cross.nix#L24-L42">linux-cross.nix</a>:</p>
+<pre><code class="language-sh">#!/bin/sh
+set -eu
+# GHC passes the pipe file descriptors in "$@".
+# `tmp` is the interpreter's storage directory (relative to its working
+# directory): files the proxy sends over land there.
+exec iserv-proxy "$@" \
+  --pipe qemu-aarch64 /path/to/iserv-proxy-interpreter tmp --stdio ${ISERV_ARGS:-}
+</code></pre>
+<p>Use <code>hl</code> instead of <code>qemu-aarch64</code> on macOS, and the profiled interpreter in
+the <code>-prof</code> wrapper.</p>
+<p><strong>Windows (wine)</strong>, from <a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/mingw_w64.nix#L21-L66">mingw_w64.nix</a>:</p>
+<pre><code class="language-sh">#!/bin/sh
+set -eu
+# wine can fail to start if the environment is very large; trim it if so.
+
+# The interpreter and every DLL a splice might load, in one directory.
+REMOTE_ISERV=$(mktemp -d)
+ln -s /path/to/interpreter/bin/* "$REMOTE_ISERV"
+for p in $DLL_DIRS; do            # the host libraries' install directories
+  find "$p" -iname '*.dll'   -exec ln -sf {} "$REMOTE_ISERV" \;
+  find "$p" -iname '*.dll.a' -exec ln -sf {} "$REMOTE_ISERV" \;
+done
+# Some DLLs are named libX.dll but loaded as X.dll.
+( cd "$REMOTE_ISERV" &amp;&amp; for l in lib*.dll; do ln -s "$l" "${l#lib}"; done )
+
+# --no-load-call: wine sees the same files, so the proxy need not copy DLLs.
+WINEDLLOVERRIDES="winemac.drv=d" \
+WINEDEBUG=warn-all,fixme-all,-menubuilder,-mscoree,-ole,-secur32,-winediag \
+WINEPREFIX=$(mktemp -d) \
+  exec iserv-proxy "$@" --pipe wine "$REMOTE_ISERV/iserv-proxy-interpreter.exe" \
+    tmp --stdio --no-load-call ${ISERV_ARGS:-}
+</code></pre>
+<h3 id="ghc-flags-per-host"><a class="header" href="#ghc-flags-per-host">GHC flags per host</a></h3>
+<p>Flags haskell.nix uses for host code, besides <code>-fexternal-interpreter -pgmi</code>.
+GHC flags reach every build.  The Setup flags are passed only by its older
+per-package builder, not by the cabal path in Step 2.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Host</th><th>Flag</th><th>Kind</th><th>In <code>package host:*</code></th><th>Why</th></tr>
+</thead>
+<tbody>
+<tr><td>Linux, Windows</td><td><code>-L&lt;host gmp&gt;/lib</code></td><td>GHC</td><td><code>ghc-options:</code></td><td>work-around for <a href="https://gitlab.haskell.org/ghc/ghc/issues/15275">GHC #15275</a> (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/linux-cross.nix#L44-L52">Linux</a>, <a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/mingw_w64.nix#L71-L78">Windows</a>)</td></tr>
+<tr><td>aarch64 Linux</td><td><code>-fPIC -optc-fPIC</code></td><td>GHC</td><td><code>ghc-options:</code></td><td>(<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/linux-cross.nix#L44-L52">link</a>)</td></tr>
+<tr><td>aarch64 Linux</td><td><code>--gcc-option=-fPIC</code></td><td>Setup build</td><td><code>gcc-options: -fPIC</code></td><td>also GHC #15275 (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/armv6l-linux.nix#L59-L62">link</a>)</td></tr>
+<tr><td>arm32 Linux</td><td><code>--gcc-option=-fno-pic --gcc-option=-fno-plt</code></td><td>Setup build</td><td><code>gcc-options: -fno-pic -fno-plt</code></td><td>(<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/armv6l-linux.nix#L59-L62">link</a>)</td></tr>
+<tr><td>Android</td><td><code>-optl-ldl</code></td><td>GHC</td><td><code>ghc-options:</code></td><td>the RTS references <code>dlopen</code> and friends (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/linux-cross.nix#L44-L52">link</a>)</td></tr>
+<tr><td>arm32, Android</td><td><code>--disable-split-sections</code></td><td>Setup configure</td><td><code>split-sections: False</code></td><td>(<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/linux-cross.nix#L43">link</a>)</td></tr>
+<tr><td>Windows</td><td><code>--disable-split-sections</code></td><td>Setup configure</td><td><code>split-sections: False</code></td><td>(<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/mingw_w64.nix#L19">link</a>)</td></tr>
+<tr><td>Windows</td><td><code>-L&lt;pthreads&gt;/lib -L&lt;pthreads&gt;/bin</code></td><td>GHC</td><td><code>ghc-options:</code></td><td>library search path for the pthreads library (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/mingw_w64.nix#L71-L78">link</a>)</td></tr>
+</tbody>
+</table>
+</div>
+<h3 id="building-the-interpreter"><a class="header" href="#building-the-interpreter">Building the interpreter</a></h3>
+<p>One package, built twice from a checkout of iserv-proxy: for the host (the
+interpreter) and for the build machine (the proxy).  cabal reads
+<code>&lt;project file&gt;.local</code>, so give the host build its own project file:</p>
+<pre><code class="language-sh"># Host interpreter: cross GHC, reads cabal.project.host.local (stanzas below).
+cp cabal.project cabal.project.host
+cabal build exe:iserv-proxy-interpreter \
+  --project-file=cabal.project.host \
+  --with-compiler=aarch64-unknown-linux-gnu-ghc \
+  --with-hc-pkg=aarch64-unknown-linux-gnu-ghc-pkg \
+  --with-build-compiler=ghc --with-build-hc-pkg=ghc-pkg
+
+# Build-machine proxy: native GHC, plain cabal.project, none of the stanzas.
+cabal build exe:iserv-proxy --with-compiler=ghc
+</code></pre>
+<p>The host stanzas, from <a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/haskell.nix#L1361-L1611">overlays/haskell.nix</a>; use the ones
+for your host.  Build the <code>-prof</code> interpreter separately (its own project
+file, with the last stanza added):</p>
+<pre><code class="language-cabal">-- GHC &gt;= 9.14: let a splice load even when it references a symbol nothing
+-- provides, instead of aborting the whole load.
+package iserv-proxy
+  ghc-options: -rtsopts=all -with-rtsopts=--optimistic-linking
+
+-- aarch64, GHC &lt; 9.8: the threaded RTS breaks TH with C libraries (th-dlls).
+package iserv-proxy
+  flags: -threaded
+
+-- Windows: avoid "32 bit pseudo relocation ... out of range" under wine.
+if os(mingw32)
+  package iserv-proxy
+    ghc-options: -debug -optl-Wl,--disable-dynamicbase,--disable-high-entropy-va,--image-base=0x400000
+
+-- Android: qemu can't run Android's dynamic loader, so link statically.
+-- Add -optl-no-pie on arm32.
+package iserv-proxy
+  ghc-options: -debug -optl-static -optl-ldl
+
+-- musl, stable-haskell GHC: a fully static interpreter has no dlsym, so
+-- no libc symbol resolves ("Failed to lookup symbol: strlen").  On that GHC
+-- executable-static means -fully-static and its runtime linker skips libc.a,
+-- so link libc dynamically; Haskell libraries stay static.  Leave out the
+-- ghc-options line on fully static hosts (no libgcc_s).
+package iserv-proxy
+  executable-static: False
+  ghc-options: -optl-Wl,--no-as-needed -optl-lstdc++ -optl-lgcc_s
+
+-- The -prof interpreter.
+package iserv-proxy
+  profiling: True
+</code></pre>
+<p><strong>Android and C libraries.</strong>  The static interpreter cannot <code>dlopen</code>, and the
+runtime linker tries a shared object before an archive.  Ship only static
+archives (<code>.a</code>) of the C libraries splices use (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/test/default.nix#L16-L30">link</a>).</p>
+<h3 id="patches"><a class="header" href="#patches">Patches</a></h3>
+<p><strong>cabal</strong> — two commits not yet in <code>stable-haskell/merge</code>:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Change</th><th>Commit</th><th>Needed for</th><th>Workaround without it</th></tr>
+</thead>
+<tbody>
+<tr><td>Build shared libraries when the RTS linker only loads them</td><td><a href="https://github.com/stable-haskell/cabal/commit/ed916be32331e541bfff74c1fea2592e49e84b45"><code>ed916be3</code></a></td><td>wasm</td><td><code>shared: True</code> in <code>package host:*</code></td></tr>
+<tr><td><code>executable-static</code> applies to host units only</td><td><a href="https://github.com/stable-haskell/cabal/commit/3b773094325aa515a7a59beddc5d88721d13d945"><code>3b773094</code></a></td><td>static hosts built on a machine without static system libraries (macOS → musl)</td><td>put <code>executable-static: True</code> in <code>package host:*</code>, not <code>package *</code></td></tr>
+</tbody>
+</table>
+</div>
+<p><strong>iserv-proxy:</strong></p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Patch</th><th>What it does</th><th>Needed for</th></tr>
+</thead>
+<tbody>
+<tr><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-windows-crt-symbols.patch">windows-crt-symbols</a></td><td>CRT symbol aliases for the interpreter</td><td>Windows, GHC 9.6–9.10</td></tr>
+<tr><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-arm32-static-libc.patch">arm32-static-libc</a>, <a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-arm32-bionic-symbols.patch">arm32-bionic-symbols</a></td><td>static libc and a Bionic symbol table</td><td>Android arm32, <em>stable-haskell GHC</em></td></tr>
+<tr><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-i386-musl-dynamic-libc.patch">i386-musl-dynamic-libc</a></td><td>drops a hidden libc symbol so the interpreter can link libc dynamically</td><td>i386 musl, <em>stable-haskell GHC</em></td></tr>
+</tbody>
+</table>
+</div>
+<h2 id="appendix-b-how-haskellnix-wires-this-up"><a class="header" href="#appendix-b-how-haskellnix-wires-this-up">Appendix B: how haskell.nix wires this up</a></h2>
+<p>For readers who want to dig into the reference implementation.</p>
+<p><strong>Hadrian-built cross GHCs</strong> get no <code>ghc-iserv</code> (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/compiler/ghc/default.nix#L1307-L1310">link</a>):
+every splice except JavaScript and WebAssembly goes through iserv-proxy and a
+runner, as in Step 1.</p>
+<p><strong>The stable-haskell GHC with <code>-target</code></strong> is one native compiler wrapped as a
+cross compiler with <code>-B&lt;libdir&gt; -target=&lt;triple&gt;</code>; each project builds the
+host’s boot libraries from GHC’s source (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/stable-haskell.nix#L2003-L2014">link</a>,
+<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/modules/cabal-project.nix#L501-L547">link</a>).  When the build machine can run host code (x86_64 musl
+on x86_64 Linux) and the host libraries are static, splices run in-process,
+with no interpreter.  A package that asks for <code>-fexternal-interpreter</code> gets
+GHC’s own <code>ghc-iserv</code>, built for the host in the same project
+(<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/builder/comp-v2-builder.nix#L2011-L2033">link</a>).  A glibc GHC can’t <code>dlopen</code> musl <code>.so</code> files, so
+with shared musl libraries a splice needs the external interpreter.  This
+setup isn’t reproducible outside haskell.nix yet.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>What it does</th><th>Source</th></tr>
+</thead>
+<tbody>
+<tr><td>Linux wrapper script; adds the flags to every <code>ghc</code> call</td><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/linux-cross.nix#L24-L42">overlays/linux-cross.nix</a></td></tr>
+<tr><td>Picks qemu or hl per Linux host; extra Setup configure flags</td><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/armv6l-linux.nix#L3-L49">overlays/armv6l-linux.nix</a></td></tr>
+<tr><td>Windows wrapper script and DLL directory</td><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/mingw_w64.nix#L21-L66">overlays/mingw_w64.nix</a></td></tr>
+<tr><td>Builds iserv-proxy (build machine) and the interpreter (host, plain and profiled), with TH-over-iserv turned off for that build</td><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/haskell.nix#L1361-L1611">overlays/haskell.nix</a></td></tr>
+<tr><td>Picks the interpreter for each component</td><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/builder/comp-v2-builder.nix#L1992-L2033">builder/comp-v2-builder.nix</a></td></tr>
+<tr><td>Puts <code>node</code> on <code>PATH</code>; one library directory for <code>dyld.mjs</code></td><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/builder/build-cabal-slice.nix#L657-L708">build-cabal-slice.nix</a>, <a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/stable-haskell.nix#L2154-L2190">stable-haskell.nix</a></td></tr>
+<tr><td>Uses <code>--with-build-compiler</code> for the two-stage plan</td><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/modules/cabal-project.nix#L737-L741">modules/cabal-project.nix</a></td></tr>
+<tr><td>End-to-end test: splices calling C libraries</td><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/test/th-dlls/default.nix">test/th-dlls</a></td></tr>
+</tbody>
+</table>
+</div>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="building-webassembly-packages"><a class="header" href="#building-webassembly-packages">Building WebAssembly packages</a></h1>
 <p>haskell.nix supports cross-compiling Haskell projects to WebAssembly via the
