@@ -37,6 +37,9 @@ let
   #     (armv7a-android-prebuilt / aarch32 cross).
   #   * Windows targets reported as `<cpu>-unknown-mingw32`, not
   #     nixpkgs' `<cpu>-w64-windows` (ucrt64 / mingwW64 cross).
+  #   * WASI targets reported as `wasm32-unknown-wasi`, not nixpkgs'
+  #     `wasm32-unknown-wasip1` (wasi32): configure's GHC_CONVERT_OS
+  #     and ghc-toolchain's stringEncodeOS both spell the OS `wasi`.
   #
   # Mirror those normalisations here so the dummy and real `--info`
   # outputs match — verified by `tests.dummy-ghc-info` on
@@ -49,7 +52,10 @@ let
         else if cpu.name == "armv7a" then "armv7"
         else cpu.name;
       vendorName = if p.isWindows then "unknown" else vendor.name;
-      kernelName = if p.isWindows then "mingw32" else kernel.name;
+      kernelName =
+        if p.isWindows then "mingw32"
+        else if p.isWasi then "wasi"
+        else kernel.name;
     in
       "${cpuName}-${vendorName}-${kernelName}";
   # The stable-haskell fork brands its `--info` with `Edition` (hardcoded in

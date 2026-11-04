@@ -290,6 +290,16 @@
             }
           )));
 
+        # Root-cause derivations that fail on the Apple `nix-linux-builder`
+        # VMs; see ./nix-linux-builder-failures.nix.
+        nixLinuxBuilderFailures = {
+          x86_64-linux = import ./nix-linux-builder-failures.nix {
+            haskellNix = self;
+            inherit evalSystem;
+            system = "x86_64-linux";
+          };
+        };
+
         requiredJobs = forEachSystem (system:
           let
             inherit (self.legacyPackages.${system}) releaseTools;

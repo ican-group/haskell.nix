@@ -1,0 +1,60 @@
+diff --git a/llvm/cmake/modules/AddLLVM.cmake b/llvm/cmake/modules/AddLLVM.cmake
+index 83772ed8d2b1..0a7360d9357a 100644
+--- a/llvm/cmake/modules/AddLLVM.cmake
++++ b/llvm/cmake/modules/AddLLVM.cmake
+@@ -2547,8 +2547,7 @@ function(llvm_setup_rpath name)
+     # FIXME: update this when there is better solution.
+     set(_install_rpath "${LLVM_LIBRARY_OUTPUT_INTDIR}" "${CMAKE_INSTALL_PREFIX}/lib${LLVM_LIBDIR_SUFFIX}" ${extra_libdir})
+   elseif(UNIX)
+-    set(_build_rpath "\$ORIGIN/../lib${LLVM_LIBDIR_SUFFIX}" ${extra_libdir})
+-    set(_install_rpath "\$ORIGIN/../lib${LLVM_LIBDIR_SUFFIX}")
++    set(_install_rpath "\$ORIGIN/../lib${LLVM_LIBDIR_SUFFIX}" ${extra_libdir})
+     if(${CMAKE_SYSTEM_NAME} MATCHES "(FreeBSD|DragonFly)")
+       set_property(TARGET ${name} APPEND_STRING PROPERTY
+                    LINK_FLAGS " -Wl,-z,origin ")
+diff --git a/llvm/lib/MC/MCParser/WasmAsmParser.cpp b/llvm/lib/MC/MCParser/WasmAsmParser.cpp
+index 1f824b80bcd4..1025d3ee3026 100644
+--- a/llvm/lib/MC/MCParser/WasmAsmParser.cpp
++++ b/llvm/lib/MC/MCParser/WasmAsmParser.cpp
+@@ -228,7 +228,13 @@ public:
+     if (WasmSym->isFunction()) {
+       // Ignore .size directives for function symbols.  They get their size
+       // set automatically based on their content.
+-      Warning(Loc, ".size directive ignored for function symbols");
++      //
++      // Upstream LLVM treats this as a warning, we turn this into an
++      // error since it almost certainly signals severely malformed
++      // assembly due to miscompilation, and data/function symbol kind
++      // confusion is not always caught at link-time and might
++      // manifest as wasm runtime crashes :/
++      Error(Loc, ".size directive ignored for function symbols");
+     } else {
+       getStreamer().emitELFSize(Sym, Expr);
+     }
+diff --git a/llvm/test/MC/WebAssembly/function-size-warning.s b/llvm/test/MC/WebAssembly/function-size-warning.s
+index 627002dd3578..95e9294f80f7 100644
+--- a/llvm/test/MC/WebAssembly/function-size-warning.s
++++ b/llvm/test/MC/WebAssembly/function-size-warning.s
+@@ -1,5 +1,4 @@
+-# RUN: llvm-mc -triple=wasm32-unknown-unknown -filetype=obj %s -o %t.o 2>&1 | FileCheck %s
+-# RUN: llvm-objdump -t %t.o
++# RUN: not llvm-mc -triple=wasm32-unknown-unknown -filetype=obj %s -o %t.o 2>&1 | FileCheck %s
+ 
+ foo:
+   .functype foo () -> ()
+@@ -12,4 +11,4 @@ foo:
+ # assembly files.
+ .size foo, 0
+ 
+-# CHECK: warning: .size directive ignored for function symbols
++# CHECK: error: .size directive ignored for function symbols
+diff --git a/llvm/test/MC/WebAssembly/null-output.s b/llvm/test/MC/WebAssembly/null-output.s
+index fb15eecffc86..513e37d35039 100644
+--- a/llvm/test/MC/WebAssembly/null-output.s
++++ b/llvm/test/MC/WebAssembly/null-output.s
+@@ -1,4 +1,5 @@
+ # RUN: llvm-mc -triple=wasm32-unknown-unknown -filetype=obj -o /dev/null < %s
++# XFAIL: *
+ 
+     .text
+     .section .text.main,"",@

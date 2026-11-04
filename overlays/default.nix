@@ -123,6 +123,7 @@ let
     armv6l-linux = import ./armv6l-linux.nix;
     hyper-linux = import ./hyper-linux.nix { inherit sources; };
     musl = import ./musl.nix;
+    cross-checks = import ./cross-checks.nix;
     android = import ./android.nix;
     tools = import ./tools.nix;
     emscripten = import ./emscripten.nix;
@@ -165,6 +166,7 @@ let
     armv6l-linux
     hyper-linux
     musl
+    cross-checks
     android
     tools
     head-hackage
