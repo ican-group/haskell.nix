@@ -1236,7 +1236,15 @@ ENDSCRIPT
     # source — rts.cabal's rts-threaded-flags gained `cmm-options:
     # -optc-DTHREADED_RTS` (stable-haskell/ghc#191, merged to stable-ghc-9.14) —
     # so no `package rts` ghc-options workaround is needed here.
+    # `inplace-builds: False`: the plan-deterministic ids above
+    # (`base-4.22.1.0`, no `-inplace`) are what cabal 3.19
+    # (stable-haskell/merge) gives a project's own packages only with this
+    # set; the older fork named local units that way unconditionally.  The
+    # local-`packages:` slices set it too (comp-v2-builder.nix
+    # `packagesLine`), so plan and slice agree.  stable-haskell/ghc#200
+    # sets the same in GHC's own cabal.project.
     cabalProjectLocal = ''
+      inplace-builds: False
       ${bootLibProfiling}
       ${bootLibShared}
       package ghc-bin

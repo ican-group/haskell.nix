@@ -1885,8 +1885,17 @@ let
   # build-time `source-repository-package` block composition is not yet
   # implemented; it would be added here (and emitted per-fragment) if a
   # project with SRP deps needs the v2 build-time path.
+  # A local-`packages:` LIBRARY slice (`isLocalPackageSlice`) also sets
+  # `inplace-builds: False`: cabal 3.19 (stable-haskell/merge) otherwise
+  # builds a project package in place -- registered only in
+  # dist-newstyle/packagedb under `<pkgid>-inplace`, nothing in the store
+  # -- and gives it the bare deterministic `<pkgid>` id (the one the plan
+  # records) only with the flag off.  Local test/bench slices keep the
+  # in-place build they rely on.
   packagesLine =
-    if useLocalPackagesMode
+    if isLocalPackageSlice
+    then "packages: ./src/${pkgName}-${pkgVersion}\ninplace-builds: False\n"
+    else if useLocalPackagesMode
     then "packages: ./src/${pkgName}-${pkgVersion}\n"
     # The stable-haskell Cabal fork (3.17) rejects a project with neither
     # `packages:` nor `optional-packages:` (Cabal-7168).  A dependency slice

@@ -1347,6 +1347,7 @@ final: prev: {
                 packages.Cabal.patches = [
                   ../builder/cabal-install-patches/static-external-only-when-supported.patch
                   ../builder/cabal-install-patches/no-object-for-unemitted-signature.patch
+                  ../builder/cabal-install-patches/configure-script-posix-path.patch
                 ];
               }];
             };
