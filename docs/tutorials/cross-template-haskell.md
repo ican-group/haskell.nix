@@ -8,10 +8,13 @@
 GHC names machines from the compiler's point of view; cabal and this page
 name them from the package's.
 
-Cross-compiled Template Haskell (TH) splices must run as host code on the
-build machine.  This page shows the pieces that takes: first with plain GHC,
-then with GHC and cabal.  haskell.nix is the worked example, and the links
-point at its source.
+This page is for people who ship GHC or cabal and want cross-compiled
+Template Haskell (TH) to work.  It covers what to build and install: first
+for plain GHC, then for GHC with a cross-aware cabal.  haskell.nix is the
+reference implementation; links point at its source.
+
+Rows and stanzas marked *stable-haskell GHC* apply only to the stable-haskell
+fork of GHC; packagers of upstream GHC can skip them.
 
 ## The problem
 
@@ -61,9 +64,7 @@ the runtime linker can resolve them for the code a splice loads.
 1. **A cross GHC** for the host.
 2. **`iserv-proxy-interpreter`, built for the host with that same GHC.**  It
    must speak the compiler's `iserv` protocol, so build one per GHC version,
-   host and way.  It does not depend on your project: haskell.nix builds one
-   per compiler and host and shares it between projects
-   ([iserv-proxy-exes][iserv-proxy-exes]).
+   host and way.  It does not depend on the user's project.
 3. **`iserv-proxy`, built for the build machine** with any native GHC.
 4. **A runner** for the host:
 
@@ -74,6 +75,14 @@ the runtime linker can resolve them for the code a splice loads.
    | Windows | `wine` |
    | a host the build machine can run (e.g. x86_64 musl on x86_64 Linux) | none |
    | JavaScript, WebAssembly | GHC's own interpreter under `node` ([below](#javascript-and-webassembly)) |
+
+   A dynamically linked interpreter needs the host's dynamic loader and libc
+   under qemu: pass the host sysroot (`qemu-aarch64 -L <sysroot>`, or set
+   `QEMU_LD_PREFIX`), or link the interpreter statically.  haskell.nix links
+   it statically for Android and musl hosts (stable-haskell GHC: libc
+   dynamic, see [Appendix A](#building-the-interpreter)), and dynamically
+   for glibc hosts, where it gets away without a sysroot because the ELF
+   interpreter is an absolute path that exists on the build machine.
 
 5. **A wrapper script per host triple**, which GHC starts as `-pgmi`.  The
    short version (full scripts in [Appendix A](#wrapper-scripts)):
@@ -91,9 +100,9 @@ the runtime linker can resolve them for the code a splice loads.
 
 GHC picks the program by *way*: it runs `<pgmi>-prof` for profiled code,
 `<pgmi>-dyn` for `-dynamic` code and `<pgmi>-prof-dyn` for both
-(`GHC.Runtime.Interpreter.Init`).  Provide a wrapper for each way you use.
-haskell.nix ships the plain and `-prof` ones; the profiled interpreter must be
-built against profiled libraries.
+(`GHC.Runtime.Interpreter.Init`).  Ship at least the plain and `-prof` wrappers
+(the `-prof` interpreter must be built against profiled libraries).  Ship
+`-dyn` only if your users build with `-dynamic`.
 
 ### What to ship
 
@@ -185,11 +194,7 @@ Per target:
   files, so cabal's defaults work.
 
 Keep host-only settings (`executable-static:`, `shared:`, the flags above) in
-`package host:*`.  That is also the workaround if your cabal lacks the two
-fixes in [the patch table](#patches):
-
-* wasm: `shared: True` in `package host:*`;
-* `executable-static: True` in `package host:*`, not `package *`.
+`package host:*`.
 
 **Build the interpreter without TH-over-iserv**, or it depends on itself: the
 iserv-proxy build must not get the `-fexternal-interpreter -pgmi` flags.
@@ -218,8 +223,7 @@ the `-prof` wrapper.
 ```sh
 #!/bin/sh
 set -eu
-# Large variables in the environment can stop wine from starting.
-unset configureFlags configurePhase
+# wine can fail to start if the environment is very large; trim it if so.
 
 # The interpreter and every DLL a splice might load, in one directory.
 REMOTE_ISERV=$(mktemp -d)
@@ -241,29 +245,43 @@ WINEPREFIX=$(mktemp -d) \
 
 ### GHC flags per host
 
-What haskell.nix passes when compiling host code, besides
-`-fexternal-interpreter -pgmi`:
+Flags haskell.nix uses for host code, besides `-fexternal-interpreter -pgmi`.
+GHC flags reach every build.  The Setup flags are passed only by its older
+per-package builder, not by the cabal path in Step 2.
 
-| Host | Flag | Kind | Why |
-|---|---|---|---|
-| Linux, Windows | `-L<host gmp>/lib` | GHC | work-around for [GHC #15275](https://gitlab.haskell.org/ghc/ghc/issues/15275) ([Linux][lc-ghcopts], [Windows][mingw-ghcopts]) |
-| aarch64 Linux | `-fPIC -optc-fPIC` | GHC | ([link][lc-ghcopts]) |
-| aarch64 Linux | `--gcc-option=-fPIC` | Setup configure | also GHC #15275 ([link][linux-setup-flags]) |
-| arm32 Linux | `--gcc-option=-fno-pic --gcc-option=-fno-plt` | Setup configure | ([link][linux-setup-flags]) |
-| Android | `-optl-ldl` | GHC | the RTS references `dlopen` and friends ([link][lc-ghcopts]) |
-| arm32, Android | `--disable-split-sections` | Setup configure | ([link][lc-split]) |
-| Windows | `--disable-split-sections` | Setup configure | ([link][mingw-split]) |
-| Windows | `-L<pthreads>/lib -L<pthreads>/bin` | GHC | library search path for the pthreads library ([link][mingw-ghcopts]) |
-
-In `cabal.project`, Setup configure flags go in `configure-options:` and GHC
-flags in `ghc-options:`, both under `package host:*`.
+| Host | Flag | Kind | In `package host:*` | Why |
+|---|---|---|---|---|
+| Linux, Windows | `-L<host gmp>/lib` | GHC | `ghc-options:` | work-around for [GHC #15275](https://gitlab.haskell.org/ghc/ghc/issues/15275) ([Linux][lc-ghcopts], [Windows][mingw-ghcopts]) |
+| aarch64 Linux | `-fPIC -optc-fPIC` | GHC | `ghc-options:` | ([link][lc-ghcopts]) |
+| aarch64 Linux | `--gcc-option=-fPIC` | Setup build | `gcc-options: -fPIC` | also GHC #15275 ([link][linux-setup-flags]) |
+| arm32 Linux | `--gcc-option=-fno-pic --gcc-option=-fno-plt` | Setup build | `gcc-options: -fno-pic -fno-plt` | ([link][linux-setup-flags]) |
+| Android | `-optl-ldl` | GHC | `ghc-options:` | the RTS references `dlopen` and friends ([link][lc-ghcopts]) |
+| arm32, Android | `--disable-split-sections` | Setup configure | `split-sections: False` | ([link][lc-split]) |
+| Windows | `--disable-split-sections` | Setup configure | `split-sections: False` | ([link][mingw-split]) |
+| Windows | `-L<pthreads>/lib -L<pthreads>/bin` | GHC | `ghc-options:` | library search path for the pthreads library ([link][mingw-ghcopts]) |
 
 ### Building the interpreter
 
-One package, built twice: for the host (the interpreter) and for the build
-machine (the proxy).  These `cabal.project.local` stanzas belong to the
-**host** build only; keep them out of the build-machine one.  From
-[overlays/haskell.nix][iserv-proxy-exes]:
+One package, built twice from a checkout of iserv-proxy: for the host (the
+interpreter) and for the build machine (the proxy).  cabal reads
+`<project file>.local`, so give the host build its own project file:
+
+```sh
+# Host interpreter: cross GHC, reads cabal.project.host.local (stanzas below).
+cp cabal.project cabal.project.host
+cabal build exe:iserv-proxy-interpreter \
+  --project-file=cabal.project.host \
+  --with-compiler=aarch64-unknown-linux-gnu-ghc \
+  --with-hc-pkg=aarch64-unknown-linux-gnu-ghc-pkg \
+  --with-build-compiler=ghc --with-build-hc-pkg=ghc-pkg
+
+# Build-machine proxy: native GHC, plain cabal.project, none of the stanzas.
+cabal build exe:iserv-proxy --with-compiler=ghc
+```
+
+The host stanzas, from [overlays/haskell.nix][iserv-proxy-exes]; use the ones
+for your host.  Build the `-prof` interpreter separately (its own project
+file, with the last stanza added):
 
 ```cabal
 -- GHC >= 9.14: let a splice load even when it references a symbol nothing
@@ -285,7 +303,7 @@ if os(mingw32)
 package iserv-proxy
   ghc-options: -debug -optl-static -optl-ldl
 
--- musl, stable-haskell GHC only: a fully static interpreter has no dlsym, so
+-- musl, stable-haskell GHC: a fully static interpreter has no dlsym, so
 -- no libc symbol resolves ("Failed to lookup symbol: strlen").  On that GHC
 -- executable-static means -fully-static and its runtime linker skips libc.a,
 -- so link libc dynamically; Haskell libraries stay static.  Leave out the
@@ -307,14 +325,11 @@ archives (`.a`) of the C libraries splices use ([link][android-static-libs]).
 
 | What | Where | Needed for |
 |---|---|---|
-| default to shared libraries when the runtime linker only loads them | [stable-haskell/cabal][cabal-fork] branch `hkm/sh-merge2-ports`, commit `ed916be32331e541bfff74c1fea2592e49e84b45` | wasm (haskell.nix relies on this alone: it sets no `shared:` for wasm, [link][host-stanza]) |
-| `executable-static` applies to host units only | [stable-haskell/cabal][cabal-fork] branch `hkm/sh-merge2-ports`, commit `3b773094325aa515a7a59beddc5d88721d13d945` | static hosts when the build machine has no static system libraries (macOS → musl) |
+| cabal: default to shared libraries when the runtime linker only loads them | [ed916be32331e541bfff74c1fea2592e49e84b45](https://github.com/stable-haskell/cabal/commit/ed916be32331e541bfff74c1fea2592e49e84b45) | wasm (haskell.nix relies on this alone, [link][host-stanza]); or set `shared: True` in `package host:*` yourself |
+| cabal: `executable-static` applies to host units only | [3b773094325aa515a7a59beddc5d88721d13d945](https://github.com/stable-haskell/cabal/commit/3b773094325aa515a7a59beddc5d88721d13d945) | static hosts when the build machine has no static system libraries (macOS → musl); or set `executable-static: True` in `package host:*`, not `package *`, yourself |
 | CRT symbol aliases for the interpreter | [iserv-proxy-windows-crt-symbols.patch][p-win] | Windows, GHC 9.6–9.10 |
 | static libc and Bionic symbol table | [iserv-proxy-arm32-static-libc.patch][p-arm32-libc], [iserv-proxy-arm32-bionic-symbols.patch][p-arm32-bionic] | Android arm32, stable-haskell GHC |
 | drop a hidden libc symbol so the interpreter can link libc dynamically | [iserv-proxy-i386-musl-dynamic-libc.patch][p-i386] | i386 musl, stable-haskell GHC |
-
-haskell.nix's other cabal patches make cabal work one package at a time
-inside Nix; none of them are needed for TH.
 
 ## Appendix B: how haskell.nix wires this up
 
@@ -346,7 +361,6 @@ setup isn't reproducible outside haskell.nix yet.
 | Uses `--with-build-compiler` for the two-stage plan | [modules/cabal-project.nix][sh-two-stage] |
 | End-to-end test: splices calling C libraries | [test/th-dlls][th-dlls] |
 
-[cabal-fork]: https://github.com/stable-haskell/cabal
 [linux-cross-wrapper]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/linux-cross.nix#L24-L42
 [linux-cross-wrapGhc]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/linux-cross.nix#L73-L112
 [lc-split]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/linux-cross.nix#L43
