@@ -323,13 +323,23 @@ archives (`.a`) of the C libraries splices use ([link][android-static-libs]).
 
 ### Patches
 
-| What | Where | Needed for |
+**cabal** — two commits not yet in `stable-haskell/merge`:
+
+| Change | Commit | Needed for | Workaround without it |
+|---|---|---|---|
+| Build shared libraries when the RTS linker only loads them | [`ed916be3`][c-shared] | wasm | `shared: True` in `package host:*` |
+| `executable-static` applies to host units only | [`3b773094`][c-static] | static hosts built on a machine without static system libraries (macOS → musl) | put `executable-static: True` in `package host:*`, not `package *` |
+
+**iserv-proxy:**
+
+| Patch | What it does | Needed for |
 |---|---|---|
-| cabal: default to shared libraries when the runtime linker only loads them | [ed916be32331e541bfff74c1fea2592e49e84b45](https://github.com/stable-haskell/cabal/commit/ed916be32331e541bfff74c1fea2592e49e84b45) | wasm (haskell.nix relies on this alone, [link][host-stanza]); or set `shared: True` in `package host:*` yourself |
-| cabal: `executable-static` applies to host units only | [3b773094325aa515a7a59beddc5d88721d13d945](https://github.com/stable-haskell/cabal/commit/3b773094325aa515a7a59beddc5d88721d13d945) | static hosts when the build machine has no static system libraries (macOS → musl); or set `executable-static: True` in `package host:*`, not `package *`, yourself |
-| CRT symbol aliases for the interpreter | [iserv-proxy-windows-crt-symbols.patch][p-win] | Windows, GHC 9.6–9.10 |
-| static libc and Bionic symbol table | [iserv-proxy-arm32-static-libc.patch][p-arm32-libc], [iserv-proxy-arm32-bionic-symbols.patch][p-arm32-bionic] | Android arm32, stable-haskell GHC |
-| drop a hidden libc symbol so the interpreter can link libc dynamically | [iserv-proxy-i386-musl-dynamic-libc.patch][p-i386] | i386 musl, stable-haskell GHC |
+| [windows-crt-symbols][p-win] | CRT symbol aliases for the interpreter | Windows, GHC 9.6–9.10 |
+| [arm32-static-libc][p-arm32-libc], [arm32-bionic-symbols][p-arm32-bionic] | static libc and a Bionic symbol table | Android arm32, *stable-haskell GHC* |
+| [i386-musl-dynamic-libc][p-i386] | drops a hidden libc symbol so the interpreter can link libc dynamically | i386 musl, *stable-haskell GHC* |
+
+[c-shared]: https://github.com/stable-haskell/cabal/commit/ed916be32331e541bfff74c1fea2592e49e84b45
+[c-static]: https://github.com/stable-haskell/cabal/commit/3b773094325aa515a7a59beddc5d88721d13d945
 
 ## Appendix B: how haskell.nix wires this up
 
@@ -371,7 +381,6 @@ setup isn't reproducible outside haskell.nix yet.
 [mingw-wrapper]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/mingw_w64.nix#L21-L66
 [mingw-ghcopts]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/mingw_w64.nix#L71-L78
 [iserv-proxy-exes]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/haskell.nix#L1361-L1611
-[host-stanza]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/modules/cabal-project.nix#L702-L731
 [slice-ghc]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/builder/comp-v2-builder.nix#L1992-L2033
 [project-iserv]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/builder/comp-v2-builder.nix#L2011-L2033
 [node-path]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/builder/build-cabal-slice.nix#L657-L708
