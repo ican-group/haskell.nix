@@ -24,7 +24,7 @@ Filtering `newlyReady` to `Configured{}` entries only keeps
 `asReadyPackage`'s precondition honest without changing the build
 semantics — the `Installed` entries were already in `completedSet`.
 diff --git a/src/Distribution/Client/InstallPlan.hs b/src/Distribution/Client/InstallPlan.hs
-index f857c1d39..18804c375 100644
+index a598f44e2..f8c7470d8 100644
 --- a/src/Distribution/Client/InstallPlan.hs
 +++ b/src/Distribution/Client/InstallPlan.hs
 @@ -761,10 +761,21 @@ completed plan (Processing processingSet completedSet failedSet) pkgid =

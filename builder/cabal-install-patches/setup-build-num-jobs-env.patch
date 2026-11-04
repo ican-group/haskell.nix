@@ -15,7 +15,7 @@ Build-phase flag (not configure), so it doesn't land in
 `pkgHashConfigureOptions` and UnitIds stay stable — plan-nix matching
 is preserved whether the env var is set or not.
 diff --git a/src/Distribution/Client/ProjectPlanning.hs b/src/Distribution/Client/ProjectPlanning.hs
-index 52cf921cb..6918333a4 100644
+index 7fc8309d8..a6aa77304 100644
 --- a/src/Distribution/Client/ProjectPlanning.hs
 +++ b/src/Distribution/Client/ProjectPlanning.hs
 @@ -249,6 +249,8 @@ import qualified Distribution.Compat.Graph as Graph
@@ -27,7 +27,7 @@ index 52cf921cb..6918333a4 100644
  import Control.Monad.State as State (State, execState, runState, state)
  import Data.Foldable (fold)
  import Data.Functor ((<&>))
-@@ -5055,7 +5057,16 @@ setupHsBuildFlags par_strat elab _ common =
+@@ -5102,7 +5104,16 @@ setupHsBuildFlags par_strat elab _ common =
      { buildCommonFlags = common
      , buildProgramPaths = mempty -- unused, set at configure time
      , buildProgramArgs = mempty -- unused, set at configure time

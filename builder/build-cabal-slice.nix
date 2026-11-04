@@ -2170,7 +2170,7 @@ ${lib.optionalString (metadataSourceFrags != []) ''
           # exist in both stages under different unit ids.
           uid=$(jq -r --arg exe "exe:$newBin" \
             '.["install-plan"][]
-             | select(.["component-name"] == $exe and ((.stage // "host") == "host"))
+             | select(.["component-name"] == $exe and ((.stage // .machine // "host") == "host"))
              | .id' \
             "$distDir/cache/plan.json" 2>/dev/null | head -n1)
           # The fork's elaborated plan carries a stage prefix on unit
@@ -2203,12 +2203,12 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       : > $buildRoot/host-stage-unit-ids
       if [ -f "$distDir/cache/plan.json" ]; then
         jq -r '.["install-plan"][]
-               | select(.stage == "build")
+               | select((.stage // .machine) == "build")
                | .id | sub("^(host|build):"; "")' \
           "$distDir/cache/plan.json" 2>/dev/null | sort -u \
           > $buildRoot/build-stage-unit-ids || true
         jq -r '.["install-plan"][]
-               | select((.stage // "host") == "host")
+               | select((.stage // .machine // "host") == "host")
                | .id | sub("^(host|build):"; "")' \
           "$distDir/cache/plan.json" 2>/dev/null | sort -u \
           > $buildRoot/host-stage-unit-ids || true

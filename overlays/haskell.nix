@@ -1250,7 +1250,7 @@ final: prev: {
         withInputs = final.lib.recurseIntoAttrs;
 
         # The v2 builder's `cabal-install`, built via `haskell-nix.tool`:
-        # the stable-haskell cabal fork (3.19, branch hkm/sh-merge-ports)
+        # the stable-haskell cabal fork (3.19, branch hkm/sh-merge2-ports)
         # pulled via source-repository-package — the same sources
         # make-install-plan links (see nix-tools-sh/cabal.project).  That
         # branch is Andrea Bedini's `stable-haskell/merge` (upstream master
@@ -1318,8 +1318,8 @@ final: prev: {
                 source-repository-package
                     type: git
                     location: https://github.com/stable-haskell/Cabal.git
-                    tag: 5e3f44173c5bed0c7eed4f7e6281f1479da2f80c
-                    --sha256: sha256-v6g4gRiV+GVmDkizKJVY7lRaMyHjrd9Rq6U+vOq2Kmk=
+                    tag: 32bf90171f5a981a9596a39ec4ee8e77fed29752
+                    --sha256: sha256-boyDU/kkFJGlr2m53dqBJU+h9BN6epwQi69tUu5fHTI=
                     subdir: Cabal
                             Cabal-syntax
                             cabal-install
@@ -1340,6 +1340,7 @@ final: prev: {
                 packages.cabal-install.patches = [
                   ../builder/cabal-install-patches/skip-installed-revdeps-in-completed.patch
                   ../builder/cabal-install-patches/setup-build-num-jobs-env.patch
+                  ../builder/cabal-install-patches/wired-in-pins-follow-allow-boot-library-installs.patch
                 ];
                 # The Cabal LIBRARY, not the tool: `v2-build` links it in and
                 # uses it as the build system for `build-type: Simple`, so a
