@@ -696,7 +696,8 @@ let
           buildSlice = buildExes.${exeName} or null;
       in if pn != "" && pn != pkgName && isExe
             && targetSlice != null && buildSlice != null
-         then [ { name = exeName; pkgName = pn; inherit targetSlice buildSlice; } ]
+         then [ { name = exeName; pkgName = pn; pkgVersion = p.pkg-version or "";
+                  planId = p.id or ""; inherit targetSlice buildSlice; } ]
          else []
     ) allDepClosure;
     in haskellLib.uniqueWithName raw;
@@ -1671,13 +1672,8 @@ let
   # predicts.  Test / bench slices are local for their own reason
   # (cabal-7127) and keep their existing handling.
   #
-  # Library components only: exe units never register a `.conf` (the
-  # compiler db carries libraries alone), and a LOCAL unit's
-  # deterministic id doesn't hash its dep ids, so a lib slice's id is
-  # unaffected by its build tools keeping hashed extra-packages slices.
-  # Mechanically an inplace exe also lands in the staged store's flat
-  # `bin/` — no per-unit dir, no store-install receipt — so the slice's
-  # unit capture / downstream tool-reuse machinery wouldn't see it.
+  # A LOCAL unit's deterministic id doesn't hash its dep ids, so a
+  # slice's id is unaffected by its build tools' slices.
   # `style: "inplace"` covers the project's source-repository-packages
   # (the stable-haskell Cabal / Cabal-syntax forks in stage2): the plan
   # elaborates them to the same deterministic bare ids as `"local"`
@@ -1685,11 +1681,24 @@ let
   # `source-repository-package` block gets a BuildAndInstall (hashed)
   # elaboration from the fork — so they take the local-`packages:`
   # path too (their staged source replaces the srp block).
+  #
+  # Under the stable-haskell/merge cabal with `inplace-builds: False`,
+  # cabal names every unit of the project's own source closure after its
+  # package id (`hsc2hs-0.68.10-hsc2hs`, `Cabal-syntax-3.17.0.0`) and
+  # builds and installs it into the store, executables included (each
+  # with a store receipt).  The source-repository-packages then appear
+  # in plan-nix as `style: "global"`, so the bare (unhashed) id is what
+  # marks a unit for this path, and exe units take it as well.
+  planIdIsBare =
+    let id = thisPlanEntry.id or "";
+    in lib.hasPrefix "${pkgName}-${pkgVersion}" id
+       && builtins.match ".*-[0-9a-f]{64}" id == null;
   isLocalPackageSlice =
     (v2LocalPackageSlices || builtins.elem pkgName v2LocalPackageSliceNames)
     && !isLocalTestOrBench
-    && ctype == "lib"
-    && builtins.elem (thisPlanEntry.style or null) [ "local" "inplace" ];
+    && builtins.elem ctype [ "lib" "exe" ]
+    && (builtins.elem (thisPlanEntry.style or null) [ "local" "inplace" ]
+        || planIdIsBare);
   # Either flavour of local-`packages:` slicing — drives source staging
   # and the cabal.project `packages:` line.
   useLocalPackagesMode = isLocalTestOrBench || isLocalPackageSlice;
@@ -1892,9 +1901,34 @@ let
   # -- and gives it the bare deterministic `<pkgid>` id (the one the plan
   # records) only with the flag off.  Local test/bench slices keep the
   # in-place build they rely on.
+  # Build tools that the stage-style project names after their package id
+  # (every unit of the stable-haskell stage2 project: `base` is a local
+  # package there, and the merge cabal names the whole reverse-dependency
+  # closure of the local packages after their package ids).  An exe registers
+  # nothing in a package db, so the only way this slice reuses the tool's
+  # slice is the store receipt of that same unit id.  A tool solved from the
+  # slicing repo's index, or listed as a tarball, is outside this slice's
+  # project closure (here `base` comes installed) and gets a hashed id.  So
+  # unpack the tool's tarball from the slicing repo next to our own source and
+  # list it as a local package: cabal then names it after its package id and
+  # the receipts pass marks it installed.  The slicing repo is
+  # $buildRoot/local-repo and this runs in $buildRoot/project
+  # (build-cabal-slice.nix).
+  bareIdBuildTools =
+    lib.optionals isLocalPackageSlice (lib.filter (e:
+        e.pkgVersion != ""
+        && lib.hasPrefix "${e.pkgName}-${e.pkgVersion}" e.planId
+        && builtins.match ".*-[0-9a-f]{64}" e.planId == null)
+      (lib.unique (map (e: { inherit (e) pkgName pkgVersion planId; })
+        transitiveBuildToolEntries)));
+  bareIdBuildToolPackages = lib.concatMapStrings (e:
+      "packages: ./src/${e.pkgName}-${e.pkgVersion}\n") bareIdBuildTools;
+  stageBareIdBuildToolSrc = lib.concatMapStrings (e: ''
+    tar -xzf ../local-repo/package/${e.pkgName}-${e.pkgVersion}.tar.gz -C src
+  '') bareIdBuildTools;
   packagesLine =
     if isLocalPackageSlice
-    then "packages: ./src/${pkgName}-${pkgVersion}\ninplace-builds: False\n"
+    then "packages: ./src/${pkgName}-${pkgVersion}\n${bareIdBuildToolPackages}inplace-builds: False\n"
     else if useLocalPackagesMode
     then "packages: ./src/${pkgName}-${pkgVersion}\n"
     # The stable-haskell Cabal fork (3.17) rejects a project with neither
@@ -2104,7 +2138,7 @@ let
   stageLocalTestBenchSrc = lib.optionalString useLocalPackagesMode ''
     mkdir -p src
     tar -xzf ${pkgTarball} -C src
-  '';
+  '' + stageBareIdBuildToolSrc;
 
   # preBuild for the real slice: only stage sources.  The cabal.project
   # is assembled entirely at build time by build-cabal-slice from
