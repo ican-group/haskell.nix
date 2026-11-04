@@ -28,6 +28,7 @@
     - [V1 Component Builder](./dev/builder-v1.md)
     - [V2 Component Builder](./dev/builder-v2.md)
     - [Migrating to builderVersion = 2](./dev/migrating-to-v2.md)
+    - [How Template Haskell is cross compiled](./dev/cross-template-haskell.md)
     - [Installing nix-tools](./dev/installing-nix-tools.md)
     - [How to update nix-tools](./dev/nix-tools-pin.md)
     - [Manually generating Nix expressions](./dev/manually-generating-nix-expressions.md)
