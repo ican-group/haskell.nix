@@ -9,6 +9,21 @@
          $3="wasi"
          ;;
        ghcjs*)
+--- a/m4/ghc_llvm_target.m4
++++ b/m4/ghc_llvm_target.m4
+@@ -40,6 +40,12 @@
+         GHC_CONVERT_VENDOR([$3],[llvm_target_vendor])
+         llvm_target_os="$4"
+         ;;
++      # Keep wasip1 too: the LLVM target becomes the C compiler's --target,
++      # and clang looks for its wasm runtime libraries under that triple.
++      # A wasm32-unknown-wasip1 toolchain has none for wasm32-unknown-wasi.
++      wasip1)
++        llvm_target_os="$4"
++        ;;
+   esac
+   $5="$llvm_target_cpu-$llvm_target_vendor-$llvm_target_os"
+ ])
 --- a/utils/ghc-toolchain/src/GHC/Toolchain/ParseTriple.hs
 +++ b/utils/ghc-toolchain/src/GHC/Toolchain/ParseTriple.hs
 @@ -79,6 +79,7 @@
