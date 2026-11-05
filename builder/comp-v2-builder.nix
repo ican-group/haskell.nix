@@ -2317,6 +2317,7 @@ let
     inherit metadataSourceFrags;
     ghc = sliceGhc;
     twoStage = sliceTwoStage;
+    buildPlatformCompiler = isBuildStageUnit;
     # Repo + cabal.project are composed at build time from `v2Fragment`;
     # `localRepo`/the full Nix `cabalProject` are intentionally NOT
     # referenced here so the per-slice closure walk stays out of eval.
@@ -2697,6 +2698,7 @@ let
     inherit buildToolSourceFrags metadataSourceFrags;
     ghc = sliceGhc;
     twoStage = sliceTwoStage;
+    buildPlatformCompiler = isBuildStageUnit;
     localRepo = null;
     preBuild = slicePreBuildV2;
     target = targetSelector;
@@ -2780,6 +2782,7 @@ let
     inherit buildToolSourceFrags metadataSourceFrags;
     ghc = sliceGhc;
     twoStage = sliceTwoStage;
+    buildPlatformCompiler = isBuildStageUnit;
     localRepo = null;
     preBuild = slicePreBuildV2;
     target = targetSelector;

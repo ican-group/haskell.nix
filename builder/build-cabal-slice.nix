@@ -59,6 +59,17 @@ let outerGhc = ghc; in
                              # modules/component-options.nix): when set,
                              # pins `Setup build -jN` in place of the
                              # capped default below.
+, buildPlatformCompiler ? false
+                             # True when `ghc` is the BUILD platform's compiler
+                             # in a cross package set: a two-stage plan's
+                             # build-stage unit (comp-v2-builder's
+                             # `isBuildStageUnit`, `ghc.buildGHC`).  Such a
+                             # compiler asks for the native toolchain by plain
+                             # name (its `ar command` is `ar`), which the cross
+                             # stdenv does not put on PATH -- `base-orphans`
+                             # failed with "The program 'ar' is required but it
+                             # could not be found" -- so `buildStageCc` and the
+                             # native binutils are added as build-platform deps.
 , depSlices ? []
 , localRepo ? null           # derivation with <pkg>-<ver>.tar.gz files
 , v2Fragment ? null          # per-package build-time-composition fragment
@@ -628,6 +639,9 @@ let
   # The build-platform C compiler for build-stage tool sources; see
   # `depsBuildBuild` below for why its placement depends on the target.
   buildStageCc = [ pkgsBuildBuild.stdenv.cc pkgsBuildBuild.libiconv ];
+  needsBuildStageCc = buildToolSourceFrags != [] || buildPlatformCompiler;
+  buildStageToolchain = buildStageCc
+    ++ lib.optional buildPlatformCompiler pkgsBuildBuild.stdenv.cc.bintools;
   buildCcInDepsBuildBuild =
     stdenv.hostPlatform != stdenv.buildPlatform && !stdenv.hostPlatform.isGhcjs;
 in
@@ -722,8 +736,8 @@ stdenv.mkDerivation ({
     # sub-build inside a ghcjs-target slice gets no native `-L` for it
     # ("ld: library not found for -liconv").  Adding it as a build-platform
     # native input puts `-L<libiconv>/lib` into the build wrapper's search.
-    ++ lib.optionals (buildToolSourceFrags != [] && !buildCcInDepsBuildBuild)
-         buildStageCc
+    ++ lib.optionals (needsBuildStageCc && !buildCcInDepsBuildBuild)
+         buildStageToolchain
     ++ extraNativeBuildInputs;
   # ...but on a C-capable cross target the build compiler must go in
   # `depsBuildBuild`, not `nativeBuildInputs`.  In `nativeBuildInputs` the
@@ -735,8 +749,8 @@ stdenv.mkDerivation ({
   # `depsBuildBuild` it only sees build-platform deps.  Native slices keep the
   # old placement (build == host, so no difference and no rebuild), and so
   # does ghcjs, which has no target C libraries to leak.
-  depsBuildBuild = lib.optionals (buildToolSourceFrags != [] && buildCcInDepsBuildBuild)
-    buildStageCc;
+  depsBuildBuild = lib.optionals (needsBuildStageCc && buildCcInDepsBuildBuild)
+    buildStageToolchain;
   # `depSlices` go in `propagatedBuildInputs` so stdenv chains each
   # slice's `nix-support/propagated-build-inputs` transitively.
   # Concretely: `cardano-lmdb:lib:ffi` declares `pkgconfig = [lmdb]`
@@ -949,7 +963,14 @@ stdenv.mkDerivation ({
     # holds a SECOND platform dir — build-stage units (native) reached
     # through the `build` → `host` link — so the host dir must be picked
     # by name, not by glob order.
-    hostPlatformDir=$(${ghcBin} --info 2>/dev/null \
+    hostPlatformDir=$(${
+      # By absolute path: a `-target` cross compiler has no target prefix,
+      # so a bare `ghc` resolves through PATH, and in a Template Haskell
+      # slice (the `-with-iserv` wrapper) the native compiler can win.  Its
+      # `Target platform` named the BUILD platform's dir as the host's, and
+      # the build-stage eviction below then removed the real host units
+      # (android `resourcet` rebuilding an evicted `primitive`).
+      "${ghc}/bin/${ghcBin}"} --info 2>/dev/null \
       | sed -n 's/.*("Target platform","\([^"]*\)").*/\1/p' | head -1)
 
     discoverStore() {
@@ -1747,8 +1768,12 @@ ${lib.optionalString (metadataSourceFrags != []) ''
               # tests.setup-deps-boot-cabal) look like rebuilds.  In that case
               # the filter treats the units reached only through `exe-depends`
               # -- not through the target package's `depends` closure -- as
-              # the build-stage units they would otherwise be.
-              if twoStage then "true" else "false"} '
+              # the build-stage units they would otherwise be.  A
+              # build-stage unit's own slice (`buildPlatformCompiler`) is
+              # the same shape: one machine, the native compiler, and its
+              # build tools (alex for a setup-scope Cabal-syntax) planned
+              # beside it.
+              if twoStage || buildPlatformCompiler then "true" else "false"} '
           def libclosure($m):
             . as $s
             | ([$s[] | $m[.] | (.depends // [])
