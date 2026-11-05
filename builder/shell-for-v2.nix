@@ -3,9 +3,8 @@
 # Unlike the v1 shell — which pre-populates a ghc-pkg database for GHC
 # directly — the v2 shell pre-populates the project's cabal store.  The
 # v2 builder's cabal-install (`haskell-nix.v2-cabal-install`, the
-# stable-haskell fork) keeps that store under the build dir
-# (`<project root>/dist-newstyle/store`), not in `~/.cabal/store`.
-# That's where cabal v2-build looks for already-installed units, so once
+# stable-haskell fork) uses the normal cabal store (`cabal path
+# --store-dir`, usually `~/.cabal/store`).  That's where cabal v2-build looks for already-installed units, so once
 # the store has the deps the user works on, plain `cabal build` inside
 # the shell reuses them instead of rebuilding from source.
 #
@@ -63,7 +62,7 @@
   # How the shell's pre-built library deps are made visible to tools
   # the user runs.  One of:
   #   "cabal-store" (default) — link the composed store into the
-  #     project's `dist-newstyle/store` via a shellHook (or the
+  #     cabal store (`cabal path --store-dir`) via a shellHook (or the
   #     explicit `haskell-nix-cabal-store-sync` command).  `cabal
   #     v2-build` then reuses the units.  The shell's `ghc` is
   #     plain — `runghc` / `ghci` won't see the deps.
@@ -233,33 +232,29 @@ let
   cabalStoreSync = pkgs.pkgsBuildBuild.writeShellScriptBin "haskell-nix-cabal-store-sync" ''
     set -eu
 
-    # The stable-haskell cabal fork keeps a PROJECT-LOCAL store under the build
-    # dir (distStoreDirLayout = <builddir>/store), NOT a shared ~/.cabal/store —
-    # so seed that.  BUILDDIR is a positional arg; a project built with a custom
-    # `--builddir` passes the same value here.  The default is the fork's own
-    # default builddir, `dist-newstyle`, under the PROJECT ROOT -- found the way
-    # cabal finds it, as the nearest directory at or above $PWD holding a
-    # `cabal.project`, else $PWD -- so entering the shell from a subdirectory
-    # seeds the store `cabal build` will actually use.  One store per builddir,
-    # never shared between unrelated projects — matching `cabal build`'s own
-    # behaviour.
+    # Seed the store `cabal build` will use: whatever `cabal path --store-dir`
+    # reports (`$CABAL_DIR/store` or `~/.cabal/store` unless the config sets
+    # `store-dir:`).  The older stable-haskell fork kept a project-local store
+    # under `<builddir>/store`; the merge-based fork (cabal-install 3.19) uses
+    # the normal shared store, so seeding `dist-newstyle/store` left cabal
+    # rebuilding every dependency.  Sharing is safe: entries are keyed by unit
+    # id, and conflicting entries are refused unless `--force` is given.  An
+    # explicit STOREDIR argument overrides the lookup (for a `--store-dir`
+    # passed on the command line).
     force=0
-    projectRoot=$PWD
-    while [ ! -e "$projectRoot/cabal.project" ] && [ "$projectRoot" != / ]; do
-      projectRoot=$(dirname "$projectRoot")
-    done
-    [ -e "$projectRoot/cabal.project" ] || projectRoot=$PWD
-    buildDir=$projectRoot/dist-newstyle
+    tgt_base=
     for arg in "$@"; do
       case "$arg" in
         --force) force=1 ;;
-        -*) echo "usage: haskell-nix-cabal-store-sync [--force] [BUILDDIR]" >&2; exit 2 ;;
-        *) buildDir=$arg ;;
+        -*) echo "usage: haskell-nix-cabal-store-sync [--force] [STOREDIR]" >&2; exit 2 ;;
+        *) tgt_base=$arg ;;
       esac
     done
+    if [ -z "$tgt_base" ]; then
+      tgt_base=$(${v2CabalInstall}/bin/cabal path --store-dir)
+    fi
 
     src="${composedStore}"
-    tgt_base="$buildDir/store"
     ghc_pkg="${ghc}/bin/${ghc.targetPrefix or ""}ghc-pkg"
     lndir="${lndir}/bin/lndir"
 
@@ -272,8 +267,9 @@ let
     # replicate it in the user's store so `cabal build`'s receipt-based reuse
     # (`improveInstallPlanWithStoreUnits` scans <store>/build/<platform>/units
     # as well) recognises those build-stage neighbours — without it nothing
-    # flips to Installed and everything rebuilds.  ($tgt_base is the local
-    # <builddir>/store, so this link lives per-builddir alongside the deps.)
+    # flips to Installed and everything rebuilds.  Store entries are split by
+    # platform (`<store>/host/<platform>`), so the link is also right for
+    # other projects sharing the store.
     if [ -d "$src/host" ] && [ "$(readlink "$tgt_base/build" 2>/dev/null)" != host ]; then
       if [ -d "$tgt_base/build" ] && [ ! -L "$tgt_base/build" ]; then
         echo "haskell-nix-cabal-store-sync: $tgt_base/build is a directory; expected a \`build -> host\` link." >&2
