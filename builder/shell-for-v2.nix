@@ -229,18 +229,27 @@ let
   #      directory trees.
   #   6. Recache the merged package.db only when something was
   #      actually installed.
+  #
+  # The sync seeds the store `cabal build` will use: whatever `cabal path
+  # --store-dir` reports (`$CABAL_DIR/store` or `~/.cabal/store` unless the
+  # config sets `store-dir:`).  The older stable-haskell fork kept a
+  # project-local store under `<builddir>/store`; the merge-based fork
+  # (cabal-install 3.19) uses the normal shared store, so seeding
+  # `dist-newstyle/store` left cabal rebuilding every dependency.  Sharing is
+  # safe: entries are keyed by unit id, and conflicting entries are refused
+  # unless `--force` is given.  An explicit STOREDIR argument overrides the
+  # lookup (for a `--store-dir` passed on the command line).
+  #
+  # `cabal path` runs from `/`, outside any project: in a project directory it
+  # first fetches the project's source-repository-packages, and git's "HEAD is
+  # now at ..." lands on stdout ahead of the path -- the ghcjs and wasm shells
+  # (whose cabal.project.local has srps) then seeded a directory named after
+  # that message (tests.cabal-sublib-shell).  `store-dir` is never a project
+  # setting, so the answer is the same; `tail -n 1` guards against any other
+  # chatter.
   cabalStoreSync = pkgs.pkgsBuildBuild.writeShellScriptBin "haskell-nix-cabal-store-sync" ''
     set -eu
 
-    # Seed the store `cabal build` will use: whatever `cabal path --store-dir`
-    # reports (`$CABAL_DIR/store` or `~/.cabal/store` unless the config sets
-    # `store-dir:`).  The older stable-haskell fork kept a project-local store
-    # under `<builddir>/store`; the merge-based fork (cabal-install 3.19) uses
-    # the normal shared store, so seeding `dist-newstyle/store` left cabal
-    # rebuilding every dependency.  Sharing is safe: entries are keyed by unit
-    # id, and conflicting entries are refused unless `--force` is given.  An
-    # explicit STOREDIR argument overrides the lookup (for a `--store-dir`
-    # passed on the command line).
     force=0
     tgt_base=
     for arg in "$@"; do
@@ -251,7 +260,7 @@ let
       esac
     done
     if [ -z "$tgt_base" ]; then
-      tgt_base=$(${v2CabalInstall}/bin/cabal path --store-dir)
+      tgt_base=$(cd / && ${v2CabalInstall}/bin/cabal path --store-dir | tail -n 1)
     fi
 
     src="${composedStore}"
