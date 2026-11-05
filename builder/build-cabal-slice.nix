@@ -772,6 +772,22 @@ stdenv.mkDerivation ({
   dontStrip = true;
   inherit passthru;
 
+  # Store layout: the stable-haskell cabal (3.19 `merge`) keys its store by
+  # machine and platform, `store/{host,build}/<platform>/`.  There is no
+  # `build` -> `host` alias any more.  It made the build machine's package db
+  # the host machine's whenever the two share a platform directory, and GHC's
+  # `Target platform` drops the libc, so a musl `-target` cross put its glibc
+  # build-machine units in the musl host db (`ghc-internal ... missing
+  # dependency rts-1.0.3`).  It also shipped build-stage tool dirs under
+  # `host/<build-platform>`, where downstream slices composed them read-only
+  # and then failed writing over them when they rebuilt the tool (mingw
+  # `happy`: an `ioError` creating `cabal-hash.txt`).  Build-stage units now
+  # stay in this slice's real `store/build/<platform>` -- where the paths
+  # cabal bakes into them (a tool's `Paths_<pkg>` datadir) keep resolving --
+  # and the compose step below never carries a dep's `build` dir downstream,
+  # so each consuming slice builds its own build-stage goals, as before.
+  # Natively the merge cabal has no build machine at all (the build and host
+  # compilers are the same), so everything is `host`.
   buildPhase = ''
     set -euo pipefail
 
@@ -862,19 +878,8 @@ stdenv.mkDerivation ({
         # instrumentation instead of building.
         depSliceCount=$((depSliceCount + 1))
         # Compose per top-level entry rather than `lndir`ing `$d/store`
-        # wholesale, so the dep's `build` -> `host` alias can be SKIPPED.
-        # That alias is now kept in every slice's output (see the
-        # installPhase), because cabal bakes `<slice>/dist-newstyle/store/
-        # build/<plat>/lib/<unit>/share` into a BUILD-stage tool's
-        # `Paths_<pkg>` datadir and the binary needs it to resolve forever
-        # after -- `alex` failed with
-        #   .../store/build/.../alex-3.5.4.2-.../share/AlexTemplate.hs:
-        #   openFile: does not exist
-        # when it was dropped.  Following it here instead would relink every
-        # unit a second time (it points at `host`, which we have already
-        # walked) and, worse, materialise `build/` as a REAL directory that
-        # shadows this slice's own alias below -- which is exactly why it
-        # used to be deleted.  Skipping is the cheap half of that trade.
+        # wholesale, so the dep's `build` dir is SKIPPED: build-stage
+        # units are this slice's to build (see the note above buildPhase).
         local sub b
         for sub in "$d"/store/*; do
           [ -e "$sub" ] || continue
@@ -916,24 +921,14 @@ stdenv.mkDerivation ({
     #    `$out/dist-newstyle/store/...`) resolves through a symlink that
     #    lives in `$out` forever, and the store files themselves land in
     #    `$storeDir` where the compose/capture protocol expects them.
-    #  * The fork plans every unit in a stage — `build` (runs on the
-    #    build machine: setup scripts, build tools) or `host` — and each
-    #    stage gets its own store dir.  Natively both stages are the
-    #    same toolchain and a unit's id is the same hash in either
-    #    stage, so symlink `build` → `host`: a unit captured once (from
-    #    its own slice, host stage) satisfies downstream build-stage
-    #    lookups (e.g. `Cabal` for a dep's setup script) without a
-    #    rebuild.  Cross stages differ by platform, so they still land
-    #    in separate `<platform>/` subdirs below the shared link.
-    #    (Both symlinks are inert for mainline cabal, which never looks
-    #    at `<dist>/store/`.)
+    #  * The fork plans every unit for a machine — `build` (setup
+    #    scripts, build tools) or `host` — each with its own store dir.
+    #    (The symlink is inert for mainline cabal, which never looks at
+    #    `<dist>/store/`.)
     distDir=$out/dist-newstyle
     mkdir -p $distDir
     ln -sfn ../store $distDir/store
     mkdir -p $storeDir/host
-    if [ ! -e $storeDir/build ]; then
-      ln -sn host $storeDir/build
-    fi
 
     # Locate the store dir cabal reads/writes package dbs in, for
     # whichever of the two layouts is in play, setting:
@@ -2118,33 +2113,13 @@ ${lib.optionalString (metadataSourceFrags != []) ''
     # are ours; symlinks are dep-slice content that we just leave
     # in place so downstream consumers can follow them back to the
     # original dep slices.
-    # KEEP the staged-layout alias (`build` → `host`).  It used to be
-    # dropped here, on the grounds that every consuming slice re-creates it
-    # and that leaving it made `lndir` traverse the store twice downstream.
-    # The first half is true of the CONSUMER's store; it is not true of the
-    # paths cabal bakes into artifacts.  A BUILD-stage tool's `Paths_<pkg>`
-    # datadir is spelled `<this slice>/dist-newstyle/store/build/<plat>/
-    # lib/<unit>/share` -- an absolute path into THIS output -- so deleting
-    # the alias left it dangling for good:
-    #   alex: .../store/build/.../alex-3.5.4.2-.../share/AlexTemplate.hs:
-    #         openFile: does not exist
-    # (`ghc-lib-ghc-<triple>`, where genprimopcode's lexer runs alex).  The
-    # host-stage units were never affected -- their baked paths say `host/`,
-    # which is the real directory.
-    # The double-traversal it was avoiding is handled in the buildPhase
-    # instead: the compose step skips a dep's `build` entry by name, so
-    # nothing follows the alias and `build/` is never materialised.
     # The fork's staged install leaves `<unit>.lock` files directly in
     # the store dir (its `storeIncomingDirectory` IS the store dir);
     # they're staging debris like `incoming/` below.
     rm -f $out/store/host/*/*.lock 2>/dev/null || true
-    # `host/` was pre-created for the stage-unifying `build` link; with
-    # the mainline (ghc-*) layout it stays empty — drop it (rmdir only
-    # removes empty dirs), and the alias with it, or the output would ship
-    # a `build` symlink pointing at a directory that is no longer there.
-    if rmdir $out/store/host 2>/dev/null; then
-      rm -f $out/store/build
-    fi
+    # `host/` is pre-created; with the mainline (ghc-*) layout it stays
+    # empty — drop it (rmdir only removes empty dirs).
+    rmdir $out/store/host 2>/dev/null || true
     discoverStore
     if [ -z "$ghcDir" ]; then
       rm -rf $out/store

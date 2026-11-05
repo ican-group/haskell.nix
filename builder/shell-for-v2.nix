@@ -247,6 +247,13 @@ let
   # that message (tests.cabal-sublib-shell).  `store-dir` is never a project
   # setting, so the answer is the same; `tail -n 1` guards against any other
   # chatter.
+  #
+  # Earlier shells linked `<store>/build` to `host`, as the slices did, so
+  # that build-stage lookups found host units.  That merges the build and
+  # host machines' package dbs whenever they share a platform directory --
+  # a musl `-target` cross's glibc build units landed in its musl host db --
+  # so the sync no longer makes the link and removes one it made before.
+  # cabal builds what a project needs for its build machine itself.
   cabalStoreSync = pkgs.pkgsBuildBuild.writeShellScriptBin "haskell-nix-cabal-store-sync" ''
     set -eu
 
@@ -269,24 +276,8 @@ let
 
     mkdir -p "$tgt_base"
 
-    # The stable-haskell fork's staged store reaches build-stage units
-    # (setup/build-tool deps) through a `build -> host` link — natively
-    # build==host (same toolchain, same unit ids).  The slice builder makes
-    # this inside each slice's store (`ln -sn host $storeDir/build`);
-    # replicate it in the user's store so `cabal build`'s receipt-based reuse
-    # (`improveInstallPlanWithStoreUnits` scans <store>/build/<platform>/units
-    # as well) recognises those build-stage neighbours — without it nothing
-    # flips to Installed and everything rebuilds.  Store entries are split by
-    # platform (`<store>/host/<platform>`), so the link is also right for
-    # other projects sharing the store.
-    if [ -d "$src/host" ] && [ "$(readlink "$tgt_base/build" 2>/dev/null)" != host ]; then
-      if [ -d "$tgt_base/build" ] && [ ! -L "$tgt_base/build" ]; then
-        echo "haskell-nix-cabal-store-sync: $tgt_base/build is a directory; expected a \`build -> host\` link." >&2
-        echo "  Remove it (it holds build-stage units cabal can rebuild) and re-enter the shell." >&2
-        exit 1
-      fi
+    if [ -L "$tgt_base/build" ] && [ "$(readlink "$tgt_base/build")" = host ]; then
       rm -f "$tgt_base/build"
-      ln -s host "$tgt_base/build"
     fi
 
     # ---- Fast path: same composedStore, already synced -----------

@@ -107,16 +107,16 @@ if drvOrig.passthru.isSlice or false then
       # is the BUILD-platform twin (`homeDepExeSlices` looks it up through
       # `hsPkgs.pkgsBuildBuild`), which is the one that can actually run
       # here, and it must keep winning.  What we add is the HOST-stage
-      # copy — the slice keeps no build twin of its own (`$out/store/build`
-      # is removed at the end of build-cabal-slice) — so this rescues the
-      # targets whose host binaries run on the build machine (musl32,
-      # musl64, static) but not one reached only through an emulator,
-      # where the exe would be spawned from inside qemu/wine.
+      # copy, after the slice's own BUILD-stage copy when it built one
+      # (`store/build/<plat>/bin`, which runs on the build machine), so
+      # this also covers targets whose host binaries only run under an
+      # emulator.
       #
       # The complete fix is for `extraNativeBuildInputs` in
       # comp-v2-builder to keep supplying the build-platform exe slices
       # for two-stage plans; until then this closes the common case.
       for _bindir in ${drvOrig}/store/ghc-*/bin \
+                     ${drvOrig}/store/build/*/bin \
                      ${drvOrig}/store/host/*/bin; do
         [ -d "$_bindir" ] || continue
         PATH="$PATH:$_bindir"
