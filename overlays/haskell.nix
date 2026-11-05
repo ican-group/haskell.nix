@@ -529,6 +529,17 @@ final: prev: {
               # extra-hackage-tarballs | no            | workaround |
               # -----------------------+---------------+------------+
               #
+              # Secure extra-hackage-repos are re-bootstrapped (`cabal v2-update`
+              # from a `file:` url) with this `nix-tools`' cabal rather than
+              # linked as is.  A repo pinned with `--sha256` is a fixed-output
+              # derivation, so its `01-index.cache` was written by whichever cabal
+              # first built it and is never rebuilt.  When the binary format of
+              # that cache changes (as it did in cabal-install 3.19) cabal fails
+              # with "Non-matching structured hashes" and then cannot regenerate
+              # the cache in the read-only store.  The `aaa` root key works as in
+              # `bootstrapIndexTarball`; the repo was already verified when it was
+              # fetched.  (Do not add `--ignore-expiry`: with it cabal rejects the
+              # expired root.json of an old pinned repo, without it cabal accepts it.)
               final.runCommand "dot-cabal" {
                 nativeBuildInputs = [ nix-tools.exes.cabal (final.lndir or final.xorg.lndir) ] ++ cabal-issue-8352-workaround;
               } ''
@@ -538,7 +549,16 @@ final: prev: {
                 # prepopulate extra-hackage-repos
                 ${final.lib.concatStrings (final.lib.mapAttrsToList (name: repo: ''
                   mkdir -p $out/packages/${name}
-                  lndir ${repo} $out/packages/${name}
+                  if [ -e ${repo}/root.json ]; then
+                    CABAL_DIR=$(mktemp -d)
+                    mkdir -p $CABAL_DIR/packages/${name}
+                    printf 'repository %s\n  url: file:%s\n  secure: True\n  root-keys: aaa\n  key-threshold: 0\n' \
+                      ${name} ${repo} > $CABAL_DIR/config
+                    CABAL_DIR=$CABAL_DIR cabal v2-update ${name}
+                    cp -r $CABAL_DIR/packages/${name}/. $out/packages/${name}/
+                  else
+                    lndir ${repo} $out/packages/${name}
+                  fi
                 '') extra-hackage-repos)}
                 # prepopulate extra-hackage-tarballs
                 ${final.lib.concatStrings (final.lib.mapAttrsToList (name: repo: ''
