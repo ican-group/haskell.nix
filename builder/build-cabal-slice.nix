@@ -1738,21 +1738,22 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       # `stage` per unit.  A `<pkg>-<ver>` planned ONLY at the build stage
       # is a build-stage unit (see the BUILD-stage note below); one that is
       # also planned at the host stage stays subject to the check.
-      #
-      # The merge cabal drops the build machine altogether when the build
-      # compiler matches the host one on compiler id, ABI tag and Cabal
-      # `Platform` (`sameCompiler`, ProjectPlanning.hs), which a same-arch
-      # `-target` cross does: the musl64 / static compiler and the glibc
-      # build compiler are both `ghc-9.14` on `x86_64-linux`.  Every unit is
-      # then `host`, and the build tools a two-stage slice builds itself
-      # (alex for Cabal-syntax, tests.setup-deps-boot-cabal) look like
-      # rebuilds.  In that case treat the units reached only through
-      # `exe-depends` -- not through the target package's `depends` closure
-      # -- as the build-stage units they would otherwise be.
       build_only_pkg_vers=""
       if [ -f "$distDir/cache/plan.json" ]; then
         build_only_pkg_vers=$(jq -r --arg exp "$expected_pkg" \
-            --argjson twoStage ${if twoStage then "true" else "false"} '
+            --argjson twoStage ${
+              # The merge cabal drops the build machine altogether when the
+              # build compiler matches the host one on compiler id, ABI tag
+              # and Cabal `Platform` (`sameCompiler`, ProjectPlanning.hs),
+              # which a same-arch `-target` cross does: the musl64 / static
+              # compiler and the glibc build compiler are both `ghc-9.14` on
+              # `x86_64-linux`.  Every unit is then `host`, and the build tools
+              # a two-stage slice builds itself (alex for Cabal-syntax,
+              # tests.setup-deps-boot-cabal) look like rebuilds.  In that case
+              # the filter treats the units reached only through `exe-depends`
+              # -- not through the target package's `depends` closure -- as
+              # the build-stage units they would otherwise be.
+              if twoStage then "true" else "false"} '
           def libclosure($m):
             . as $s
             | ([$s[] | $m[.] | (.depends // [])
@@ -1947,10 +1948,22 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       # listed via `extra-packages:` in cabal.project AND its tarball
       # is in the slicing repo's index — both conditions are met by
       # comp-v2-builder for non-shim slices.
+      ${
+        # A doc slice runs only `v2-haddock`.  cabal 3.19 applies its
+        # `--haddock-*` flags to the target even when it is not a local
+        # package, and they are unit-id inputs (`haddock-html` /
+        # `-hyperlink-source` / `-quickjump` in cabal-hash.txt), so
+        # `v2-haddock` builds the documented unit under its own id.  A
+        # `v2-build` first was at best a no-op (the target's plain slice is
+        # composed in), but when the deps came from doc slices it built a
+        # third, undocumented unit of the target, and the slice then captured
+        # two units of its target (tests.sublib-docs).
+        lib.optionalString (!doHaddock) ''
       echo "--- cabal v2-build ${target} ---"
       time { cabal $cabalGlobalArgs v2-build $cabalCmdArgs -v ${target} 2>&1 \
         | tee $buildRoot/build.log | sliceStamp; }
       sliceMark "cabal v2-build"
+      ''}
       ${lib.optionalString doHaddock ''
         echo "--- cabal v2-haddock ${target} ---"
         time { cabal $cabalGlobalArgs v2-haddock $cabalCmdArgs \
@@ -1974,14 +1987,15 @@ ${lib.optionalString (metadataSourceFrags != []) ''
                               -path "*/dist/doc/html/$tgt_pkg/$tgt_cname" \
                               -type d -print -quit 2>/dev/null || true)
           if [ -n "$sublib_html_src" ]; then
-            # The sublib's conf was just written by `cabal v2-build`'s
-            # register step before `v2-haddock` ran; find its uid by
-            # the cabal-mangled `z-<pkg>-z-<sublib>` name.  Re-discover
-            # first: if the composed starting store was empty, cabal
-            # created the store dir during the build we just ran.
+            # The sublib's conf was just written by `v2-haddock`'s
+            # register step; find its uid by the cabal-mangled
+            # `z-<pkg>-z-<sublib>` name, skipping the composed plain
+            # unit.  Re-discover first: if the composed starting store
+            # was empty, cabal created the store dir during the build.
             discoverStore
             for conf in $ghcDir/$storePkgDb/*.conf; do
               [ -e "$conf" ] || continue
+              grep -qxF "$(basename "$conf")" $buildRoot/confs-before && continue
               if [ "$(awk '/^name:/ {print $2; exit}' "$conf")" \
                    = "z-$tgt_pkg-z-$tgt_cname" ]; then
                 target_uid=$(awk '/^id:/ {print $2; exit}' "$conf")
