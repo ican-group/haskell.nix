@@ -259,6 +259,7 @@ executable default-setup-ghcjs
                      , Cabal
                      , directory
                      , filepath
+                     , text
   hs-source-dirs:      setup-ghcjs
   default-language:    Haskell2010
 

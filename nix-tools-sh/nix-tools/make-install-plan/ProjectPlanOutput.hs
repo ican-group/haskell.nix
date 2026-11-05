@@ -51,10 +51,12 @@ import Distribution.ModuleName hiding (components)
 import qualified Distribution.Client.InstallPlan as InstallPlan
 import qualified Distribution.Client.Utils.Json as J
 import qualified Distribution.Solver.Types.ComponentDeps as ComponentDeps
--- cabal 3.17: compiler/platform now live per stage in a Staged Toolchain.
-import qualified Distribution.Solver.Types.Stage as Stage
-import Distribution.Solver.Types.Toolchain (Toolchain (..))
+-- compiler/platform live per machine (build/host) in a PerMachine Toolchain.
+import qualified Distribution.Solver.Types.Machine as Machine
+import Distribution.Client.ProjectPlanning.Machine (WithMachine (..))
+import Distribution.Client.Toolchain (Toolchain (..))
 import qualified GHC.IsList as IL
+import qualified Data.Text as Text
 
 import Distribution.Client.Compat.Prelude
 import Prelude ()
@@ -107,10 +109,10 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
     ]
  where
   -- cabal 3.17: ElaboratedSharedConfig no longer carries a single compiler/platform
-  -- (pkgConfigCompiler/pkgConfigPlatform are gone). They now live per stage in
+  -- (pkgConfigCompiler/pkgConfigPlatform are gone). They now live per machine in
   -- pkgConfigToolchains; the Host toolchain is the target and matches the old values.
   toolchains = pkgConfigToolchains elaboratedSharedConfig
-  hostToolchain = Stage.getStage toolchains Stage.Host
+  hostToolchain = Machine.onMachine toolchains Machine.Host
 
   plat :: Platform
   plat@(Platform arch os) = toolchainPlatform hostToolchain
@@ -155,11 +157,11 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
   -- that case, but the code supports it in case we want to use this
   -- later in some use case where we want the status of the build.
 
-  -- cabal 3.17: pre-existing packages are now carried as WithStage
-  -- InstalledPackageInfo. installedUnitId/packageId still return the underlying
-  -- (unstaged) ids via the HasUnitId/Package instances; installedDepends is
-  -- lifted over the stage with traverse.
-  installedPackageInfoToJ :: WithStage InstalledPackageInfo -> J.Value
+  -- Pre-existing packages are carried as WithMachine InstalledPackageInfo.
+  -- installedUnitId/packageId still return the underlying (unqualified) ids
+  -- via the HasUnitId/Package instances; installedDepends is lifted over the
+  -- machine with traverse.
+  installedPackageInfoToJ :: WithMachine InstalledPackageInfo -> J.Value
   installedPackageInfoToJ ipi =
     -- Pre-existing packages lack configuration information such as their flag
     -- settings or non-lib components. We only get pre-existing packages for
@@ -169,10 +171,11 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
     J.object
       [ "type" J..= J.String "pre-existing"
       , "id" J..= (jdisplay . installedUnitId) ipi
+      , machineToJ (case ipi of WithMachine m _ -> m)
       , "pkg-name" J..= (jdisplay . pkgName . packageId) ipi
       , "pkg-version" J..= (jdisplay . pkgVersion . packageId) ipi
-      -- strip the stage so ids match the bare component "id" fields
-      , "depends" J..= map (jdisplay . dropStage) (traverse installedDepends ipi)
+      -- strip the machine so ids match the bare component "id" fields
+      , "depends" J..= map (jdisplay . dropMachine) (traverse installedDepends ipi)
       ]
 
   elaboratedPackageToJ :: Bool -> ElaboratedConfiguredPackage -> J.Value
@@ -185,6 +188,7 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
                   else "configured"
               )
         , "id" J..= (jdisplay . installedUnitId) elab
+        , machineToJ (elabMachine elab)
         , "pkg-name" J..= (jdisplay . pkgName . packageId) elab
         , "pkg-version" J..= (jdisplay . pkgVersion . packageId) elab
         , "flags"
@@ -192,7 +196,7 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
               [ PD.unFlagName fn J..= v
               | (fn, v) <- PD.unFlagAssignment (elabFlagAssignment elab)
               ]
-        , "style" J..= J.String (style2str (elabIsSourcePackage elab) (elabIsSourcePackageClosure elab))
+        , "style" J..= J.String (style2str (elabLocalToProject elab) (isInplaceBuildStyle (elabBuildStyle elab)))
         , "pkg-src" J..= packageLocationToJ (elabPkgSourceLocation elab)
         , "instantiated-with" J..= instantiationsToJ instantiatedWith
         ]
@@ -217,10 +221,10 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
                   $ [ comp2str c
                         J..= J.object (
                                   [ "depends" J..= map ((jdisplay . confInstId) . fst) ldeps
-                                  -- cabal 3.17: pkgExeDependencies elements are now
-                                  -- WithStage ConfiguredId; drop the stage so the emitted
+                                  -- pkgExeDependencies elements are
+                                  -- WithMachine ConfiguredId; drop the machine so the emitted
                                   -- id matches the bare component "id".
-                                  , "exe-depends" J..= map (jdisplay . confInstId . dropStage) edeps
+                                  , "exe-depends" J..= map (jdisplay . confInstId . dropMachine) edeps
                                   ] ++ bin_file c)
                     | (c, (ldeps, edeps)) <-
                         ComponentDeps.toList
@@ -231,9 +235,9 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
            in ["components" J..= components]
         ElabComponent comp ->
           [ "depends" J..= map jdisplay (compOrderLibDependencies comp)
-          -- cabal 3.17: elabExeDependencies elements are WithStage ComponentId;
-          -- drop the stage so the emitted id matches the bare component "id".
-          , "exe-depends" J..= map (jdisplay . dropStage) (elabExeDependencies elab)
+          -- elabExeDependencies elements are WithMachine ComponentId; drop
+          -- the machine so the emitted id matches the bare component "id".
+          , "exe-depends" J..= map (jdisplay . dropMachine) (elabExeDependencies elab)
           , "component-name" J..= J.String (comp2str (compSolverName comp))
           ]
             ++ bin_file (compSolverName comp)
@@ -264,12 +268,11 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
     configArgs = setupHsConfigureArgs elab
     configFlags =
         runIdentity $
-        -- cabal 3.17: setupHsConfigureFlags dropped the install-plan and
-        -- shared-config arguments; it now takes just the path transform,
-        -- the ready package and the common flags.
         setupHsConfigureFlags
           (fmap makeSymbolicPath . Identity)
+          elaboratedInstallPlan
           (ReadyPackage elab)
+          elaboratedSharedConfig
           commonFlags
 
     buildArgs = setupHsBuildArgs elab
@@ -310,9 +313,9 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
 
     haddockArgs = setupHsHaddockArgs elab
     haddockFlags =
-      -- cabal 3.17: setupHsHaddockFlags dropped the shared-config argument.
       setupHsHaddockFlags
           elab
+          elaboratedSharedConfig
           buildTimeSettings
           commonFlags
 
@@ -355,7 +358,7 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
     -- with an old lib:Cabal version.
     buildInfoFileLocation :: J.Pair
     buildInfoFileLocation
-      | elabSetupScriptCliVersion elab < mkVersion [3, 7, 0, 0] =
+      | setupCliVersion (elabSetupScriptCliVersion elab) < mkVersion [3, 7, 0, 0] =
           "build-info" J..= J.Null
       | otherwise =
           "build-info" J..= J.String (getSymbolicPath (buildInfoPref (makeSymbolicPath dist_dir)))
@@ -423,31 +426,23 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
       J.object
         $ filter ((/= J.Null) . snd)
           [ "type" J..= jdisplay srpType
-          , "location" J..= J.String srpLocation
-          , "branch" J..= fmap J.String srpBranch
-          , "tag" J..= fmap J.String srpTag
+          , "location" J..= J.String (Text.unpack srpLocation)
+          , "branch" J..= fmap (J.String . Text.unpack) srpBranch
+          , "tag" J..= fmap (J.String . Text.unpack) srpTag
           , "subdir" J..= fmap J.String srpSubdir
           ]
 
-    -- cabal 3.17 replacement for the old @isInplaceBuildStyle (elabBuildStyle elab)@:
-    -- a package builds in place (rather than being installed to the store) when it
-    -- is a project source package, or lives in the project source-package closure.
     isInplaceStyle :: Bool
-    isInplaceStyle = elabIsSourcePackage elab || elabIsSourcePackageClosure elab
+    isInplaceStyle = isInplaceBuildStyle (elabBuildStyle elab)
 
-    -- cabal 3.17: the (former) elabInstantiatedWith field moved onto the component
-    -- as compInstantiatedWith. Whole packages are never Backpack-instantiated.
     instantiatedWith :: Map ModuleName Module
-    instantiatedWith = case elabPkgOrComp elab of
-      ElabComponent comp -> compInstantiatedWith comp
-      ElabPackage _ -> Map.empty
+    instantiatedWith = elabInstantiatedWith elab
 
     dist_dir :: FilePath
     dist_dir =
       distBuildDirectory
         distDirLayout
-        -- cabal 3.17: elabDistDirParams no longer takes the shared config.
-        (elabDistDirParams elab)
+        (elabDistDirParams elaboratedSharedConfig elab)
 
     bin_file :: ComponentDeps.Component -> [J.Pair]
     bin_file c = case c of
@@ -462,9 +457,7 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
       bin =
         if isInplaceStyle
           then dist_dir </> "build" </> prettyShow s </> prettyShow s <.> exeExtension plat
-          -- cabal 3.17: elabInstallDirs is now templated; elabBinDir resolves the
-          -- absolute bindir FilePath.
-          else elabBinDir elab </> prettyShow s <.> exeExtension plat
+          else InstallDirs.bindir (elabInstallDirs elab) </> prettyShow s <.> exeExtension plat
 
     flib_file' :: (Pretty a, Show a) => a -> [J.Pair]
     flib_file' s =
@@ -473,14 +466,20 @@ encodePlanAsJson distDirLayout elaboratedInstallPlan elaboratedSharedConfig targ
       bin =
         if isInplaceStyle
           then dist_dir </> "build" </> prettyShow s </> ("lib" ++ prettyShow s) <.> dllExtension plat
-          else elabBinDir elab </> ("lib" ++ prettyShow s) <.> dllExtension plat
+          else InstallDirs.bindir (elabInstallDirs elab) </> ("lib" ++ prettyShow s) <.> dllExtension plat
 
 comp2str :: ComponentDeps.Component -> String
 comp2str = prettyShow
 
--- cabal 3.17 removed the BuildStyle type. The first Bool is elabIsSourcePackage
--- (was elabLocalToProject); the second is elabIsSourcePackageClosure, i.e. the
--- package is rebuilt in place because it is in the project source closure.
+-- The first Bool is 'elabLocalToProject'; the second is whether the package
+-- builds in place ('isInplaceBuildStyle').
+-- | The machine a plan entry is built for ("host" or "build"), under the
+-- same "machine" key cabal's own plan.json uses.  Under cross-compilation the
+-- same unit id can appear once per machine; in a non-cross plan every entry is
+-- "host".  comp-v2-builder reads it.
+machineToJ :: Machine.Machine -> J.Pair
+machineToJ m = "machine" J..= J.String (Machine.showMachine m)
+
 style2str :: Bool -> Bool -> String
 style2str True _ = "local"
 style2str False True = "inplace"
@@ -489,14 +488,15 @@ style2str False False = "global"
 jdisplay :: (Pretty a) => a -> J.Value
 jdisplay = J.String . prettyShow
 
--- cabal 3.17: dependency/id values now come wrapped in WithStage, and rendering
--- a WithStage via jdisplay prints a "build:"/"host:" qualifier. plan.json's
+-- Dependency/id values come wrapped in WithMachine, and rendering
+-- a WithMachine via jdisplay prints a "build:"/"host:" qualifier. plan.json's
 -- component "id" fields are bare, and haskell.nix's Nix-side consumer looks
 -- dependencies up by that bare id, so every emitted id must be unqualified.
--- Stripping the stage is safe: cross ids already carry a distinct platform hash
--- (so build vs host stay distinct) and native ids are identical across stages.
-dropStage :: WithStage a -> a
-dropStage (WithStage _ a) = a
+-- Stripping the machine is safe: cross ids already carry a distinct platform
+-- hash (so build vs host stay distinct) and native ids are identical across
+-- machines.
+dropMachine :: WithMachine a -> a
+dropMachine (WithMachine _ a) = a
 
 renderFlags :: CommandUI flags -> flags -> [String] -> [String]
 renderFlags cmd flags extraArgs =
