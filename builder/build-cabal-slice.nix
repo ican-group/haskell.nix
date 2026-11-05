@@ -1738,14 +1738,47 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       # `stage` per unit.  A `<pkg>-<ver>` planned ONLY at the build stage
       # is a build-stage unit (see the BUILD-stage note below); one that is
       # also planned at the host stage stays subject to the check.
+      #
+      # The merge cabal drops the build machine altogether when the build
+      # compiler matches the host one on compiler id, ABI tag and Cabal
+      # `Platform` (`sameCompiler`, ProjectPlanning.hs), which a same-arch
+      # `-target` cross does: the musl64 / static compiler and the glibc
+      # build compiler are both `ghc-9.14` on `x86_64-linux`.  Every unit is
+      # then `host`, and the build tools a two-stage slice builds itself
+      # (alex for Cabal-syntax, tests.setup-deps-boot-cabal) look like
+      # rebuilds.  In that case treat the units reached only through
+      # `exe-depends` -- not through the target package's `depends` closure
+      # -- as the build-stage units they would otherwise be.
       build_only_pkg_vers=""
       if [ -f "$distDir/cache/plan.json" ]; then
-        build_only_pkg_vers=$(jq -r '
-          [.["install-plan"][] | {s: (.stage // .machine // "host"),
-                                  pv: "\(.["pkg-name"])-\(.["pkg-version"])"}]
-          | (map(select(.s == "host") | .pv) | unique) as $host
-          | map(select(.s == "build") | .pv) | unique
-          | map(select(. as $pv | $host | index($pv) | not)) | .[]' \
+        build_only_pkg_vers=$(jq -r --arg exp "$expected_pkg" \
+            --argjson twoStage ${if twoStage then "true" else "false"} '
+          def libclosure($m):
+            . as $s
+            | ([$s[] | $m[.] | (.depends // [])
+                         + ([(.components // {}) | to_entries[]
+                             | select(.key != "setup") | .value.depends // []]
+                            | add // [])
+                | .[]] + $s | unique) as $n
+            | if ($n | length) == ($s | length) then $s
+              else ($n | libclosure($m)) end;
+          .["install-plan"] as $plan
+          | [$plan[] | {s: (.stage // .machine // "host"), id: .id,
+                        pv: "\(.["pkg-name"])-\(.["pkg-version"])"}] as $units
+          | if $twoStage and ($units | map(select(.s == "build")) | length) == 0
+            then
+              ($plan | map({key: .id, value: .}) | from_entries) as $m
+              | ([$plan[] | select(.["pkg-name"] == $exp) | .id]
+                 | libclosure($m)) as $libIds
+              | ($units | map(select(.id as $i | $libIds | index($i)) | .pv)
+                 | unique) as $host
+              | $units | map(.pv) | unique
+              | map(select(. as $pv | $host | index($pv) | not)) | .[]
+            else
+              ($units | map(select(.s == "host") | .pv) | unique) as $host
+              | $units | map(select(.s == "build") | .pv) | unique
+              | map(select(. as $pv | $host | index($pv) | not)) | .[]
+            end' \
           "$distDir/cache/plan.json" 2>/dev/null | tr '\n' ' ' || true)
       fi
       extras=$(awk -v expected="$expected_pkg" -v allowed="$allowed_build_tools" \

@@ -774,6 +774,17 @@ in {
       # [No non-reinstallable constraints]).  With the flag, the merge
       # adds only wired-in unit-id pins, which this compiler does not
       # report, and never pins a package the project lists as a target.
+      #
+      # `inplace-builds: False` (also outside the markers): the boot
+      # libraries are local packages here, and cabal 3.19 names every unit
+      # in the reverse-dependency closure of a local package after its
+      # package id (`alex-3.5.4.2-alex`, `Cabal-syntax-3.16.1.0`) only with
+      # this off; with it on they get `-inplace` ids.  Inplace units are
+      # never reused from the store, so the slices could not reuse those
+      # units' receipts and rebuilt build tools such as `alex` in every
+      # consumer (tests.setup-deps-boot-cabal on musl64).  The older fork
+      # gave these bare ids unconditionally; the stage2 project
+      # (overlays/stable-haskell.nix) sets the same.
       cabalProjectLocal = lib.mkBefore ''
         -- Added by the stable-haskell boot-package injection (see the
         -- `injectStableHaskellBootPackages` option): the compiler ships no
@@ -829,6 +840,7 @@ in {
           profiling-detail: none
         '') bootPkgNames}
         allow-boot-library-installs: True
+        inplace-builds: False
         -- Forked boot packages that live outside the GHC tree.
         source-repository-package
           type: git
