@@ -1958,8 +1958,12 @@ let
   # extra-package.  Windows-gated (native/hadrian byte-identical); on
   # native build-stage units hsc2hs ignores --via-asm (DirectCodegen).
   # Mirrors v1's comp-builder.nix:398 (`--via-asm` for isWindows).
+  # Not in a build-machine unit's slice: it runs single-stage, so the stanza
+  # reached its native units and entered their hash (`hsc2hs-options`),
+  # which the two-stage plan's Build units never get -- the hsc2hs tool
+  # slice's id then missed the one every consumer planned.
   hsc2hsViaAsmProject =
-    lib.optionalString (stdenv.hostPlatform.isWindows or false) ''
+    lib.optionalString ((stdenv.hostPlatform.isWindows or false) && !isBuildStageUnit) ''
       package *
         hsc2hs-options: --via-asm
     '';
@@ -1977,15 +1981,19 @@ let
   # reaches them.  musl's `executable-static: True` made the native alex in
   # the setup-scope Cabal-syntax slice link `-static` against glibc
   # (`cannot find -lc`).
-  buildStageProject = lib.optionalString isBuildStageUnit ''
-    package *
-      executable-static: False
-  '';
+  # The baseline value is rewritten rather than overridden by a second
+  # `package *` stanza: the fork kept the first stanza's value.
+  sliceConfigPragmas =
+    if isBuildStageUnit
+    then lib.replaceStrings [ "  executable-static: True\n" ]
+                            [ "  executable-static: False\n" ]
+                            projectConfigPragmas
+    else projectConfigPragmas;
 
   localCabalProject = ''
     with-compiler: ${withCompiler}
     active-repositories: hackage.haskell-nix
-    ${packagesLine}${solverRelaxations}${projectConfigPragmas}${buildStageProject}${hsc2hsViaAsmProject}${extraProject}${extraIncludeAndLibDirs}'';
+    ${packagesLine}${solverRelaxations}${sliceConfigPragmas}${hsc2hsViaAsmProject}${extraProject}${extraIncludeAndLibDirs}'';
 
   # Untouched packages keep their revised .cabal separately from the
   # upstream tarball. Patches/hooks may change that metadata after the
