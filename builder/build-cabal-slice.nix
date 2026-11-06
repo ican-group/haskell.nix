@@ -2156,7 +2156,13 @@ ${lib.optionalString (metadataSourceFrags != []) ''
         # solver-tools wrapper) — they point into $buildRoot and would
         # ship dangling.  Symlinks only; real confs are the slice's own.
         shopt -s nullglob
-        for conf in $ghcDir/$storePkgDb/*.conf; do
+        for conf in $ghcDir/$storePkgDb/*.conf ${
+          # Every platform dir, not only the compiler's: a build-machine
+          # unit's slice (`buildPlatformCompiler`) injects them into the
+          # composed HOST db, the only one that exists before its cabal
+          # creates `host/<build-platform>` (aarch64 `tagged`:
+          # noBrokenSymlinks on `host/aarch64-unknown-linux/package.conf.d`).
+          "$storeDir/*/*/package.conf.d/*.conf"}; do
           [ -L "$conf" ] || continue
           case "$(readlink "$conf")" in
             "$buildRoot"/global-conf-snapshot/*) rm "$conf" ;;

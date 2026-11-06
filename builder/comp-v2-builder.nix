@@ -951,9 +951,15 @@ let
   # slices into the starting store db.  They contribute no constraints
   # and no `extra-packages:` entry — they are never solver goals, the
   # db presence is all GHC needs.
-  additionalPrebuiltSlices = lib.filter
+  # Not for a build-machine unit: the rts-ways module in
+  # modules/cabal-project.nix assigns them by package NAME, so a build-stage
+  # unit sharing its name with a host one (musl's setup-scope
+  # Cabal-syntax-3.16.1.0 beside the host 3.17) got the HOST rts ways.  Its
+  # native compiler has its own; the composed musl `rts-1.0.3` shadowed them
+  # and left the native ghc-internal "broken, missing dependency rts-1.0.3".
+  additionalPrebuiltSlices = lib.optionals (!isBuildStageUnit) (lib.filter
     (d: d != null && (d.passthru.isSlice or false))
-    (component.additional-prebuilt-depends or []);
+    (component.additional-prebuilt-depends or []));
 
   depSlices = haskellLib.uniqueWithName
     (directDepSlices
@@ -1964,10 +1970,22 @@ let
   # extra-packages, the six per-package block groups, constraints)
   # composed at build time from the per-package fragments — so the
   # dependency-closure walk never runs in the Nix evaluator.
+  # A build-machine unit's slice runs cabal single-stage with the native
+  # compiler, so its units are all Host to that cabal, and a host-scoped
+  # field from the project baseline -- which the two-stage plan applied to
+  # host units only (`hostScopedFields` in v2-project-globals.nix) --
+  # reaches them.  musl's `executable-static: True` made the native alex in
+  # the setup-scope Cabal-syntax slice link `-static` against glibc
+  # (`cannot find -lc`).
+  buildStageProject = lib.optionalString isBuildStageUnit ''
+    package *
+      executable-static: False
+  '';
+
   localCabalProject = ''
     with-compiler: ${withCompiler}
     active-repositories: hackage.haskell-nix
-    ${packagesLine}${solverRelaxations}${projectConfigPragmas}${hsc2hsViaAsmProject}${extraProject}${extraIncludeAndLibDirs}'';
+    ${packagesLine}${solverRelaxations}${projectConfigPragmas}${buildStageProject}${hsc2hsViaAsmProject}${extraProject}${extraIncludeAndLibDirs}'';
 
   # Untouched packages keep their revised .cabal separately from the
   # upstream tarball. Patches/hooks may change that metadata after the
@@ -2662,6 +2680,26 @@ let
       fi
       cp "$bin" $out/bin/${exeName}
       chmod +x $out/bin/${exeName}
+      ${ # The package's OTHER exes this slice built, which a test spawns
+         # through `build-tool-depends: <pkg>:<exe>` (test/check-datadir).
+         # cabal 3.19 builds local packages inplace, so they live only in
+         # `dist-newstyle/build`, which `trimDistNewstyle` drops; the older
+         # fork installed them into `store/<stage>/<plat>/bin`, where
+         # lib/check.nix found them.  Keep them in `local-bin/` for it.
+         ""}
+      if [ -f $out/dist-newstyle/cache/plan.json ]; then
+        jq -r '.["install-plan"][]
+               | select(.style == "local"
+                        and ((.["component-name"] // "") | startswith("exe:"))
+                        and .["bin-file"] != null)
+               | .["bin-file"]' $out/dist-newstyle/cache/plan.json \
+        | while IFS= read -r f; do
+          [ -f "$f" ] || continue
+          mkdir -p $out/local-bin
+          cp "$f" $out/local-bin/
+          chmod +x "$out/local-bin/$(basename "$f")"
+        done
+      fi
       ${trimDistNewstyle}
     '';
 

@@ -373,8 +373,17 @@ in {
   # Pre-existing units carry neither; callers treat them per context
   # (in a two-stage plan they are all build-stage — the target db is
   # empty).  Defaults to "host": mainline plans are single-stage.
+  # The explicit `stage` (stable-haskell/merge cabal, nix-tools-sh's
+  # make-install-plan) or `machine` (haskell/cabal#12356) field wins: the
+  # 3.19 merge plans carry neither marker below, which put every unit in
+  # "host" and let a BUILD twin own a shared id first-wins (aarch64
+  # `resourcet` composed the native `primitive`).  Same order as
+  # comp-v2-builder's `planStage`.
   planUnitStage = p:
     let
+      fromField =
+        let s = p.stage or p.machine or null;
+        in if s == "host" || s == "build" then s else null;
       fromArgs =
         let ms = builtins.concatMap (a:
               let m = builtins.match "--prefix=(.*/)?dist-newstyle/store/([a-z]+)/.*" (toString a);
@@ -384,7 +393,8 @@ in {
       fromDist =
         let m = builtins.match "(.*/)?dist-newstyle/build/([a-z]+)/.*" (p.dist-dir or "");
         in if m == null then null else builtins.elemAt m 1;
-    in if fromArgs != null then fromArgs
+    in if fromField != null then fromField
+       else if fromArgs != null then fromArgs
        else if fromDist != null then fromDist
        else "host";
 

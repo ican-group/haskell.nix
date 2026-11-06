@@ -117,6 +117,10 @@ if drvOrig.passthru.isSlice or false then
       # for two-stage plans; until then this closes the common case.
       for _bindir in ${drvOrig}/store/ghc-*/bin \
                      ${drvOrig}/store/build/*/bin \
+                     ${ # The local package's own exes: cabal 3.19 builds
+                        # them inplace, so comp-v2-builder keeps them here
+                        # rather than under `store/host/<plat>/bin`.
+                        "${drvOrig}/local-bin"} \
                      ${drvOrig}/store/host/*/bin; do
         [ -d "$_bindir" ] || continue
         PATH="$PATH:$_bindir"
