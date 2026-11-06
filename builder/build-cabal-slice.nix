@@ -1773,6 +1773,23 @@ ${lib.optionalString (metadataSourceFrags != []) ''
               # the same shape: one machine, the native compiler, and its
               # build tools (alex for a setup-scope Cabal-syntax) planned
               # beside it.
+              #
+              # Otherwise a build-stage unit is also tolerated per
+              # COMPONENT (`<pkg>-<ver>@<component>`), when the package has
+              # host units but none for that component: a test's
+              # `build-tool-depends` on a project package's exe (pkgb's
+              # `pkga:pkga-exe`, cabal-22's `hspec-discover`) is planned at
+              # the build stage while the package's library is a host unit.
+              # The old fork printed a stage keyword for each planned unit,
+              # which let the awk below skip these.
+              #
+              # Only units the target reaches (`depends` / `exe-depends`, any
+              # component) count.  The plan also has a host unit for every
+              # `source-repository-package` (deriveConstants and
+              # genprimopcode in a ghc lib slice) that nothing consumes and
+              # `cabal build :pkg:<target>` never builds; counted, those
+              # twins made the build-stage tools ghc does use look like
+              # host rebuilds.
               if twoStage || buildPlatformCompiler then "true" else "false"} '
           def libclosure($m):
             . as $s
@@ -1783,9 +1800,22 @@ ${lib.optionalString (metadataSourceFrags != []) ''
                 | .[]] + $s | unique) as $n
             | if ($n | length) == ($s | length) then $s
               else ($n | libclosure($m)) end;
+          def reach($m):
+            . as $s
+            | ([$s[] | $m[.] | [(.depends // []), (.["exe-depends"] // []),
+                                 ((.components // {}) | .[]
+                                  | (.depends // []), (.["exe-depends"] // []))]
+                | add | .[]] + $s | unique) as $n
+            | if ($n | length) == ($s | length) then $s
+              else ($n | reach($m)) end;
           .["install-plan"] as $plan
-          | [$plan[] | {s: (.stage // .machine // "host"), id: .id,
-                        pv: "\(.["pkg-name"])-\(.["pkg-version"])"}] as $units
+          | ($plan | map({key: .id, value: .}) | from_entries) as $all
+          | ([$plan[] | select(.["pkg-name"] == $exp) | .id]
+             | reach($all)) as $reached
+          | [$plan[] | select(.id as $i | $reached | index($i))
+                     | {s: (.stage // .machine // "host"), id: .id,
+                        pv: "\(.["pkg-name"])-\(.["pkg-version"])",
+                        pc: "\(.["pkg-name"])-\(.["pkg-version"])@\(.["component-name"] // "")"}] as $units
           | if $twoStage and ($units | map(select(.s == "build")) | length) == 0
             then
               ($plan | map({key: .id, value: .}) | from_entries) as $m
@@ -1797,8 +1827,12 @@ ${lib.optionalString (metadataSourceFrags != []) ''
               | map(select(. as $pv | $host | index($pv) | not)) | .[]
             else
               ($units | map(select(.s == "host") | .pv) | unique) as $host
-              | $units | map(select(.s == "build") | .pv) | unique
-              | map(select(. as $pv | $host | index($pv) | not)) | .[]
+              | ($units | map(select(.s == "host") | .pc) | unique) as $hostComps
+              | ($units | map(select(.s == "build") | .pv) | unique
+                 | map(select(. as $pv | $host | index($pv) | not)))
+                + ($units | map(select(.s == "build") | .pc) | unique
+                   | map(select(. as $pc | $hostComps | index($pc) | not)))
+              | .[]
             end' \
           "$distDir/cache/plan.json" 2>/dev/null | tr '\n' ' ' || true)
       fi
@@ -1830,6 +1864,9 @@ ${lib.optionalString (metadataSourceFrags != []) ''
           if (pkg_ver == "build") next
           if (pkg_ver == "host" || pkg_ver == "target") pkg_ver = $3
           if (pkg_ver in build_only_set) next
+          comp = (pkg_ver == $2) ? $3 : $4
+          gsub(/[()]/, "", comp)
+          if ((pkg_ver "@" comp) in build_only_set) next
           n = split(pkg_ver, parts, "-")
           for (i = n; i > 0; i--) if (parts[i] ~ /^[0-9]+(\.[0-9]+)*$/) break
           if (i <= 1) { name = pkg_ver }
