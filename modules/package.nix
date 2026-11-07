@@ -60,6 +60,14 @@ in
         default = null;
       };
 
+      # The pkg-config names the `.cabal` file declares, every component,
+      # under the plan's flags (`pkgconfNamesOf` in lib/load-cabal-plan.nix).
+      pkgconfNames = lib.mkOption {
+        type = types.listOf types.str;
+        internal = true;
+        default = [];
+      };
+
       license = lib.mkOption {
         type = types.str;
       };

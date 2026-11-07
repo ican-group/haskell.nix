@@ -298,12 +298,23 @@ let
   staticHostSalt = lib.replaceStrings [ "-" "." ] [ "_" "_" ]
     stdenv.hostPlatform.config;
 
-  # On cross, `cabalPkgConfigWrapper` is named
+  # A slice's pkg-config table is the map restricted to the names declared by
+  # the packages in its slicing repo: this one, its staged build-tool and
+  # metadata sources, and its dep slices' (`repo-frag`, composed in the
+  # buildPhase; cabal solves every source goal).  No smaller table leaves the
+  # solve equal to plan-nix's.
+  pkgconfNames = lib.sort lib.lessThan (lib.unique
+    (lib.concatMap (f: f.pkgconfNames)
+       (lib.optional (v2Fragment != null) v2Fragment
+        ++ buildToolSourceFrags ++ metadataSourceFrags)
+     ++ lib.concatMap (d: d.pkgconfNames) depSlices));
+  pkgConfigWrapper = buildPackages.cabalPkgConfigWrapperFor pkgconfNames;
+  # On cross, `pkgConfigWrapper` is named
   # `${targetPrefix}pkg-config` (e.g. `x86_64-w64-mingw32-pkg-config`).
   # Cabal calls plain `pkg-config` by default, so for cross we have
   # to point it at the prefixed binary via `--with-pkg-config=`.
-  # Mirrors comp-builder.nix:345.
-  pkgConfigPrefix = buildPackages.cabalPkgConfigWrapper.targetPrefix;
+  # Mirrors comp-builder.nix's `--with-pkg-config=`.
+  pkgConfigPrefix = pkgConfigWrapper.targetPrefix;
   # Only emit cross-aware overrides; for native, cabal finds
   # everything on PATH itself.  Avoiding `--with-PROG=` flags on
   # native is also important for UnitId stability — every entry
@@ -665,15 +676,11 @@ stdenv.mkDerivation ({
   #
   # `lndir` is used in the buildPhase to compose dep slices into
   # `$out/store` as a symlink tree — see comments there.
-  # `cabalPkgConfigWrapper` (haskell.nix's build-time pkg-config
-  # wrapper, matching comp-builder.nix:432) is needed when any
-  # package in the cabal plan has `pkgconfig-depends:` — cabal's
-  # solver invokes pkg-config to query module versions.  This slice
-  # re-runs the solver for the subset of packages it can see, so
-  # rather than plumb a per-slice flag we always include it.
+  # `pkgConfigWrapper` is always present: without a pkg-config cabal rejects
+  # every `pkgconfig-depends:` of a source goal (see `pkgConfigWithFlag`).
   nativeBuildInputs = [ ghc cabal-install
                         (pkgsBuildBuild.lndir or pkgsBuildBuild.xorg.lndir)
-                        buildPackages.cabalPkgConfigWrapper
+                        pkgConfigWrapper
                         # `jq` is used by the unit-id mismatch diagnostic
                         # to extract / pretty-print plan.json entries for
                         # the diff between plan-nix and the slice's
@@ -770,7 +777,7 @@ stdenv.mkDerivation ({
   # slice $out is a tree of /nix/store symlinks anyway — nothing to
   # strip that the dep slices haven't already stripped themselves.
   dontStrip = true;
-  inherit passthru;
+  passthru = passthru // { inherit pkgconfNames; };
 
   buildPhase = ''
     set -euo pipefail

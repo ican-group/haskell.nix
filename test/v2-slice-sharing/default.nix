@@ -1,8 +1,8 @@
 # v2 slices of a dependency must be shared by every project that plans
 # the same unit for it.  Two projects in different subdirectories, one of
-# them with a local package configured differently (`coverage: True`),
-# both depend on `primitive`; its library slice (same plan unit-id in
-# both) must be the same derivation.
+# them with a local package configured differently (`coverage: True`, an
+# executable with a `pkgconfig-depends:`), both depend on `primitive`; its
+# library slice (same plan unit-id in both) must be the same derivation.
 #
 # Each of these once gave every project its own copy of every slice,
 # multiplying the work on Hydra (eval 2969: 1159 native slice drvs for
@@ -17,7 +17,7 @@
 #
 # The check runs at eval time on the drv paths and needs no slice built.
 # If it fails, `nix-diff` each pair of paths it prints.
-{ lib, project', runCommand, testSrc, compiler-nix-name, evalPackages, evalSystem
+{ lib, stdenv, project', runCommand, testSrc, compiler-nix-name, evalPackages, evalSystem
 , testCabalProjectLocal, testInputMap }:
 
 let
@@ -52,6 +52,18 @@ let
   coverageDrvs = drvPaths coverageLib;
   forked = lib.filter (n: plainDrvs.${n} != coverageDrvs.${n})
     (builtins.attrNames plainDrvs);
+  # The names each slice's pkg-config can answer for: `primitive` and its
+  # closure reference none; the coverage library's slice solves its package
+  # whole, so it answers for the executable's zlib.
+  tables = {
+    primitive-lib = plain.hsPkgs.primitive.components.library.pkgconfNames;
+    coverage-lib = coverageLib.pkgconfNames;
+  };
+  expected = {
+    primitive-lib = [];
+    coverage-lib = lib.optional (!stdenv.hostPlatform.isGhcjs && !stdenv.hostPlatform.isWasm) "zlib";
+  };
+  wrongTables = lib.filter (n: tables.${n} != expected.${n}) (builtins.attrNames tables);
 in lib.recurseIntoAttrs {
   ifdInputs = {
     plain = plain.plan-nix;
@@ -79,6 +91,15 @@ in lib.recurseIntoAttrs {
         echo "    coverage: ${coverageDrvs.${n}}" >&2
       '') forked}
       echo "Run nix-diff on each pair to see what forked it." >&2
+      exit 1
+    '');
+
+  pkgconf-tables = runCommand "v2-slice-pkgconf-tables-${compiler-nix-name}" {} (
+    if wrongTables == [] then "touch $out" else ''
+      echo "slices whose pkg-config table is not the names they solve:" >&2
+      ${lib.concatMapStrings (n: ''
+        echo "  ${n}: ${builtins.toJSON tables.${n}}, expected ${builtins.toJSON expected.${n}}" >&2
+      '') wrongTables}
       exit 1
     '');
 }

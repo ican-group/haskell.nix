@@ -1,6 +1,16 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 3, 2026
+
+  * v2 slices now substitute from the haskell.nix caches.  Every slice used
+    to depend on a pkg-config table of the whole nixpkgs mapping, which the
+    test overlay in CI alters, so no slice Hydra built matched a user's
+    evaluation.  A slice now carries only the pkg-config names its solver
+    can meet, and v1 components no longer depend on the mapping at all.
+    Every v2 slice, and every v1 component or setup
+    with `pkgconfig-depends`, rebuilds once.
+
 ## October 25, 2026
 
   * Removed the `haskell-nix` knobs `emulatorNativeBuilderPackages` and
