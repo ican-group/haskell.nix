@@ -2,9 +2,69 @@
 {callProjectResults, selectedCompiler}:
 let
   # Read the plan.json file `plan-nix` derivation
-  plan-json = builtins.fromJSON (
+  plan-json-raw = builtins.fromJSON (
     builtins.unsafeDiscardStringContext (
       builtins.readFile (callProjectResults.projectNix + "/plan.json")));
+  # Build-machine twins under their own ids.
+  #
+  # The fork stage-qualifies every goal, but make-install-plan emits bare
+  # (unqualified) ids, so a package needed on BOTH machines appears twice
+  # under ONE id: a host unit and a build-machine unit (local packages'
+  # unhashed `pkga-0.1.0.0-inplace-pkga-exe`; on these plans hackage
+  # packages' `-inplace` ids too).  Everything downstream keys by id, so
+  # one twin used to be dropped -- the build one -- and a build tool's slice
+  # could only be found outside this plan (`hsPkgs.pkgsBuildBuild`, another
+  # plan.json), and a build-machine unit's deps resolved to HOST twins.
+  #
+  # Key each colliding build twin as `<id>:build` instead, and point every
+  # build-machine reference at it: a build unit's `depends`, every unit's
+  # `exe-depends` (build tools run on the build machine) and every `setup`
+  # component's `depends` (setup scripts do too).  Host references are
+  # unchanged.  Each twin then has its own package entry, its own slice and
+  # its own plan entry, so nothing about it comes from outside its closure.
+  # (`:` cannot occur in a cabal unit id, so the key cannot collide.)  A
+  # no-op for plans without two machines.
+  plan-json = plan-json-raw // {
+    install-plan =
+      let
+        stageOf = haskellLib.planUnitStage;
+        isConfigured = p: p.type == "configured";
+        hostIds = pkgs.lib.listToAttrs (pkgs.lib.concatMap
+          (p: pkgs.lib.optional (isConfigured p && stageOf p == "host")
+                { name = p.id; value = null; })
+          plan-json-raw.install-plan);
+        # Configured OR pre-existing: in a two-stage plan the build
+        # machine's installed boot libs are pre-existing units, and the
+        # ones registered without an `-inplace` suffix (`rts-1.0.3`,
+        # `ghc-internal-9.1400.0`, ...) share their id with the host's
+        # from-source unit.
+        isBuildTwin = p:
+          (isConfigured p || p.type == "pre-existing")
+          && stageOf p == "build" && hostIds ? ${p.id};
+        twinIds = pkgs.lib.listToAttrs (pkgs.lib.concatMap
+          (p: pkgs.lib.optional (isBuildTwin p) { name = p.id; value = null; })
+          plan-json-raw.install-plan);
+        toBuild = id: if twinIds ? ${id} then "${id}:build" else id;
+        rewriteComponents = onBuild: pkgs.lib.mapAttrs (n: c:
+          c
+          // pkgs.lib.optionalAttrs (c ? depends && (onBuild || n == "setup"))
+               { depends = map toBuild c.depends; }
+          // pkgs.lib.optionalAttrs (c ? exe-depends)
+               { exe-depends = map toBuild c.exe-depends; });
+        rewrite = p:
+          if !(isConfigured p || p.type == "pre-existing") then p
+          else let onBuild = stageOf p == "build"; in
+            p
+            // pkgs.lib.optionalAttrs (isBuildTwin p) { id = "${p.id}:build"; }
+            // pkgs.lib.optionalAttrs (p ? depends && onBuild)
+                 { depends = map toBuild p.depends; }
+            // pkgs.lib.optionalAttrs (p ? exe-depends)
+                 { exe-depends = map toBuild p.exe-depends; }
+            // pkgs.lib.optionalAttrs (p ? components)
+                 { components = rewriteComponents onBuild p.components; };
+      in if twinIds == {} then plan-json-raw.install-plan
+         else map rewrite plan-json-raw.install-plan;
+  };
   # Add context back to strings from `plan.json` that reference store paths.
   # Uses concatenation with a zero-length context string instead of
   # builtins.appendContext (which fails for store paths that don't exist locally).
@@ -45,34 +105,9 @@ let
   # only arises when a boot lib is rebuilt at its bundled version under the
   # stable-haskell `-inplace` ipid scheme; ordinary projects never produce that
   # pairing, so this is a no-op for them.
-  # The fork stage-qualifies every goal, and make-install-plan emits the
-  # bare (unqualified) ids — so a package needed by BOTH stages appears
-  # twice under ONE id: a HOST twin and a BUILD twin (setup scopes and
-  # build tools are build-stage).  For hash-id packages the twins differ
-  # only in their staged paths, but deterministic-id local/inplace
-  # packages can differ MATERIALLY (leksah: host gi-glib depends on
-  # haskell-gi-overloading-0.0 per the project constraint, while the
-  # build twin — consumed by downstream gi-* setups — took the default
-  # 1.0).  Everything here keys by id, so exactly one twin can own the
-  # key: the HOST one (hsPkgs components are host artifacts).  Dropped
-  # BUILD twins need no package definition or slice — a consuming
-  # slice's cabal re-plans and builds build-stage goals in-slice (the
-  # unit-id checks tolerate them), and the host twin's repo fragment
-  # carries the same name+version+source.  Their DEP SETS remain
-  # available to the setup-constraint machinery via the raw
-  # `plan-json-by-id-build` index (modules/install-plan/
-  # override-package-by-name.nix).
-  hostConfiguredIds = pkgs.lib.listToAttrs (pkgs.lib.concatMap
-    (p: pkgs.lib.optional
-          (p.type == "configured" && haskellLib.planUnitStage p == "host")
-          { name = p.id; value = null; })
-    plan-json.install-plan);
-  buildTwinOfHost = p:
-    p.type == "configured"
-    && haskellLib.planUnitStage p == "build"
-    && hostConfiguredIds ? ${p.id};
-  install-plan-staged =
-    builtins.filter (p: !(buildTwinOfHost p)) plan-json.install-plan;
+  # Build-machine twins no longer share their host twin's id (see
+  # `plan-json` above), so there is nothing to drop here.
+  install-plan-staged = plan-json.install-plan;
 
   configuredById = pkgs.lib.listToAttrs (pkgs.lib.concatMap
     (p: pkgs.lib.optional (p.type == "configured") { name = p.id; value = p; })

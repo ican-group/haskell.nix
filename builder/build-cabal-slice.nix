@@ -70,6 +70,11 @@ let outerGhc = ghc; in
                              # failed with "The program 'ar' is required but it
                              # could not be found" -- so `buildStageCc` and the
                              # native binutils are added as build-platform deps.
+, buildStoreSlices ? []      # A two-stage slice's BUILD-machine tool slices
+                             # (comp-v2-builder `buildStageToolSlices`):
+                             # composed into `store/build/<platform>`, so
+                             # cabal's per-machine receipt check finds the
+                             # tools installed instead of rebuilding them.
 , depSlices ? []
 , localRepo ? null           # derivation with <pkg>-<ver>.tar.gz files
 , v2Fragment ? null          # per-package build-time-composition fragment
@@ -917,6 +922,54 @@ stdenv.mkDerivation ({
       fi
     done
     sliceMark "composed starting store from $depSliceCount dep slices"
+    ${lib.optionalString (twoStage && buildStoreSlices != []) (
+      # Build-machine tool slices.  A build-machine slice runs cabal
+      # single-stage with the native compiler, so its units sit in its
+      # `store/host/<native platform>`; here they are the BUILD store.
+      # Only that platform's dir, and only slices marked `build-machine`
+      # (a tool's transitive deps can include host slices, and a musl
+      # host shares the glibc build platform's dir name).  Receipts are
+      # copied, not linked, and the db recached, so a tool cabal still
+      # decides to rebuild (a unit-id mismatch) is written over cleanly.
+      ''
+      buildPlatformDir=$(${twoStageBuildGhc}/bin/ghc --info \
+        | sed -n 's/.*("Target platform","\([^"]*\)").*/\1/p' | head -1)
+      declare -A seenBuildDeps
+      buildDepCount=0
+      addBuildDep() {
+        local d=$1
+        [ -n "$d" ] && [ -f "$d/nix-support/build-machine" ] \
+          && [ -d "$d/store/host/$buildPlatformDir" ] \
+          && [ -z "''${seenBuildDeps[$d]:-}" ] || return 0
+        seenBuildDeps[$d]=1
+        buildDepCount=$((buildDepCount + 1))
+        mkdir -p "$storeDir/build/$buildPlatformDir"
+        lndir -silent "$d/store/host/$buildPlatformDir" "$storeDir/build/$buildPlatformDir"
+      }
+      for tool in ${lib.concatMapStringsSep " " toString buildStoreSlices}; do
+        addBuildDep "$tool"
+        if [ -f "$tool/nix-support/transitive-deps" ]; then
+          while IFS= read -r tdep; do
+            addBuildDep "$tdep"
+          done < "$tool/nix-support/transitive-deps"
+        fi
+      done
+      buildStoreDir=$storeDir/build/$buildPlatformDir
+      if [ -d "$buildStoreDir" ]; then
+        for f in "$buildStoreDir"/units/*; do
+          [ -L "$f" ] || continue
+          cp --remove-destination "$(readlink -f "$f")" "$f"
+          chmod u+w "$f"
+        done
+        rm -f "$buildStoreDir"/package.conf.d/package.cache \
+              "$buildStoreDir"/package.conf.d/package.cache.lock
+        if [ -d "$buildStoreDir/package.conf.d" ]; then
+          ${twoStageBuildGhc}/bin/ghc-pkg \
+            --package-db="$buildStoreDir/package.conf.d" recache
+        fi
+      fi
+      sliceMark "composed build store from $buildDepCount build-tool slices"
+    '')}
 
     # --- Staged store layout (stable-haskell cabal fork) --------------
     # The fork's `v2-build` takes its install dirs and store package dbs
@@ -1479,7 +1532,9 @@ stdenv.mkDerivation ({
       cp ${builtins.toFile "program-options"   v2Fragment.programOptionsBlock}   $selfFrag/nix-support/v2-frag/program-options
       cp ${builtins.toFile "doc"               v2Fragment.docBlock}              $selfFrag/nix-support/v2-frag/doc
       cp ${builtins.toFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $selfFrag/nix-support/v2-frag/extra-lib-dirs
-      cp ${builtins.toFile "config"            v2Fragment.configBlock}           $selfFrag/nix-support/v2-frag/config
+      cp ${builtins.toFile "config-fields"     (lib.concatMapStrings (f: f + "\n") v2Fragment.configFields)} \
+        $selfFrag/nix-support/v2-frag/config-fields
+      printf '%s' ${lib.escapeShellArg v2Fragment.stage} > $selfFrag/nix-support/v2-frag/stage
       cp ${builtins.toFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
         $selfFrag/nix-support/v2-frag/setup-constraints
       cp ${pkgs.writeText "source-repo-block" v2Fragment.sourceRepoBlock} \
@@ -1493,6 +1548,22 @@ stdenv.mkDerivation ({
         addBlk "$dep"
         [ -f "$dep/nix-support/transitive-deps" ] && while IFS= read -r d; do addBlk "$d"; done < "$dep/nix-support/transitive-deps"
       done
+      ${lib.optionalString (twoStage && buildStoreSlices != []) (
+        # The build-tool slices' fragments too, so this cabal plans each tool
+        # the way the plan (and the tool's own slice) did: alex's config
+        # fields, deriveConstants' `source-repository-package` block.
+        # Without them the tool was planned under another unit id and
+        # rebuilt here despite the composed one.  A tool whose package also
+        # has a host fragment here (hspec-discover) must be added too: the
+        # config composition keeps the two stages apart
+        # (compose-config-blocks.awk), and the other block groups prefer
+        # the host fragment (`sortedByNameHostFirst`).
+        ''
+        for tool in ${lib.concatMapStringsSep " " toString buildStoreSlices}; do
+          addBlk "$tool"
+          [ -f "$tool/nix-support/transitive-deps" ] && while IFS= read -r d; do addBlk "$d"; done < "$tool/nix-support/transitive-deps"
+        done
+      '')}
 
       # depends-closure fragments (extra-packages + constraints scope).
       # Seeded purely from the library `depends` edges (`libDepSlices` =
@@ -1516,6 +1587,46 @@ stdenv.mkDerivation ({
       # extra-package), so we keep just one — matching how the Nix side
       # dedups via `sliceCanonicalNames` / `libConstraintPins` (by name).
       sortedByName() { local f; for f in "$@"; do printf '%s\t%s\n' "$(cat "$f"/nix-support/v2-frag/pkg-name)" "$f"; done | sort -t"$(printf '\t')" -k1,1 -u; }
+
+      # A fragment's stage as this cabal sees it.  A single-stage cabal
+      # (no `--with-build-compiler`) has only host units, whatever plan the
+      # fragment's unit came from.
+      fragStage() {
+        ${if twoStage
+          then ''cat "$1/nix-support/v2-frag/stage" 2>/dev/null || echo host''
+          else "echo host"}
+      }
+      # One fragment per package name, preferring the HOST unit's: a plain
+      # `package <name>` stanza's program options (`ghc-options`, ...)
+      # reach only host units under the fork, so a host package's blocks
+      # must come from its host fragment, not a build-machine twin's.  The
+      # store path breaks remaining ties, so the choice never depends on
+      # the order of the fragments.
+      sortedByNameHostFirst() {
+        local f
+        for f in "$@"; do
+          printf '%s\t%s\t%s\n' "$(cat "$f"/nix-support/v2-frag/pkg-name)" \
+            "$([ "$(fragStage "$f")" = host ] && echo 0 || echo 1)" "$f"
+        done | LC_ALL=C sort -t"$(printf '\t')" -k1,1 -k2,2 -k3,3 \
+             | awk -F'\t' '!seen[$1]++ { print $1 "\t" $3 }'
+      }
+      # `package <name>` / `package <stage>:*` configuration blocks from the
+      # closure's fragments (see compose-config-blocks.awk).
+      composeConfigBlocks() {
+        local f n st line
+        for f in "$@"; do
+          [ -f "$f/nix-support/v2-frag/config-fields" ] || continue
+          n=$(cat "$f/nix-support/v2-frag/pkg-name")
+          st=$(fragStage "$f")
+          printf '%s\t%s\t-\n' "$n" "$st"
+          while IFS= read -r line; do
+            [ -n "$line" ] && printf '%s\t%s\t%s\n' "$n" "$st" "$line"
+          done < "$f/nix-support/v2-frag/config-fields"
+        done | LC_ALL=C sort -u \
+             | awk -f ${./compose-config-blocks.awk} \
+             | LC_ALL=C sort \
+             | awk -F'\t' '{ k = $1 SUBSEP $2; if (k != prev) { print "package " $2; prev = k } print "  " $3 }'
+      }
 
       # Is `<pkg> ==<ver>` (a fragment's version pin) already composed
       # into the staged store db?  Used below to route such deps through
@@ -1560,11 +1671,12 @@ stdenv.mkDerivation ({
         done < <(sortedByName "''${libFrags[@]}")
         [ -n "$epline" ] && echo "extra-packages: $epline"
 
-        # Seven block groups, grouped by type, name-sorted across the closure.
-        # `config` is the configuration-pragma delta against the skeleton's
-        # `package *` baseline (v2-project-globals.nix `perPkgConfigBlocks`).
-        for blk in config flags ghc-options configure-options program-options doc extra-lib-dirs; do
-          while IFS=$'\t' read -r name f; do cat "$f/nix-support/v2-frag/$blk"; done < <(sortedByName "''${blkFrags[@]}")
+        # Configuration blocks, composed from the closure's own units'
+        # config fields (compose-config-blocks.awk); then the other block
+        # groups, grouped by type, name-sorted across the closure.
+        composeConfigBlocks "''${blkFrags[@]}"
+        for blk in flags ghc-options configure-options program-options doc extra-lib-dirs; do
+          while IFS=$'\t' read -r name f; do cat "$f/nix-support/v2-frag/$blk"; done < <(sortedByNameHostFirst "''${blkFrags[@]}")
         done
 ${lib.optionalString (metadataSourceFrags != []) ''
         # Plan flag assignments for metadata-staged (solver-only)
@@ -2503,6 +2615,12 @@ ${lib.optionalString (metadataSourceFrags != []) ''
         fi
       done
     } | sort -u > $out/nix-support/transitive-deps
+    ${lib.optionalString (buildPlatformCompiler
+        || (!twoStage && stdenv.hostPlatform.config == stdenv.buildPlatform.config))
+      # Marks a slice whose units run on the build machine (a two-stage
+      # plan's build-machine unit, or any native slice) for a two-stage
+      # consumer's `buildStoreSlices` compose.
+      "touch $out/nix-support/build-machine"}
 
     ${lib.optionalString (v2Fragment != null) ''
       # --- v2 build-time-composition fragment (additive; STEP 1) -----
@@ -2534,7 +2652,9 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       cp ${builtins.toFile "program-options"   v2Fragment.programOptionsBlock}   $out/nix-support/v2-frag/program-options
       cp ${builtins.toFile "doc"               v2Fragment.docBlock}              $out/nix-support/v2-frag/doc
       cp ${builtins.toFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $out/nix-support/v2-frag/extra-lib-dirs
-      cp ${builtins.toFile "config"            v2Fragment.configBlock}           $out/nix-support/v2-frag/config
+      cp ${builtins.toFile "config-fields"     (lib.concatMapStrings (f: f + "\n") v2Fragment.configFields)} \
+        $out/nix-support/v2-frag/config-fields
+      printf '%s' ${lib.escapeShellArg v2Fragment.stage} > $out/nix-support/v2-frag/stage
       printf '%s' ${lib.escapeShellArg v2Fragment.constraintLine} > $out/nix-support/v2-frag/constraint
       cp ${builtins.toFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
         $out/nix-support/v2-frag/setup-constraints

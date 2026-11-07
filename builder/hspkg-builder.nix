@@ -108,8 +108,15 @@ let
                   && (p.pkg-version or null) == package.identifier.version
                   && stagePred p)
               plan;
-            hostSibs = sibsOf (p: pkgs.haskell-nix.haskellLib.planUnitStage p == "host");
-            sibs = if hostSibs != [] then hostSibs else sibsOf (_: true);
+            # Siblings at THIS unit's stage: a build-machine twin
+            # (`<id>:build`, lib/load-cabal-plan.nix) takes its build
+            # siblings' deps, never the host ones (which would put host
+            # slices in a build-machine slice's closure).
+            ownEntry = byId.${package.identifier.unit-id or ""} or null;
+            ownStage = if ownEntry == null then "host"
+                       else pkgs.haskell-nix.haskellLib.planUnitStage ownEntry;
+            stageSibs = sibsOf (p: pkgs.haskell-nix.haskellLib.planUnitStage p == ownStage);
+            sibs = if stageSibs != [] then stageSibs else sibsOf (_: true);
             # NOT the `setup` component: setup deps are a separate
             # solver universe (`<pkg>:setup.<dep>` qualifiers,
             # BUILD-stage under the fork).  Folding them in here sends

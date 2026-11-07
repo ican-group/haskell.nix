@@ -52,8 +52,7 @@
                          # build-stage under the fork).  Defaults to
                          # `planJsonByPlanId` when the project doesn't
                          # provide it.
-, planV2Globals ? {}     # { projectConfigPragmas; perPkgConfigBlocks;
-                         #   docEnabledNames; flagsByName; }
+, planV2Globals ? {}     # { pragmasOf; docEnabledNames; }
                          # derived once from the plan (see
                          # `builder/v2-project-globals.nix`), shared across slices.
 , homeDependIds    ? []  # [{ name; version; }] — sibling-component LIB deps from plan-json
@@ -70,12 +69,16 @@ let
   pkgVersion = package.identifier.version;
   ghcPkgVersion = ghc.version;
 
-  # Project-global data computed once from the plan (see
-  # `builder/v2-project-globals.nix`), not per slice.
+  # Data computed once per project (see `builder/v2-project-globals.nix`).
+  # `pragmasOf` is a pure configure-args translation, applied below to this
+  # slice's own plan units only.  `docEnabledNames` is looked up for this
+  # slice's OWN package name only, so a slice carries one boolean about
+  # itself, never the set.  How that boolean is decided (whether `-haddock`
+  # means `documentation: True`) reads the project text (see
+  # `projectSetsDocumentation` there) -- an accuracy compromise, not a
+  # sharing one; a per-unit plan.json field from nix-tools would remove it.
   docEnabledNames      = planV2Globals.docEnabledNames or {};
-  planFlagsByName      = planV2Globals.flagsByName or {};
-  projectConfigPragmas = planV2Globals.projectConfigPragmas or "";
-  perPkgConfigBlocks   = planV2Globals.perPkgConfigBlocks or {};
+  pragmasOf            = planV2Globals.pragmasOf or (_: []);
 
   # Resolve a dependency package record in `hsp` (`hsPkgs` or
   # `hsPkgs.pkgsBuildBuild`) by name, disambiguating by version.
@@ -185,10 +188,24 @@ let
   # entries.  Use `package-ids-by-name` (from
   # modules/install-plan/override-package-by-name.nix) to walk
   # every plan id for a given canonical name.
+  #
+  # Only this slice's OWN plan units' configs: the name also covers units
+  # outside this node's closure -- a host twin of a build-machine unit
+  # (android's host hsc2hs carries the project's `-optl-static -optl-ldl`,
+  # which the fork applies to host units only), another version, a sibling
+  # component.  The canonical-name entry (module config not keyed by plan
+  # id) is kept only when no plan id of ours is present.
+  ownPlanIdSet = lib.listToAttrs
+    (map (p: lib.nameValuePair (p.id or "") true) ourPlanUnits);
   cfgsForCanonical = pname:
-    map (id: pkgSet.${id})
-      (lib.filter (id: pkgSet ? ${id})
-        (packageIdsByName.${pname} or [ pname ]));
+    let
+      ids = lib.filter (id: pkgSet ? ${id})
+        (packageIdsByName.${pname} or [ pname ]);
+      own = lib.filter (id: ownPlanIdSet ? ${id}) ids;
+    in map (id: pkgSet.${id})
+         (if pname != pkgName then ids
+          else if own != [] then own
+          else lib.filter (id: id == pname) ids);
 
   componentEntries = cfg:
     let comps = cfg.components or {};
@@ -212,12 +229,12 @@ let
   # reproducing the assignment cabal-install actually saw at plan
   # time.  Hackage / repo-tar / local packages keep the module-flag
   # behaviour (matches what they got at plan time too).
-  # `planFlagsByName` (project-global) maps each source-repo package to
-  # its plan-json flags; non-source-repo packages are absent → `null`.
+  # Read from this slice's own plan unit; non-source-repo packages → `null`.
   flagBlockFor = pname:
     let
       moduleFlags = lib.foldl' (acc: cfg: acc // (cfg.flags or {})) {} (cfgsForCanonical pname);
-      planFlags = planFlagsByName.${pname} or null;
+      planFlags =
+        if pname == pkgName && isSourceRepoPkg then thisPlanEntry.flags or {} else null;
       flagAttrs = if planFlags != null then planFlags else moduleFlags;
       toToken = n: v: (if v then "+" else "-") + n;
       flagTokens = lib.mapAttrsToList toToken flagAttrs;
@@ -556,8 +573,15 @@ let
   # per transitive build-tool so cabal short-circuits the build.
   # The post-install "exactly one captured unit-id" check then
   # verifies cabal really did skip the tool's build.
+  #
+  # The plan id rides along (`homeDepSliceOf` resolves by id first): a
+  # build-machine twin's dep is `<id>:build`, and its bare name resolves to
+  # the HOST package (lib/load-cabal-plan.nix).
   externalDepIds = haskellLib.uniqueWithName
-    (map (d: { name = d.identifier.name; version = d.identifier.version; }) externalDeps
+    (map (d: { name = d.identifier.name; version = d.identifier.version; }
+             // lib.optionalAttrs ((d.identifier.unit-id or null) != null)
+                  { id = d.identifier.unit-id; })
+         externalDeps
      ++ lib.filter (nv: nv.name != pkgName)
           (homeDependIdsInClosure ++ homeBuildToolIds));
 
@@ -603,7 +627,19 @@ let
   # but still want the library's transitive dep tarballs in the
   # slicing repo, so the solver can plan the library's `build-depends`
   # when cabal pulls it in via `extra-packages:`.
-  ownLibPkg = lookupDepPkg hsPkgs pkgName pkgVersion;
+  # A build-machine unit's own library is its package's BUILD-machine
+  # library unit (by plan id); the bare name resolves to the host one.
+  ownLibPkg =
+    if isBuildStageUnit
+    then
+      let ids = lib.filter (id:
+            let e = planJsonByPlanId.${id} or null;
+            in e != null && (e.pkg-version or null) == pkgVersion
+               && (e.component-name or "lib") == "lib"
+               && haskellLib.planUnitStage e == "build")
+            (packageIdsByName.${pkgName} or []);
+      in if ids == [] then null else hsPkgs.${builtins.head ids} or null
+    else lookupDepPkg hsPkgs pkgName pkgVersion;
   ownLibV2 =
     if isLibrary || ownLibPkg == null
        || !(ownLibPkg ? components)
@@ -979,6 +1015,7 @@ let
      # build-build slices must stay out of `propagatedBuildInputs` here.
      ++ lib.optionals (!isCross) buildToolSlices
      ++ transitiveBuildToolSlices
+     ++ lib.optionals isBuildStageUnit closureBuildToolSlices
      ++ homeDepSlices
      ++ setupDepSlices);
 
@@ -1242,14 +1279,18 @@ let
   # (e.g. `alex.exe`) which can't run on the build platform; v1's
   # `lookupExeDependency` already uses `pkgsBuildBuild` for the
   # same reason.
-  homeDepExeSlices =
+  #
+  # Not for two-stage plans: their sibling tools are this plan's own
+  # build-machine units (`closureBuildToolSlices`), and `pkgsBuildBuild`
+  # is another plan.
+  homeDepExeSlices = lib.optionals (!isTwoStagePlan) (
     let
       exesOf = nv:
         let p = lookupDepPkg hsPkgs.pkgsBuildBuild nv.name (nv.version or null);
         in if p != null && (p ? components) && (p.components ? exes)
            then lib.filter (v: v != null) (lib.attrValues p.components.exes)
            else [];
-    in lib.concatMap exesOf homeBuildToolIds;
+    in lib.concatMap exesOf homeBuildToolIds);
 
   extraNativeBuildInputs = haskellLib.uniqueWithName (lib.filter
     (t: t != null)
@@ -1278,6 +1319,50 @@ let
   # `.passthru.v2SourceFrag` forces only the tool's source tarball, never
   # its `drvPath`/`depSlices`, so no cycle.  Empty on native / single-stage
   # cross (build tools flow through their normal paths).
+  # The same tools as BUILT slices, for a two-stage (host) slice to compose
+  # into its build store (build-cabal-slice `buildStoreSlices`).  Each tool's
+  # exe slice is a build-machine unit's slice (`isBuildStageUnit`: native
+  # compiler, single-stage), whose unit id is the plan's -- the stage does
+  # not enter it -- so the consumer's cabal finds its receipt and skips the
+  # rebuild (mingw `network` rebuilt hsc2hs in every slice that needed it).
+  # Resolved by plan id like the source frags.  Not for build-machine slices
+  # themselves (single-stage: their tools are host units to their cabal).
+  #
+  # A tool that also has a host twin (a project package's exe, pkgb's
+  # `pkga:pkga-exe`; hsc2hs; hspec-discover) is keyed `<id>:build` in the
+  # plan (lib/load-cabal-plan.nix), and `exe-depends` point at that key, so
+  # the lookup gets this plan's own build-machine unit.  A lookup that does
+  # not give a build-machine slice is skipped (the tool is then built in
+  # the consumer, as before), never replaced from another plan.
+  # `uniqueWithName` also puts the list in a canonical order (by name), so
+  # the derivation does not depend on the closure's traversal order.
+  buildStageToolSlices =
+    lib.optionals (isTwoStagePlan && sliceTwoStage) closureBuildToolSlices;
+  # The build-machine tool slices this unit's closure reaches through
+  # `exe-depends`, from this plan.  A two-stage slice composes them into its
+  # BUILD store (`buildStageToolSlices`); a build-machine slice -- single
+  # stage, where they are ordinary host units to its cabal -- composes them
+  # as dep slices (`depSlices`), or its cabal builds them in-slice
+  # (genprimopcode's alex / happy) and the capture check rejects the extras.
+  closureBuildToolSlices =
+    let
+      exeIn = pkg: exe:
+        if pkg != null && pkg ? components && pkg.components ? exes
+        then pkg.components.exes.${exe} or null
+        else null;
+      isBuildSlice = s: s != null && (s.passthru.isSlice or false)
+                        && (s.passthru.isBuildStageUnit or false);
+    in
+    haskellLib.uniqueWithName (lib.optionals isTwoStagePlan
+      (lib.filter isBuildSlice
+        (map (e: exeIn (hsPkgs.${e.key} or null)
+                       (lib.removePrefix "exe:" (e.entry.component-name or "")))
+          (lib.filter (e:
+              lib.hasPrefix "exe:" (e.entry.component-name or "")
+              && (e.entry.pkg-name or "") != pkgName
+              && haskellLib.planUnitStage e.entry == "build")
+            allDepClosure))));
+
   buildToolSourceFrags =
     lib.optionals isTwoStagePlan
       (let
@@ -1773,11 +1858,19 @@ let
           else if ctype == "test" then "test:${cname}"
           else if ctype == "bench" then "bench:${cname}"
           else null;
+        # Same component AND same stage as this slice's unit: a
+        # build-machine twin (`<id>:build`) and its host twin have the same
+        # `component-name`, and the host one's configure-args (android's
+        # `-optl-static -optl-ldl`) must not reach the build-machine slice.
+        myStage = if myUnit == null then "host" else haskellLib.planUnitStage myUnit;
         compUnits =
           if planCompName == null then []
-          else lib.filter (p: (p.component-name or null) == planCompName) allUnits;
+          else lib.filter (p: (p.component-name or null) == planCompName
+                              && haskellLib.planUnitStage p == myStage) allUnits;
+        stageUnits = lib.filter (p: haskellLib.planUnitStage p == myStage) allUnits;
     in if isLibrary && myUnit != null then [ myUnit ]
        else if compUnits != [] then compUnits
+       else if stageUnits != [] then stageUnits
        else allUnits;
 
   # `depends` + `exe-depends` — for the slicing repo's tarball set
@@ -1864,10 +1957,18 @@ let
     allow-boot-library-installs: True
   '';
 
-  # `projectConfigPragmas` (the `package *` / per-package cabal.project
-  # pragma blocks derived from plan.json's `configure-args`) is computed
-  # once per project in `builder/v2-project-globals.nix` and bound near
-  # the top of this file, rather than recomputed per slice.
+  # This unit's own cabal.project config fields, from its plan.json
+  # `configure-args` (`<field>: <value>`, sorted): the fields every one of
+  # this slice's own units agrees on.  cabal hashes them into the unit id,
+  # so the slice (and every consumer composing this fragment) must state
+  # them exactly.
+  configFields =
+    let lists = map (p: pragmasOf (p.configure-args or [])) ourPlanUnits;
+    in if lists == [] then []
+       else lib.filter (f: lib.all (l: lib.elem f l) lists) (builtins.head lists);
+  # The machine this unit is planned for.  Single-stage plans have only
+  # host units.
+  unitStage = if isTwoStagePlan && planStage == "build" then "build" else "host";
 
   # Cross GHCs only ship the unversioned bin (e.g.
   # `${ghc.targetPrefix}ghc`), not the `-X.Y.Z` suffixed one, so
@@ -1974,26 +2075,18 @@ let
   # extra-packages, the six per-package block groups, constraints)
   # composed at build time from the per-package fragments — so the
   # dependency-closure walk never runs in the Nix evaluator.
-  # A build-machine unit's slice runs cabal single-stage with the native
-  # compiler, so its units are all Host to that cabal, and a host-scoped
-  # field from the project baseline -- which the two-stage plan applied to
-  # host units only (`hostScopedFields` in v2-project-globals.nix) --
-  # reaches them.  musl's `executable-static: True` made the native alex in
-  # the setup-scope Cabal-syntax slice link `-static` against glibc
-  # (`cannot find -lc`).
-  # The baseline value is rewritten rather than overridden by a second
-  # `package *` stanza: the fork kept the first stanza's value.
-  sliceConfigPragmas =
-    if isBuildStageUnit
-    then lib.replaceStrings [ "  executable-static: True\n" ]
-                            [ "  executable-static: False\n" ]
-                            projectConfigPragmas
-    else projectConfigPragmas;
+  #
+  # No `package *` / stage-stanza configuration text here: that would be
+  # computed over the whole plan, and a unit would get a different slice in
+  # every project whose OTHER packages are configured differently.  Each
+  # slice instead carries its own unit's config fields in its fragment
+  # (`configFields`, `unitStage`), and build-cabal-slice composes the
+  # `package <name>` blocks of its closure at build time.
 
   localCabalProject = ''
     with-compiler: ${withCompiler}
     active-repositories: hackage.haskell-nix
-    ${packagesLine}${solverRelaxations}${sliceConfigPragmas}${hsc2hsViaAsmProject}${extraProject}${extraIncludeAndLibDirs}'';
+    ${packagesLine}${solverRelaxations}${hsc2hsViaAsmProject}${extraProject}${extraIncludeAndLibDirs}'';
 
   # Untouched packages keep their revised .cabal separately from the
   # upstream tarball. Patches/hooks may change that metadata after the
@@ -2282,9 +2375,12 @@ let
     programOptionsBlock   = programOptionsBlockFor   pkgName;
     docBlock              = documentationBlockFor    pkgName;
     extraLibDirsBlock     = extraLibDirsBlockFor     pkgName;
-    # This package's `package <name>` configuration-pragma delta against
-    # the `package *` baseline in `projectConfigPragmas`.
-    configBlock           = perPkgConfigBlocks.${pkgName} or "";
+    # This unit's own config fields (`<field>: <value>` lines, sorted) and
+    # its stage.  The consumer composes `package <name>` blocks from its
+    # closure's fragments at build time (build-cabal-slice), so no slice
+    # carries a project-wide `package *` baseline.
+    configFields          = configFields;
+    stage                 = unitStage;
     # Consumer-side constraint pin.  Slices are never `pre-existing`,
     # so normally `source` — it forces cabal off a GHC-bundled unit when
     # a boot library is reinstalled at the same version.  A local-mode
@@ -2344,6 +2440,7 @@ let
     ghc = sliceGhc;
     twoStage = sliceTwoStage;
     buildPlatformCompiler = isBuildStageUnit;
+    buildStoreSlices = buildStageToolSlices;
     # Repo + cabal.project are composed at build time from `v2Fragment`;
     # `localRepo`/the full Nix `cabalProject` are intentionally NOT
     # referenced here so the per-slice closure walk stays out of eval.
@@ -2745,6 +2842,7 @@ let
     ghc = sliceGhc;
     twoStage = sliceTwoStage;
     buildPlatformCompiler = isBuildStageUnit;
+    buildStoreSlices = buildStageToolSlices;
     localRepo = null;
     preBuild = slicePreBuildV2;
     target = targetSelector;
@@ -2829,6 +2927,7 @@ let
     ghc = sliceGhc;
     twoStage = sliceTwoStage;
     buildPlatformCompiler = isBuildStageUnit;
+    buildStoreSlices = buildStageToolSlices;
     localRepo = null;
     preBuild = slicePreBuildV2;
     target = targetSelector;
@@ -2965,7 +3064,7 @@ let
       profiled = profiledThrow;
       dwarf = dwarfThrow;
       passthru = base.passthru // {
-        inherit checkAgainstPlan;
+        inherit checkAgainstPlan isBuildStageUnit;
         isSlice = true;
         profiled = profiledThrow;
         dwarf = dwarfThrow;

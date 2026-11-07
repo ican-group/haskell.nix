@@ -370,36 +370,23 @@ lib.runTests {
       expected = sourceRepos lf;
     };
 
-  # The `package *` baseline is in every v2 slice's cabal.project, so a
-  # local package configured differently (here `coverage: True`) must not
-  # change it, nor add blocks for the other packages.
-  testV2ProjectGlobalsOutlierStaysLocal =
+  # A v2 slice's config fields come from its own plan unit's
+  # configure-args only (no project-wide baseline), sorted so the fragment
+  # text is canonical.
+  testV2PragmasOfOwnUnit =
     let
-      unit = name: args: {
-        type = "configured";
-        pkg-name = name;
-        configure-args = [ "--prefix=./dist-newstyle/store/host/x86_64-unknown-linux"
-                           "--disable-shared" "--enable-optimization" ] ++ args;
+      globals = import ../builder/v2-project-globals.nix { inherit lib; } {
+        planJson = [];
       };
-      deps = [ (unit "primitive" [ "--disable-coverage" ])
-               (unit "deepseq-extra" [ "--disable-coverage" ]) ];
-      globals = planJson: import ../builder/v2-project-globals.nix { inherit lib; } {
-        inherit planJson;
-        inherit (haskellLib) planUnitStage;
-      };
-      plain = globals (deps ++ [ (unit "local-a" [ "--disable-coverage" ]) ]);
-      cov   = globals (deps ++ [ (unit "local-b" [ "--enable-coverage" ]) ]);
     in {
-      expr = {
-        sameBaseline = plain.projectConfigPragmas == cov.projectConfigPragmas;
-        plainBlocks = plain.perPkgConfigBlocks;
-        covBlocks = cov.perPkgConfigBlocks;
-      };
-      expected = {
-        sameBaseline = true;
-        plainBlocks = {};
-        covBlocks = { local-b = "package local-b\n  coverage: True\n"; };
-      };
+      expr = globals.pragmasOf [
+        "--prefix=./dist-newstyle/store/host/x86_64-unknown-linux"
+        "--enable-coverage" "--disable-shared" "--enable-optimization"
+        "--disable-debug-info" "--ghc-option=-O2" "--disable-shared"
+      ];
+      expected = [
+        "coverage: True" "debug-info: 0" "optimization: True" "shared: False"
+      ];
     };
 
   testParseRepositoryBlock =
