@@ -763,6 +763,17 @@ in {
       # `ghc` has no Backpack, tests or benchmarks, and is the one package
       # whose id the compiler hard-codes.
       v2LocalPackageSliceNames = [ "ghc" ];
+      # `allow-boot-library-installs: True` (below, outside the boot-package
+      # markers so the shell keeps it too): cabal 3.19 (stable-haskell/merge)
+      # brings back upstream's hard "non-reinstallable" constraints, so
+      # `base`, `ghc-internal`, `ghc`, `template-haskell`, ... must resolve
+      # to an INSTALLED instance -- and the -target compiler's db is empty:
+      #   rejecting: base-4.22.1.0 (constraint from non-reinstallable
+      #   package requires installed instance)
+      # The older fork had dropped those constraints entirely (its Note
+      # [No non-reinstallable constraints]).  With the flag, the merge
+      # adds only wired-in unit-id pins, which this compiler does not
+      # report, and never pins a package the project lists as a target.
       cabalProjectLocal = lib.mkBefore ''
         -- Added by the stable-haskell boot-package injection (see the
         -- `injectStableHaskellBootPackages` option): the compiler ships no
@@ -817,6 +828,7 @@ in {
         package ${p}
           profiling-detail: none
         '') bootPkgNames}
+        allow-boot-library-installs: True
         -- Forked boot packages that live outside the GHC tree.
         source-repository-package
           type: git
