@@ -663,7 +663,7 @@ stdenv.mkDerivation ({
   LC_ALL = "en_US.UTF-8";
 } // lib.optionalAttrs (stdenv.buildPlatform.libc == "glibc") {
   LOCALE_ARCHIVE = "${buildPackages.glibcLocales}/lib/locale/locale-archive";
-} // lib.optionalAttrs (buildToolSourceFrags != [] && stdenv.buildPlatform.isDarwin) {
+} // lib.optionalAttrs (needsBuildStageCc && stdenv.buildPlatform.isDarwin) {
   # A build-stage build-tool (happy/hsc2hs) compiled from source inside a
   # ghcjs-target slice links `-static -liconv` with the NATIVE build compiler,
   # but the compiler's fixed clang-wrapper reads a `NIX_LDFLAGS_<salt>` this
@@ -671,6 +671,8 @@ stdenv.mkDerivation ({
   # honours the `LIBRARY_PATH` env var for `-l` search (salt-independent), so
   # point it at the build-platform libiconv.  Darwin only — the flag/lib layout
   # is macOS-specific and other build hosts don't hit the ghcjs-slice case.
+  # A build-machine slice of a ghcjs plan (`buildPlatformCompiler`: alex,
+  # happy as their own slices) links the same way and needs it as well.
   LIBRARY_PATH = "${pkgsBuildBuild.libiconv}/lib";
 } // {
   # GHCJS runs Template Haskell splices by linking the splice as a
@@ -1861,100 +1863,16 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       expected_pkg=${lib.escapeShellArg expectedPackage}
       allowed_build_tools=${lib.escapeShellArg
         (lib.concatStringsSep " " allowedBuildToolPackages)}
-      # The stable-haskell/merge cabal no longer prints a stage keyword in
-      # that block, but its plan.json (written by the same dry run) has a
-      # `stage` per unit.  A `<pkg>-<ver>` planned ONLY at the build stage
-      # is a build-stage unit (see the BUILD-stage note below); one that is
-      # also planned at the host stage stays subject to the check.
-      build_only_pkg_vers=""
-      if [ -f "$distDir/cache/plan.json" ]; then
-        build_only_pkg_vers=$(jq -r --arg exp "$expected_pkg" \
-            --argjson twoStage ${
-              # The merge cabal drops the build machine altogether when the
-              # build compiler matches the host one on compiler id, ABI tag
-              # and Cabal `Platform` (`sameCompiler`, ProjectPlanning.hs),
-              # which a same-arch `-target` cross does: the musl64 / static
-              # compiler and the glibc build compiler are both `ghc-9.14` on
-              # `x86_64-linux`.  Every unit is then `host`, and the build tools
-              # a two-stage slice builds itself (alex for Cabal-syntax,
-              # tests.setup-deps-boot-cabal) look like rebuilds.  In that case
-              # the filter treats the units reached only through `exe-depends`
-              # -- not through the target package's `depends` closure -- as
-              # the build-stage units they would otherwise be.  A
-              # build-stage unit's own slice (`buildPlatformCompiler`) is
-              # the same shape: one machine, the native compiler, and its
-              # build tools (alex for a setup-scope Cabal-syntax) planned
-              # beside it.
-              #
-              # Otherwise a build-stage unit is also tolerated per
-              # COMPONENT (`<pkg>-<ver>@<component>`), when the package has
-              # host units but none for that component: a test's
-              # `build-tool-depends` on a project package's exe (pkgb's
-              # `pkga:pkga-exe`, cabal-22's `hspec-discover`) is planned at
-              # the build stage while the package's library is a host unit.
-              # The old fork printed a stage keyword for each planned unit,
-              # which let the awk below skip these.
-              #
-              # Only units the target reaches (`depends` / `exe-depends`, any
-              # component) count.  The plan also has a host unit for every
-              # `source-repository-package` (deriveConstants and
-              # genprimopcode in a ghc lib slice) that nothing consumes and
-              # `cabal build :pkg:<target>` never builds; counted, those
-              # twins made the build-stage tools ghc does use look like
-              # host rebuilds.
-              if twoStage || buildPlatformCompiler then "true" else "false"} '
-          def libclosure($m):
-            . as $s
-            | ([$s[] | $m[.] | (.depends // [])
-                         + ([(.components // {}) | to_entries[]
-                             | select(.key != "setup") | .value.depends // []]
-                            | add // [])
-                | .[]] + $s | unique) as $n
-            | if ($n | length) == ($s | length) then $s
-              else ($n | libclosure($m)) end;
-          def reach($m):
-            . as $s
-            | ([$s[] | $m[.] | [(.depends // []), (.["exe-depends"] // []),
-                                 ((.components // {}) | .[]
-                                  | (.depends // []), (.["exe-depends"] // []))]
-                | add | .[]] + $s | unique) as $n
-            | if ($n | length) == ($s | length) then $s
-              else ($n | reach($m)) end;
-          .["install-plan"] as $plan
-          | ($plan | map({key: .id, value: .}) | from_entries) as $all
-          | ([$plan[] | select(.["pkg-name"] == $exp) | .id]
-             | reach($all)) as $reached
-          | [$plan[] | select(.id as $i | $reached | index($i))
-                     | {s: (.stage // .machine // "host"), id: .id,
-                        pv: "\(.["pkg-name"])-\(.["pkg-version"])",
-                        pc: "\(.["pkg-name"])-\(.["pkg-version"])@\(.["component-name"] // "")"}] as $units
-          | if $twoStage and ($units | map(select(.s == "build")) | length) == 0
-            then
-              ($plan | map({key: .id, value: .}) | from_entries) as $m
-              | ([$plan[] | select(.["pkg-name"] == $exp) | .id]
-                 | libclosure($m)) as $libIds
-              | ($units | map(select(.id as $i | $libIds | index($i)) | .pv)
-                 | unique) as $host
-              | $units | map(.pv) | unique
-              | map(select(. as $pv | $host | index($pv) | not)) | .[]
-            else
-              ($units | map(select(.s == "host") | .pv) | unique) as $host
-              | ($units | map(select(.s == "host") | .pc) | unique) as $hostComps
-              | ($units | map(select(.s == "build") | .pv) | unique
-                 | map(select(. as $pv | $host | index($pv) | not)))
-                + ($units | map(select(.s == "build") | .pc) | unique
-                   | map(select(. as $pc | $hostComps | index($pc) | not)))
-              | .[]
-            end' \
-          "$distDir/cache/plan.json" 2>/dev/null | tr '\n' ' ' || true)
-      fi
-      extras=$(awk -v expected="$expected_pkg" -v allowed="$allowed_build_tools" \
-                   -v build_only="$build_only_pkg_vers" '
+      # Strict on both machines: a build-machine unit in this list is a
+      # rebuild too.  Two-stage slices compose this plan's build-machine
+      # tool slices into their build store (`buildStoreSlices`), and
+      # build-machine slices compose theirs as dep slices, so cabal's
+      # receipt check reuses every tool; one planned here means its unit id
+      # diverged from the composed slice's, which is a bug to fix.
+      extras=$(awk -v expected="$expected_pkg" -v allowed="$allowed_build_tools" '
         BEGIN {
           n = split(allowed, a, " ")
           for (i = 1; i <= n; i++) allowed_set[a[i]] = 1
-          n = split(build_only, b, " ")
-          for (i = 1; i <= n; i++) build_only_set[b[i]] = 1
         }
         /^In order, the following / { capturing=1; next }
         capturing && /^$/ { capturing=0; next }
@@ -1966,19 +1884,7 @@ ${lib.optionalString (metadataSourceFrags != []) ''
           #   ` - host rts-headers-1.0.3 (lib) (requires build)`
           # so the `<name>-<version>` token is $3, not $2.  Skip a leading stage
           # keyword.  (A real package is never named exactly build/host/target.)
-          #
-          # BUILD-stage units are tolerated wholesale: the fork elaborates
-          # build tools (and their setup-style deps, e.g. the Cabal fork
-          # for Custom setups) as inplace units of the consuming plan, so
-          # the first slice that needs one legitimately builds it into the
-          # composed store (where unit receipts let later slices reuse it).
-          # Only HOST-stage extras indicate a real composition failure.
-          if (pkg_ver == "build") next
-          if (pkg_ver == "host" || pkg_ver == "target") pkg_ver = $3
-          if (pkg_ver in build_only_set) next
-          comp = (pkg_ver == $2) ? $3 : $4
-          gsub(/[()]/, "", comp)
-          if ((pkg_ver "@" comp) in build_only_set) next
+          if (pkg_ver == "build" || pkg_ver == "host" || pkg_ver == "target") pkg_ver = $3
           n = split(pkg_ver, parts, "-")
           for (i = n; i > 0; i--) if (parts[i] ~ /^[0-9]+(\.[0-9]+)*$/) break
           if (i <= 1) { name = pkg_ver }

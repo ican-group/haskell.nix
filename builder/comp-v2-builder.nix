@@ -1336,8 +1336,13 @@ let
   # the consumer, as before), never replaced from another plan.
   # `uniqueWithName` also puts the list in a canonical order (by name), so
   # the derivation does not depend on the closure's traversal order.
+  # Custom-setup deps are build-machine units too (the setup runs on the
+  # build machine), so their slices go in the same build store: entropy's
+  # and ghc-boot's `setup.Cabal` otherwise rebuilt in every musl slice.
   buildStageToolSlices =
-    lib.optionals (isTwoStagePlan && sliceTwoStage) closureBuildToolSlices;
+    lib.optionals (isTwoStagePlan && sliceTwoStage)
+      (haskellLib.uniqueWithName (closureBuildToolSlices
+        ++ lib.filter (s: s.passthru.isBuildStageUnit or false) setupDepSlices));
   # The build-machine tool slices this unit's closure reaches through
   # `exe-depends`, from this plan.  A two-stage slice composes them into its
   # BUILD store (`buildStageToolSlices`); a build-machine slice -- single
