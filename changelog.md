@@ -8,9 +8,12 @@ that will impact users.
     metadata sources, and its dep slices'), instead of the whole nixpkgs
     mapping.  A change to a mapping entry, such as an overlay adding to
     `haskell-nix.extraPkgconfigMappings`, now rebuilds only the slices
-    whose closure declares that name.  Slices that do still differ from
-    a user's: CI's test overlay maps `libsodium` to `libsodium-18`, so
-    slices that solve a `libsodium` dependency are not shared with it.
+    whose closure declares that name.  Previously every slice changed
+    with any mapping, so no v2 slice Hydra built (CI adds a `libsodium`
+    mapping) matched a user's evaluation, and none could be substituted.
+    Now only slices that use a remapped name differ, and those really are
+    different builds (under CI's overlay, slices that use `libsodium` are
+    built against `libsodium-18`).
   * v1 components and setups no longer carry the mapping's metadata in
     their pkg-config wrapper (`cabalPkgConfigWrapperReal`).
     `cabalPkgConfigWrapper` keeps the whole map and is now used only by
