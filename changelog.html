@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-43f91352.js";
+            window.path_to_searchindex_js = "searchindex-e0dbae51.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-5b1b9093.js"></script>
@@ -176,6 +176,18 @@
                     <main>
                         <p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="november-5-2026"><a class="header" href="#november-5-2026">November 5, 2026</a></h2>
+<p><code>builderVersion = 2</code> and the stable-haskell GHCs:</p>
+<ul>
+<li>The v2 builder’s cabal-install (<code>haskell-nix.v2-cabal-install</code>) and
+the fork nix-tools that make v2 plans (<code>nix-tools-unchecked-sh</code>) now
+come from stable-haskell’s <code>merge</code> branch, cabal-install 3.19.0.0.
+UnitIds change, so every slice rebuilds once.</li>
+<li>That cabal uses the normal cabal store rather than a project-local
+<code>dist-newstyle/store</code>, so the v2 shell now seeds the store <code>cabal path --store-dir</code> reports (usually <code>~/.cabal/store</code>).
+<code>haskell-nix-cabal-store-sync</code> takes that store dir, not a build dir,
+as its optional argument.</li>
+</ul>
 <h2 id="october-25-2026"><a class="header" href="#october-25-2026">October 25, 2026</a></h2>
 <ul>
 <li>Removed the <code>haskell-nix</code> knobs <code>emulatorNativeBuilderPackages</code> and

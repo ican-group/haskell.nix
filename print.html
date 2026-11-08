@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-43f91352.js";
+            window.path_to_searchindex_js = "searchindex-e0dbae51.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-5b1b9093.js"></script>
@@ -125680,12 +125680,9 @@ v2 shell pre-populates the project’s cabal store so a plain
 rebuilding from source — and so public sublibs that the v1
 GHC-package-db approach can’t expose to cabal show up correctly.</p>
 <p>The v2 builder’s cabal-install (<code>haskell-nix.v2-cabal-install</code>, the
-stable-haskell fork) keeps a project-local store under the build dir,
-<code>&lt;project root&gt;/dist-newstyle/store/</code>, with units under
+stable-haskell fork) uses the normal cabal store, the one <code>cabal path --store-dir</code> reports (usually <code>~/.cabal/store/</code>), with units under
 <code>host/&lt;platform&gt;/</code> (and a <code>build -&gt; host</code> link for build-stage
-units).  The project root is found the way cabal finds it: the
-nearest directory at or above <code>$PWD</code> with a <code>cabal.project</code>, else
-<code>$PWD</code>.  A project built with <code>--builddir DIR</code> re-runs
+units).  A project built with <code>--store-dir DIR</code> re-runs
 <code>haskell-nix-cabal-store-sync DIR</code>.</p>
 <p>The shell’s <code>cabal</code> has to be that same cabal-install: a different
 one computes different UnitIds (and may not read the <code>host/</code>
@@ -125699,12 +125696,12 @@ composed dep store under <code>&lt;store&gt;/.haskell-nix-gcroots/</code>
 so <code>nix-collect-garbage</code> can’t drop the slices our links point
 at.</li>
 <li>Scans every <code>&lt;unit-id&gt;.conf</code> / unit-dir / lib file in the
-composed store against the project’s existing store,
+composed store against the existing cabal store,
 classifying each as new, same, or conflict.</li>
 <li>If conflicts exist and <code>--force</code> wasn’t passed, errors out with
 a summary (and instructions to re-run with <code>--force</code>).</li>
 <li>Symlinks new (and, with <code>--force</code>, conflicting) entries from
-composedStore into the project’s store via <code>ln -s</code> (single files)
+composedStore into the cabal store via <code>ln -s</code> (single files)
 or <code>lndir</code> (unit dirs).</li>
 <li>Runs <code>ghc-pkg recache</code> on each touched package db.</li>
 </ol>
@@ -126650,6 +126647,18 @@ hix-shell
 <h1 id="changelog"><a href="#changelog" class="header">ChangeLog</a></h1>
 <p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="november-5-2026"><a class="header" href="#november-5-2026">November 5, 2026</a></h2>
+<p><code>builderVersion = 2</code> and the stable-haskell GHCs:</p>
+<ul>
+<li>The v2 builder’s cabal-install (<code>haskell-nix.v2-cabal-install</code>) and
+the fork nix-tools that make v2 plans (<code>nix-tools-unchecked-sh</code>) now
+come from stable-haskell’s <code>merge</code> branch, cabal-install 3.19.0.0.
+UnitIds change, so every slice rebuilds once.</li>
+<li>That cabal uses the normal cabal store rather than a project-local
+<code>dist-newstyle/store</code>, so the v2 shell now seeds the store <code>cabal path --store-dir</code> reports (usually <code>~/.cabal/store</code>).
+<code>haskell-nix-cabal-store-sync</code> takes that store dir, not a build dir,
+as its optional argument.</li>
+</ul>
 <h2 id="october-25-2026"><a class="header" href="#october-25-2026">October 25, 2026</a></h2>
 <ul>
 <li>Removed the <code>haskell-nix</code> knobs <code>emulatorNativeBuilderPackages</code> and
