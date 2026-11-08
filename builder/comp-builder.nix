@@ -361,7 +361,7 @@ let
       "--with-ghc-pkg=${ghc.targetPrefix}ghc-pkg"
       "--with-hsc2hs=${hsc2hsCommand}"
     ] ++ lib.optional (pkgconfig != [])
-      "--with-pkg-config=${buildPackages.cabalPkgConfigWrapper.targetPrefix}pkg-config"
+      "--with-pkg-config=${buildPackages.cabalPkgConfigWrapperReal.targetPrefix}pkg-config"
       ++ lib.optionals (stdenv.hasCC or (stdenv.cc != null))
     ( # CC
       [ "--with-gcc=${stdenv.cc.targetPrefix}cc"
@@ -472,7 +472,7 @@ let
         # (The patched one, when used, is passed by path as `--with-hsc2hs`.)
         && x.identifier.name or "" != "hsc2hs")
       resolvedBuildTools)) ++
-    lib.optional (pkgconfig != []) buildPackages.cabalPkgConfigWrapper;
+    lib.optional (pkgconfig != []) buildPackages.cabalPkgConfigWrapperReal;
 
   # Unfortunately, we need to wrap ghc commands for cabal builds to
   # work in the nix-shell. See ../docs/dev/removing-with-package-wrapper.md.

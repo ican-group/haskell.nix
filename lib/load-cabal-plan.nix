@@ -287,6 +287,15 @@ let
       pkgs.lib.optionals (!isTwoStagePlan)
         (map (lookupExeDependency hsPkgs) exe-depends);
   };
+  # The pkg-config names a package's `.cabal` file declares under the plan's
+  # flags: its Cabal2Nix term read with an empty map, so every name falls to
+  # the handler, which returns it.
+  pkgconfNamesOf = file: args: if file == null then [] else
+    pkgs.lib.concatMap pkgs.lib.concatLists (pkgs.lib.catAttrs "pkgconfig"
+      (haskellLib.getAllComponents (import file (args // {
+        hsPkgs = {}; pkgconfPkgs = {};
+        errorHandler = args.errorHandler // { pkgConfDepError = name: [ name ]; };
+      }))));
   # Calculate the packages for a component
   getComponents = cabal2nixComponents: hsPkgs: p:
     let
@@ -361,14 +370,16 @@ in {
               let
                 # Read the output of `Cabal2Nix.hs`.  We need it for information not
                 # in the `plan.json` file.
-                cabal2nix = (
+                file =
                   if builtins.pathExists (nixFilesDir + "/cabal-files/${p.pkg-name}.nix")
-                    then import (nixFilesDir + "/cabal-files/${p.pkg-name}.nix")
+                    then nixFilesDir + "/cabal-files/${p.pkg-name}.nix"
                   else if builtins.pathExists (nixFilesDir + "/.plan.nix/${p.pkg-name}.nix")
-                    then import (nixFilesDir + "/.plan.nix/${p.pkg-name}.nix")
+                    then nixFilesDir + "/.plan.nix/${p.pkg-name}.nix"
+                  else null;
+                cabal2nix = if file != null then import file (args // { hsPkgs = {}; })
                   else
                     # TODO make this an error?
-                    __trace "WARNING no `.nix` file for ${p.pkg-name} in ${nixFilesDir}." {}) (args // { hsPkgs = {}; });
+                    __trace "WARNING no `.nix` file for ${p.pkg-name} in ${nixFilesDir}." {};
               in pkgs.lib.optionalAttrs (p ? pkg-src-sha256) {
                 sha256 = p.pkg-src-sha256;
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "source-repo") {
@@ -392,6 +403,7 @@ in {
                 components = getComponents cabal2nix.components hsPkgs p;
                 package = cabal2nix.package // {
                   identifier = { name = p.pkg-name; version = p.pkg-version; id = p.id; };
+                  pkgconfNames = pkgconfNamesOf file args;
                   isProject = false;
                   setup-depends = []; # The correct setup depends will be in `components.setup.depends`
                 };
@@ -408,7 +420,8 @@ in {
           name = p.id;
           value =
             {hsPkgs, ...}@args:
-              let cabal2nix = import (nixFilesDir + "/.plan.nix/${p.pkg-name}.nix") (args // { hsPkgs = {}; });
+              let file = nixFilesDir + "/.plan.nix/${p.pkg-name}.nix";
+                  cabal2nix = import file (args // { hsPkgs = {}; });
               in pkgs.lib.optionalAttrs (p ? pkg-src-sha256) {
                 sha256 = p.pkg-src-sha256;
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local" && cabal2nix ? cabal-generator) {
@@ -433,6 +446,7 @@ in {
                 components = getComponents cabal2nix.components hsPkgs p;
                 package = cabal2nix.package // {
                   identifier = { name = p.pkg-name; version = p.pkg-version; id = p.id; };
+                  pkgconfNames = pkgconfNamesOf file args;
                   isProject = true;
                   setup-depends = []; # The correct setup depends will be in `components.setup.depends`
                 };

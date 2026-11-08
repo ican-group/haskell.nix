@@ -1,6 +1,26 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 8, 2026
+
+  * A v2 slice's pkg-config table now holds only the names declared by the
+    packages its solver can meet (its own, its staged build-tool and
+    metadata sources, and its dep slices'), instead of the whole nixpkgs
+    mapping.  A change to a mapping entry, such as an overlay adding to
+    `haskell-nix.extraPkgconfigMappings`, now rebuilds only the slices
+    whose closure declares that name.  Previously every slice changed
+    with any mapping, so no v2 slice Hydra built (CI adds a `libsodium`
+    mapping) matched a user's evaluation, and none could be substituted.
+    Now only slices that use a remapped name differ, and those really are
+    different builds (under CI's overlay, slices that use `libsodium` are
+    built against `libsodium-18`).
+  * v1 components and setups no longer carry the mapping's metadata in
+    their pkg-config wrapper (`cabalPkgConfigWrapperReal`).
+    `cabalPkgConfigWrapper` keeps the whole map and is now used only by
+    the v2 shell; overriding it no longer affects component builds.
+  * Every v2 slice, and every v1 component or setup with
+    `pkgconfig-depends`, rebuilds once.
+
 ## November 5, 2026
 
 `builderVersion = 2` and the stable-haskell GHCs:

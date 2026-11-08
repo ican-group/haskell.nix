@@ -1483,9 +1483,9 @@ let
   # unit, no constraint pin, no sysLibs and no `extra-packages:` goal —
   # if cabal unexpectedly tried to BUILD one it would fail loudly on
   # its (absent) system deps rather than silently linking anything.
-  # pkg-config versions for these candidates come from
-  # `cabalPkgConfigWrapper`'s metadata fallback instead of a realized
-  # `.pc` (see overlays/cabal-pkg-config.nix).
+  # pkg-config versions for these candidates come from the slice's
+  # `cabalPkgConfigWrapperFor` metadata instead of a realized `.pc`
+  # (see overlays/cabal-pkg-config.nix).
   metadataSourceFrags = metadataPartition.frags;
   # Names of the DIRECT sibling deps that moved to the metadata path —
   # the complement partition for `homeDependIdsInClosure`.
@@ -2372,6 +2372,7 @@ let
     ) setupDepClosureIds));
   v2Fragment = {
     inherit pkgName pkgVersion;
+    inherit (package) pkgconfNames;
     tarball = pkgTarball;
     cabalFile = thisCabalFile;            # null → extract effective tarball metadata
     flagsBlock            = flagBlockFor             pkgName;
@@ -2547,6 +2548,7 @@ let
       # tool's build, only to the tool's source tarball.
       v2SourceFrag = {
         inherit pkgName pkgVersion;
+        inherit (package) pkgconfNames;
         tarball = pkgTarball;
         cabalFile = thisCabalFile;
       };

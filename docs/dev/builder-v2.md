@@ -293,6 +293,10 @@ That's why comp-v2-builder is careful about:
   `pkgHashEnableSharedLib`.  ghcjs / wasm cross targets keep the
   more restricted capability set since their cross GHCs really
   don't ship a dynamic RTS.
+- The pkg-config on a slice's PATH is `cabalPkgConfigWrapperFor` the
+  names its solver can meet (its own, its staged sources', its dep
+  slices'); the slice's hash moves with those names' versions, not
+  with the whole mapping.
 
 After `cabal v2-build --dry-run` the slice cross-checks the plan
 against `expectedPackage` and exits early if cabal is about to
