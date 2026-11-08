@@ -1,6 +1,20 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 5, 2026
+
+`builderVersion = 2` and the stable-haskell GHCs:
+
+  * The v2 builder's cabal-install (`haskell-nix.v2-cabal-install`) and
+    the fork nix-tools that make v2 plans (`nix-tools-unchecked-sh`) now
+    come from stable-haskell's `merge` branch, cabal-install 3.19.0.0.
+    UnitIds change, so every slice rebuilds once.
+  * That cabal uses the normal cabal store rather than a project-local
+    `dist-newstyle/store`, so the v2 shell now seeds the store `cabal path
+    --store-dir` reports (usually `~/.cabal/store`).
+    `haskell-nix-cabal-store-sync` takes that store dir, not a build dir,
+    as its optional argument.
+
 ## October 25, 2026
 
   * Removed the `haskell-nix` knobs `emulatorNativeBuilderPackages` and

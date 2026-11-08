@@ -1,0 +1,30 @@
+Don't rewrite POSIX paths handed to ./configure.
+
+toUnix on POSIX split and rejoined the path, which turns /build/pkg
+into //build/pkg (splitDirectories keeps the root as a component).
+The configure script then sees $srcdir = //build/pkg, and nixpkgs'
+cc-wrapper drops -I//build/pkg/include (it only admits include paths
+under the store and $NIX_BUILD_TOP, compared as a string prefix), so
+GHC's rts configure fails its deriveConstants probe on
+rts/PosixSource.h.  stable-haskell/master had toUnix s = s (66bfdbf03);
+the merge lost it.
+
+diff --git a/src/Distribution/Simple/ConfigureScript.hs b/src/Distribution/Simple/ConfigureScript.hs
+index cd9a01c4c..31a5460fc 100644
+--- a/src/Distribution/Simple/ConfigureScript.hs
++++ b/src/Distribution/Simple/ConfigureScript.hs
+@@ -258,7 +258,13 @@ toUnix s = let tmp = normalise s
+                parts = FilePath.splitDirectories rest
+            in  l ++ intercalate "/" parts
+ #else
+-toUnix s = intercalate "/" $ FilePath.splitDirectories s
++-- A POSIX path is already a Unix path. Splitting and rejoining it is not
++-- the identity: 'FilePath.splitDirectories' keeps the root as its own
++-- component, so @"/build/pkg"@ comes back as @"//build/pkg"@. That leaks
++-- into the script's @$srcdir@ and every @-I$srcdir/...@ it derives, and a
++-- compiler wrapper that only admits include paths under a known prefix
++-- (nixpkgs' cc-wrapper: the store and @$NIX_BUILD_TOP@) drops them.
++toUnix s = s
+ #endif
+ 
+ badAutoconfCharacters :: [(Char, String)]

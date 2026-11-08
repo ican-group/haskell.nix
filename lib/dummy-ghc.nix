@@ -507,8 +507,8 @@ let
       nativeBuildInputs = [
         # `cabal2json` is Cabal-syntax-json, so it has to be able to parse the
         # boot packages' `.cabal` files.  Stable-haskell boot libs come from the
-        # Cabal 3.17 fork, so they get the fork's cabal2json (the
-        # `cabal-syntax-json-condtree-3.17` port); every other compiler keeps
+        # Cabal fork (3.19), so they get the fork's cabal2json (the
+        # `cabal-syntax-json-cabal-3.19` port); every other compiler keeps
         # the shared 3.16 one.  This is the one nix-tools consumer that is NOT
         # reachable through the `nix-tools` project option, so it has to
         # discriminate here.

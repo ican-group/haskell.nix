@@ -27,15 +27,25 @@ in lib.recurseIntoAttrs {
     inherit (project) plan-nix;
   };
 
-  # The `Cabal` name must never resolve to the unbuildable pre-existing
-  # unit: either it is masked to null (boot Cabal chosen — the normal
-  # case) or it is a real, buildable redirect (a plan that reinstalls
-  # Cabal for the library scope).  Forcing `identifier.version` on the
-  # old stub redirect throws "option ... has no value defined", so the
-  # assert catches a regression whenever `build` is evaluated.
+  # No `Cabal` name may resolve to the unbuildable pre-existing unit:
+  # each `Cabal-<version>` (and, when the plan has only one version, the
+  # bare `Cabal`) is either masked to null (boot Cabal pre-existing) or a
+  # real, buildable redirect.  Forcing `identifier.version` on the old
+  # stub redirect throws "option ... has no value defined", so the
+  # assert catches a regression whenever `build` is evaluated.  With the
+  # stable-haskell cabal fork's `-target` cross the boot Cabal is a
+  # configured local package, so the plan holds two buildable versions
+  # and the bare name is ambiguous (redirect.nix throws "Multiple
+  # versions") by design.
   build =
-    assert project.hsPkgs.Cabal == null
-      || builtins.isString project.hsPkgs.Cabal.identifier.version;
+    let
+      cabalVersions = lib.unique (map (u: u.pkg-version)
+        (lib.filter (u: u.pkg-name == "Cabal")
+          project.pkg-set.config.plan-json.install-plan));
+      ok = p: p == null || builtins.isString p.identifier.version;
+    in
+    assert lib.all (v: ok (project.hsPkgs."Cabal-${v}" or null)) cabalVersions
+      && (builtins.length cabalVersions > 1 || ok project.hsPkgs.Cabal);
     project.hsPkgs.setup-deps-boot-cabal.components.library;
 
   # Build-only v2 slice test; no v2 test currently runs on windows
