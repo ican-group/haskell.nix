@@ -1,6 +1,23 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 8, 2026
+
+  * A v2 slice's pkg-config table now holds only the names declared by the
+    packages its solver can meet (its own, its staged build-tool and
+    metadata sources, and its dep slices'), instead of the whole nixpkgs
+    mapping.  A change to a mapping entry, such as an overlay adding to
+    `haskell-nix.extraPkgconfigMappings`, now rebuilds only the slices
+    whose closure declares that name.  Slices that do still differ from
+    a user's: CI's test overlay maps `libsodium` to `libsodium-18`, so
+    slices that solve a `libsodium` dependency are not shared with it.
+  * v1 components and setups no longer carry the mapping's metadata in
+    their pkg-config wrapper (`cabalPkgConfigWrapperReal`).
+    `cabalPkgConfigWrapper` keeps the whole map and is now used only by
+    the v2 shell; overriding it no longer affects component builds.
+  * Every v2 slice, and every v1 component or setup with
+    `pkgconfig-depends`, rebuilds once.
+
 ## November 5, 2026
 
 `builderVersion = 2` and the stable-haskell GHCs:
@@ -14,16 +31,6 @@ that will impact users.
     --store-dir` reports (usually `~/.cabal/store`).
     `haskell-nix-cabal-store-sync` takes that store dir, not a build dir,
     as its optional argument.
-
-## November 3, 2026
-
-  * v2 slices now substitute from the haskell.nix caches.  Every slice used
-    to depend on a pkg-config table of the whole nixpkgs mapping, which the
-    test overlay in CI alters, so no slice Hydra built matched a user's
-    evaluation.  A slice now carries only the pkg-config names its solver
-    can meet, and v1 components no longer depend on the mapping at all.
-    Every v2 slice, and every v1 component or setup
-    with `pkgconfig-depends`, rebuilds once.
 
 ## October 25, 2026
 
