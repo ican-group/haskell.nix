@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-e0dbae51.js";
+            window.path_to_searchindex_js = "searchindex-2637021b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-5b1b9093.js"></script>
@@ -125282,7 +125282,7 @@ line from a fixed set of inputs:</p>
 <code>${ghc.targetPrefix}</code>),</li>
 <li><code>--with-gcc=</code>, <code>--with-ar=</code>, <code>--with-strip=</code>, <code>--with-ld=</code> from the
 cross stdenv’s <code>cc.targetPrefix</code> / <code>cc.bintools.targetPrefix</code>,</li>
-<li><code>--with-pkg-config=</code> from <code>buildPackages.cabalPkgConfigWrapper</code> (only
+<li><code>--with-pkg-config=</code> from <code>buildPackages.cabalPkgConfigWrapperReal</code> (only
 when the component has <code>pkgconfig-depends</code>),</li>
 <li><code>--enable-library-vanilla</code>, <code>--enable-shared</code>, profiling /
 documentation toggles from the module config,</li>
@@ -125627,6 +125627,10 @@ cabal v2-build picks <code>--enable-shared</code>, forking
 <code>pkgHashEnableSharedLib</code>.  ghcjs / wasm cross targets keep the
 more restricted capability set since their cross GHCs really
 don’t ship a dynamic RTS.</li>
+<li>The pkg-config on a slice’s PATH is <code>cabalPkgConfigWrapperFor</code> the
+names its solver can meet (its own, its staged sources’, its dep
+slices’); the slice’s hash moves with those names’ versions, not
+with the whole mapping.</li>
 </ul>
 <p>After <code>cabal v2-build --dry-run</code> the slice cross-checks the plan
 against <code>expectedPackage</code> and exits early if cabal is about to
@@ -126647,6 +126651,26 @@ hix-shell
 <h1 id="changelog"><a href="#changelog" class="header">ChangeLog</a></h1>
 <p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="november-8-2026"><a class="header" href="#november-8-2026">November 8, 2026</a></h2>
+<ul>
+<li>A v2 slice’s pkg-config table now holds only the names declared by the
+packages its solver can meet (its own, its staged build-tool and
+metadata sources, and its dep slices’), instead of the whole nixpkgs
+mapping.  A change to a mapping entry, such as an overlay adding to
+<code>haskell-nix.extraPkgconfigMappings</code>, now rebuilds only the slices
+whose closure declares that name.  Previously every slice changed
+with any mapping, so no v2 slice Hydra built (CI adds a <code>libsodium</code>
+mapping) matched a user’s evaluation, and none could be substituted.
+Now only slices that use a remapped name differ, and those really are
+different builds (under CI’s overlay, slices that use <code>libsodium</code> are
+built against <code>libsodium-18</code>).</li>
+<li>v1 components and setups no longer carry the mapping’s metadata in
+their pkg-config wrapper (<code>cabalPkgConfigWrapperReal</code>).
+<code>cabalPkgConfigWrapper</code> keeps the whole map and is now used only by
+the v2 shell; overriding it no longer affects component builds.</li>
+<li>Every v2 slice, and every v1 component or setup with
+<code>pkgconfig-depends</code>, rebuilds once.</li>
+</ul>
 <h2 id="november-5-2026"><a class="header" href="#november-5-2026">November 5, 2026</a></h2>
 <p><code>builderVersion = 2</code> and the stable-haskell GHCs:</p>
 <ul>

@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-e0dbae51.js";
+            window.path_to_searchindex_js = "../searchindex-2637021b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -455,6 +455,10 @@ cabal v2-build picks <code>--enable-shared</code>, forking
 <code>pkgHashEnableSharedLib</code>.  ghcjs / wasm cross targets keep the
 more restricted capability set since their cross GHCs really
 don’t ship a dynamic RTS.</li>
+<li>The pkg-config on a slice’s PATH is <code>cabalPkgConfigWrapperFor</code> the
+names its solver can meet (its own, its staged sources’, its dep
+slices’); the slice’s hash moves with those names’ versions, not
+with the whole mapping.</li>
 </ul>
 <p>After <code>cabal v2-build --dry-run</code> the slice cross-checks the plan
 against <code>expectedPackage</code> and exits early if cabal is about to
