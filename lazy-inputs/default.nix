@@ -66,6 +66,7 @@ in {
       inherit ((callFlake { pkgs = final; src = ./ghc9123; }).defaultNix) ghc9123;
       inherit ((callFlake { pkgs = final; src = ./ghc9124; }).defaultNix) ghc9124;
       inherit ((callFlake { pkgs = final; src = ./ghc9141; }).defaultNix) ghc9141;
+      inherit ((callFlake { pkgs = final; src = ./ghc9142; }).defaultNix) ghc9142;
       inherit ((callFlake { pkgs = final; src = ./ghc914X; }).defaultNix) ghc914X;
       inherit ((callFlake { pkgs = final; src = ./ghc914-sh; }).defaultNix) ghc914-sh;
       # source-repository-packages referenced by the ghc914-sh stage2 cabal.project.
