@@ -2352,7 +2352,7 @@ times.</p>
 in the event that what’s in <code>haskell.nix</code> doesn’t suit your needs.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="command-line-tools"><a class="header" href="#command-line-tools">Command line tools</a></h1>
-<p>To install the command line tools refer to the <a href="https://input-output-hk.github.io/haskell.nix/dev/manually-generating-nix-expressions/">Installing nix-tools</a> section.</p>
+<p>To install the command line tools refer to the <a href="https://ican-group.github.io/haskell.nix/dev/installing-nix-tools.html">Installing nix-tools</a> section.</p>
 <h2 id="stack-to-nix"><a class="header" href="#stack-to-nix">stack-to-nix</a></h2>
 <pre><code>stack-to-nix - a stack to nix converter
 
@@ -127261,26 +127261,26 @@ cached. Usage of <code>cleanSourceHaskell</code> will need to be updated.</li>
 </ul>
 <h2 id="october-12-2019"><a class="header" href="#october-12-2019">October 12, 2019</a></h2>
 <ul>
-<li><a href="https://input-output-hk.github.io/haskell.nix/reference/library/#shellfor"><code>shellFor</code></a> no longer sets <code>CABAL_CONFIG</code> by default.
+<li><a href="https://ican-group.github.io/haskell.nix/reference/library.html#shellfor"><code>shellFor</code></a> no longer sets <code>CABAL_CONFIG</code> by default.
 This avoids surprising users, but means that Cabal may select a plan which is different to your Haskell.nix package set.
 If you would like the old behaviour, use <code>shellFor { exactDeps = true; }</code>.</li>
 </ul>
 <h2 id="august-9-2019"><a class="header" href="#august-9-2019">August 9, 2019</a></h2>
 <ul>
-<li>Add the <a href="https://input-output-hk.github.io/haskell.nix/reference/library/#haskellLib"><code>haskellLib.collectComponents</code></a> function.</li>
+<li>Add the <a href="https://ican-group.github.io/haskell.nix/reference/library.html#haskelllib"><code>haskellLib.collectComponents</code></a> function.</li>
 </ul>
 <h2 id="june-21-2019"><a class="header" href="#june-21-2019">June 21, 2019</a></h2>
 <ul>
-<li>Add <code>ghcWithPackages</code> and <code>ghcWithHoogle</code> to hsPkgs (<a href="https://input-output-hk.github.io/haskell.nix/reference/library/#package-set-functions">documentation</a>.</li>
+<li>Add <code>ghcWithPackages</code> and <code>ghcWithHoogle</code> to hsPkgs (<a href="https://ican-group.github.io/haskell.nix/reference/library.html#ghcwithpackages">documentation</a>.</li>
 <li>Benchmark components can now build successfully.</li>
 <li>Reduced the closure bloat of nix-tools, and added closure size limit to CI.</li>
 <li>Added more reference documentation and set up auto-generated
-documentation for <a href="https://input-output-hk.github.io/haskell.nix/reference/modules/">Module Options</a>.</li>
+documentation for <a href="https://ican-group.github.io/haskell.nix/reference/modules.html">Module Options</a>.</li>
 <li>Miscellaneous bug fixes.</li>
 </ul>
 <h2 id="june-7-2019"><a class="header" href="#june-7-2019">June 7, 2019</a></h2>
 <ul>
-<li>Several additions to the <a href="https://input-output-hk.github.io/haskell.nix/">documentation</a>.
+<li>Several additions to the <a href="https://ican-group.github.io/haskell.nix/">documentation</a>.
 <ul>
 <li>More information about getting nix-tools, Haskell.nix, pinning.</li>
 <li>Updates the stack-to-nix and cabal-to-nix guides.</li>
