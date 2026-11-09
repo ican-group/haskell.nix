@@ -123,6 +123,7 @@ let
     armv6l-linux = import ./armv6l-linux.nix;
     hyper-linux = import ./hyper-linux.nix { inherit sources; };
     musl = import ./musl.nix;
+    cross-checks = import ./cross-checks.nix;
     android = import ./android.nix;
     tools = import ./tools.nix;
     emscripten = import ./emscripten.nix;
@@ -136,6 +137,7 @@ let
     rcodesign = import ./rcodesign.nix;
     wasm = import ./wasm.nix;
     stable-haskell = import ./stable-haskell.nix;
+    hsc2hs = import ./hsc2hs.nix;
   };
 
   composeExtensions = f: g: final: prev:
@@ -164,6 +166,7 @@ let
     armv6l-linux
     hyper-linux
     musl
+    cross-checks
     android
     tools
     head-hackage
@@ -177,6 +180,8 @@ let
     # Restore nixpkgs haskell and haskellPackages
     (_: prev: { inherit (prev.haskell-nix-prev) haskell haskellPackages; })
     lazy-inputs
+    # After lazy-inputs (its source), before stable-haskell (a user of it).
+    hsc2hs
     stable-haskell
     cacheCompilerDeps
     rcodesign

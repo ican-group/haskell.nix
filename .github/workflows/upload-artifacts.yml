@@ -17,6 +17,9 @@ on:
       # and must follow the positive pattern.  See upload-artifacts-sh.yml.
       - "!nix-tools-sh-*"
   pull_request:
+  # README status updates use GITHUB_TOKEN and [skip ci]; dispatch on current
+  # master to qualify that exact revision without relaxing Hydra artifact checks.
+  workflow_dispatch:
 
 # Hydra can skip intermediate revisions when a branch advances during an
 # evaluation. Only the latest branch/PR waiter can still qualify that head.
@@ -94,7 +97,7 @@ jobs:
         run: |
           set -euo pipefail
           hydra=https://ci.zw3rk.com
-          project=input-output-hk-haskell-nix
+          project=ican-group-haskell-nix
 
           jobs="aarch64-darwin.nix-tools.static.zipped.nix-tools-static
           x86_64-darwin.nix-tools.static.zipped.nix-tools-static

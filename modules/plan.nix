@@ -68,9 +68,8 @@ in
       type = attrsOf unspecified;
       default = {};
     };
-    # Project-global data the v2 builder derives once from the install
-    # plan (`projectConfigPragmas`, the doc-enabled package set and the
-    # source-repo flag map).  Computed in
+    # Data the v2 builder derives once per project (the configure-args
+    # translation and the doc-enabled package set).  Computed in
     # `modules/install-plan/override-package-by-name.nix` and shared
     # across all slices so the v2 builder doesn't re-scan the whole plan
     # (and re-run the configure-arg regexes) once per component.

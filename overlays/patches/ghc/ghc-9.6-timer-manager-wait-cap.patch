@@ -1,0 +1,25 @@
+diff --git a/libraries/base/GHC/Event/TimerManager.hs b/libraries/base/GHC/Event/TimerManager.hs
+--- a/libraries/base/GHC/Event/TimerManager.hs
++++ b/libraries/base/GHC/Event/TimerManager.hs
+@@ -174,7 +174,21 @@
+ step :: TimerManager -> IO Bool
+ step mgr = do
+   timeout <- mkTimeout
++#if defined(linux_HOST_OS) && defined(x86_64_HOST_ARCH)
++  -- Under Rosetta a pending suspension request can be consumed just before
++  -- an indefinite native poll, leaving the poll blocked while the suspension
++  -- coordinator waits for an acknowledgment (the compiler then goes silent).
++  -- Bound each backend wait to one second so the request can reach Rosetta's
++  -- normal return/acknowledgment path. Deadline selection and callback
++  -- execution in mkTimeout are unchanged.
++  let maxWait = 1000000000 -- nanoseconds
++      pollTimeout = case timeout of
++        Forever -> Timeout maxWait
++        Timeout ns -> Timeout (min ns maxWait)
++  _ <- I.poll (emBackend mgr) (Just pollTimeout) (handleControlEvent mgr)
++#else
+   _ <- I.poll (emBackend mgr) (Just timeout) (handleControlEvent mgr)
++#endif
+   state <- readIORef (emState mgr)
+   state `seq` return (state == Running)
+  where

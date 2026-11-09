@@ -115,7 +115,7 @@ let
   # missing dynamic way (`tests.check-datadir.run`: "Failed to load dynamic
   # interface file for Prelude ... base-4.22.0.0/Prelude.dyn_hi").  False is
   # the honest answer to that, and the one that matches what we build.
-  enableSharedStage2 = false;
+  enableSharedStage2 = true;
   # One string for the native compiler and every `-target` wrapper: they are
   # all the same stage2 `ghc-bin` binary, so their settings files all get this
   # (see the comment in lib/dummy-ghc.nix, which echoes it back).  A cross
@@ -519,6 +519,16 @@ let
       profiling-detail: none
   '') bootLibraries;
 
+  # The dyn way of every boot library (see `enableSharedStage2`).  Only the
+  # libraries: `executable-dynamic` stays False, and there is no `rts
+  # +dynamic` constraint, so the stage2 `ghc` is still a static executable
+  # linked against an rts built without `-DDYNAMIC`.
+  bootLibShared = lib.optionalString enableSharedStage2
+    (lib.concatMapStrings (p: ''
+      package ${p}
+        shared: True
+    '') bootLibraries);
+
   # ── Dump source for plan-time "installed packages" ────────────────────────
   # call-cabal-project-to-nix.nix synthesises the dummy `ghc-pkg dump` (what
   # cabal's solver sees as installed) by scanning `ghc.raw-src` for
@@ -698,8 +708,9 @@ let
   # (subdirs like Cabal/Cabal-syntax are appended by haskell.nix itself).
   # hsc2hs is no longer an in-tree submodule (upstream dropped submodules);
   # its source — including data/template-hsc.h, which the compiler packaging
-  # steps install into lib/ghc-*/ — comes from the ghc914-sh-hsc2hs lazy-input.
-  hsc2hsSrc = pkgs.haskell-nix.sources.ghc914-sh-hsc2hs;
+  # steps install into lib/ghc-*/ — comes from the ghc914-sh-hsc2hs lazy-input,
+  # with haskell.nix's fix to its batch cross-compilation (overlays/hsc2hs.nix).
+  hsc2hsSrc = pkgs.haskell-nix.hsc2hs-patched-src;
 
   srpInputMap = {
     "https://github.com/stable-haskell/Cabal.git/f2e0a89e15cf6604cec9d93e26a4b3caf459b076" =
@@ -707,7 +718,7 @@ let
     "https://github.com/stable-haskell/hpc-bin.git/5923da3fe77993b7afc15b5163cffcaa7da6ecf5" =
       pkgs.haskell-nix.sources.ghc914-sh-hpc-bin;
     "https://github.com/stable-haskell/hsc2hs.git/d07eea1260894ce5fe456f881fbc62366c9eb1b7" =
-      pkgs.haskell-nix.sources.ghc914-sh-hsc2hs;
+      pkgs.haskell-nix.hsc2hs-patched-src;
   };
 
   # ── External tools (built with boot GHC) ──────────────────────────────────
@@ -1225,8 +1236,17 @@ ENDSCRIPT
     # source — rts.cabal's rts-threaded-flags gained `cmm-options:
     # -optc-DTHREADED_RTS` (stable-haskell/ghc#191, merged to stable-ghc-9.14) —
     # so no `package rts` ghc-options workaround is needed here.
+    # `inplace-builds: False`: the plan-deterministic ids above
+    # (`base-4.22.1.0`, no `-inplace`) are what cabal 3.19
+    # (stable-haskell/merge) gives a project's own packages only with this
+    # set; the older fork named local units that way unconditionally.  The
+    # local-`packages:` slices set it too (comp-v2-builder.nix
+    # `packagesLine`), so plan and slice agree.  stable-haskell/ghc#200
+    # sets the same in GHC's own cabal.project.
     cabalProjectLocal = ''
+      inplace-builds: False
       ${bootLibProfiling}
+      ${bootLibShared}
       package ghc-bin
         flags: -debug
       package haskeline
@@ -2109,6 +2129,10 @@ ENDSCRIPT
         (pkgs.buildPackages.haskell-nix.tool bootGhcName "libffi-wasm" {
           src = pkgs.buildPackages.haskell-nix.sources.libffi-wasm;
           inherit evalSystem;
+          # libffi-wasm.cabal has no `license:` field, so it reads as NONE,
+          # which nixpkgs' check-meta refuses as unfree.  Upstream added an MIT
+          # LICENSE file in 788aec0a ("add missing license") but not the field.
+          modules = [{ packages.libffi-wasm.package.license = pkgs.lib.mkForce "MIT"; }];
           compilerSelection = bootCompilerSelection;
         })
         pkgs.targetPackages.buildPackages.llvmPackages.clang
@@ -2121,16 +2145,17 @@ ENDSCRIPT
       mkdir cbits
       cp ${pkgs.buildPackages.haskell-nix.sources.libffi-wasm}/cbits/* cbits/
       libffi-wasm
-      wasm32-unknown-wasi-clang -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi.c -o cbits/ffi.o
-      wasm32-unknown-wasi-clang -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi_call.c -o cbits/ffi_call.o
-      wasm32-unknown-wasi-clang -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi_closure.c -o cbits/ffi_closure.o
+      CC=${pkgs.targetPackages.buildPackages.llvmPackages.clang.targetPrefix}clang
+      $CC -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi.c -o cbits/ffi.o
+      $CC -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi_call.c -o cbits/ffi_call.o
+      $CC -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi_closure.c -o cbits/ffi_closure.o
 
       mkdir -p $dev/include
       cp cbits/*.h $dev/include
       mkdir -p $out/lib
       llvm-ar -r $out/lib/libffi.a cbits/*.o
 
-      wasm32-unknown-wasi-clang -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -fPIC -fvisibility=default -shared -Wl,--keep-section=target_features,--strip-debug cbits/*.c -o libffi.so
+      $CC -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -fPIC -fvisibility=default -shared -Wl,--keep-section=target_features,--strip-debug cbits/*.c -o libffi.so
       wasm-opt --low-memory-unused --debuginfo -Os libffi.so -o $out/lib/libffi.so
     '';
 

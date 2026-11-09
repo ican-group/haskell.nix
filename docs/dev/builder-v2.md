@@ -293,6 +293,10 @@ That's why comp-v2-builder is careful about:
   `pkgHashEnableSharedLib`.  ghcjs / wasm cross targets keep the
   more restricted capability set since their cross GHCs really
   don't ship a dynamic RTS.
+- The pkg-config on a slice's PATH is `cabalPkgConfigWrapperFor` the
+  names its solver can meet (its own, its staged sources', its dep
+  slices'); the slice's hash moves with those names' versions, not
+  with the whole mapping.
 
 After `cabal v2-build --dry-run` the slice cross-checks the plan
 against `expectedPackage` and exits early if cabal is about to
@@ -362,12 +366,10 @@ rebuilding from source — and so public sublibs that the v1
 GHC-package-db approach can't expose to cabal show up correctly.
 
 The v2 builder's cabal-install (`haskell-nix.v2-cabal-install`, the
-stable-haskell fork) keeps a project-local store under the build dir,
-`<project root>/dist-newstyle/store/`, with units under
+stable-haskell fork) uses the normal cabal store, the one `cabal path
+--store-dir` reports (usually `~/.cabal/store/`), with units under
 `host/<platform>/` (and a `build -> host` link for build-stage
-units).  The project root is found the way cabal finds it: the
-nearest directory at or above `$PWD` with a `cabal.project`, else
-`$PWD`.  A project built with `--builddir DIR` re-runs
+units).  A project built with `--store-dir DIR` re-runs
 `haskell-nix-cabal-store-sync DIR`.
 
 The shell's `cabal` has to be that same cabal-install: a different
@@ -383,12 +385,12 @@ The hook (`haskell-nix-cabal-store-sync`):
    so `nix-collect-garbage` can't drop the slices our links point
    at.
 2. Scans every `<unit-id>.conf` / unit-dir / lib file in the
-   composed store against the project's existing store,
+   composed store against the existing cabal store,
    classifying each as new, same, or conflict.
 3. If conflicts exist and `--force` wasn't passed, errors out with
    a summary (and instructions to re-run with `--force`).
 4. Symlinks new (and, with `--force`, conflicting) entries from
-   composedStore into the project's store via `ln -s` (single files)
+   composedStore into the cabal store via `ln -s` (single files)
    or `lndir` (unit dirs).
 5. Runs `ghc-pkg recache` on each touched package db.
 

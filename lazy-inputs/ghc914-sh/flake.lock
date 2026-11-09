@@ -3,11 +3,11 @@
     "ghc914-sh": {
       "flake": false,
       "locked": {
-        "lastModified": 1791334099,
-        "narHash": "sha256-6sHWO2gYpyEk40WjwcnAAIb4x8kVZcJWWai/Vid9Iqk=",
+        "lastModified": 1793744173,
+        "narHash": "sha256-1rMUgBgoxLgykmli6wAD6VkkAK0aJl60sk1g2VigfrI=",
         "ref": "stable-ghc-9.14-hn",
-        "rev": "d13bbd0e4cef22379fb95b46268a9367ece5c8e3",
-        "revCount": 68790,
+        "rev": "424a3d324e552a1211f5e6201dce07d50dc35a26",
+        "revCount": 68812,
         "type": "git",
         "url": "https://github.com/stable-haskell/ghc"
       },

@@ -8,6 +8,15 @@
                      #   sha256map =
                      #     { "https://github.com/jgm/pandoc-citeproc"."0.17"
                      #         = "0dxx8cp2xndpw3jwiawch2dkrkp15mil7pyx7dvd810pwc22pm2q"; };
+, inputMap     ? {}
+                     # Maps a dependency git url to a local path / flake
+                     # input, mirroring the `cabalProject` `inputMap`
+                     # argument.  When a url is present here it is used
+                     # instead of fetching, so private repositories and
+                     # offline builds work:
+                     #   inputMap =
+                     #     { "https://github.com/jgm/pandoc-citeproc"
+                     #         = inputs.pandoc-citeproc; };
 , branchMap    ? null
                      # A way to specify in which branch a git commit can
                      # be found
@@ -81,6 +90,9 @@ let
     hashPath = path:
         builtins.readFile (evalPackages.runCommand "hash-path" { preferLocalBuild = true; }
             "echo -n $(${evalPackages.nix}/bin/nix-hash --type sha256 --base32 ${path}) > $out");
+    # `inputMap` may legitimately be `null` (the option type is
+    # `nullOr attrs`); treat that the same as an empty map.
+    inputMap' = if inputMap == null then {} else inputMap;
 in with evalPackages.lib;
 concatMap (dep:
         let
@@ -95,8 +107,23 @@ concatMap (dep:
               location = dep.url;
               tag = dep.rev;
             };
+            # When the dependency url is present in `inputMap` we use the
+            # mapped local path / flake input directly instead of fetching
+            # it.  This mirrors the `cabalProject` `inputMap` resolution in
+            # `lib/call-cabal-project-to-nix.nix`.
+            input =
+              if inputMap' ? "${dep.url}/${dep.rev}"
+                then inputMap'."${dep.url}/${dep.rev}"
+              else if inputMap' ? ${dep.url}
+                then
+                  (if (inputMap'.${dep.url}.rev or null) != dep.rev
+                    then throw "${inputMap'.${dep.url}.rev or "<no rev>"} may not match ${dep.rev} for ${dep.url} use \"${dep.url}/${dep.rev}\" as the inputMap key if ${dep.rev} is a branch or tag that points to ${inputMap'.${dep.url}.rev or "<no rev>"}."
+                    else inputMap'.${dep.url})
+              else null;
             pkgsrc =
-              if !is-private && sha256 != null
+              if input != null
+                then input
+              else if !is-private && sha256 != null
                 then evalPackages.fetchgit {
                   inherit (dep) url rev;
                   inherit sha256;
@@ -110,6 +137,10 @@ concatMap (dep:
                 name = cabalName "${pkgsrc}/${subdir}";
                 inherit (dep) url rev;
                 inherit is-private;
-                sha256 = if !is-private then hashPath pkgsrc else null;
-            } // (optionalAttrs (subdir != "") { inherit subdir; }))
+                # A mapped input is used directly as the package `src` by
+                # `mkCacheModule` (see `overlays/haskell.nix`), so there is
+                # no need to compute a sha256 for it.
+                sha256 = if input == null && !is-private then hashPath pkgsrc else null;
+            } // (optionalAttrs (subdir != "") { inherit subdir; })
+              // (optionalAttrs (input != null) { inherit input; }))
         (dep.subdirs or [ "" ])) repos

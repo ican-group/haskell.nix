@@ -13,7 +13,6 @@ QEMU_ARG = $(if $(QEMU),--argstr qemu "$(QEMU)",)
 check: ## Check whitespace, Nix syntax, emulator selection, and dependencies
 	git diff --check
 	nix-instantiate --parse builder/comp-v2-builder.nix >/dev/null
-	nix-instantiate --eval --strict test/native-ghc-builder.nix
 	nix-instantiate --parse builder/build-cabal-slice.nix >/dev/null
 	nix-instantiate --parse builder/stage-cabal-file.nix >/dev/null
 	nix-instantiate --parse test/v2-cabal-overrides.nix >/dev/null

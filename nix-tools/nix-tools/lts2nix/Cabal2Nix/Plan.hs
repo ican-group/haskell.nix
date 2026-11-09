@@ -6,6 +6,8 @@ where
 
 import           Cabal2Nix.Util                           ( quoted
                                                           , bindPath
+                                                          , hackageVersion
+                                                          , hackageVersionHelper
                                                           )
 import           Data.HashMap.Strict                      ( HashMap )
 import qualified Data.HashMap.Strict           as Map
@@ -32,6 +34,9 @@ data Package = Package
 plan2nix :: Plan -> NExpr
 plan2nix (Plan { packages, compilerVersion, compilerPackages }) =
   mkFunction "hackage"
+    -- Bind the shared hackage.nix lookup guard once per file (it references the
+    -- `hackage` function argument, so it must live inside this lambda).
+    . mkLets [ hackageVersionHelper ]
     . mkNonRecSet
     $ [ "packages" $= (mkNonRecSet $ uncurry bind =<< Map.toList quotedPackages)
       , "compiler" $= mkNonRecSet
@@ -44,8 +49,8 @@ plan2nix (Plan { packages, compilerVersion, compilerPackages }) =
   quotedPackages = mapKeys quoted packages
   bind :: Text -> Maybe Package -> [Binding NExpr]
   bind pkg (Just (Package { packageVersion, packageRevision, packageFlags })) =
-    let verExpr      = (mkSym "hackage" @. pkg) @. quoted packageVersion
-        revExpr      = (verExpr @. "revisions") @. maybe "default" quoted packageRevision
+    let revExpr      = hackageVersion (Text.dropAround (== '"') pkg) packageVersion
+                                      (maybe "default" id packageRevision)
         flagBindings = Map.foldrWithKey
           (\fname val acc -> bindPath (VarName pkg :| ["flags", fname]) (mkBool val) : acc)
           []

@@ -19,12 +19,7 @@ let
     && stdenv.buildPlatform.isAarch64
     && stdenv.hostPlatform.isAarch64
     && stdenv.hostPlatform.isMusl;
-  # Test the repaired emulator without changing the generic native-builder
-  # policy: its base restriction also covers older cross-compiler stalls.
-  testProject = if arm32Qemu then (pkgs.extend (_: prev: {
-    haskell-nix = prev.haskell-nix // { emulatorSystemFeatures = []; };
-  })).haskell-nix.project' else project';
-  mkProject = profiled: testProject ({
+  mkProject = profiled: project' ({
     inherit compiler-nix-name evalSystem;
     src = testSrc "annotations";
     modules = [{

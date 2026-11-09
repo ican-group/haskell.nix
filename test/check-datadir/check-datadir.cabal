@@ -1,7 +1,7 @@
 cabal-version:       2.4
 name:                check-datadir
 version:             0.1.0.0
-license:             NONE
+license:             BSD-3-Clause
 build-type:          Simple
 -- Read by the test via `getDataFileName` (see test/Main.hs).
 data-files:          data-file.txt

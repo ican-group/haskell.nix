@@ -1,0 +1,425 @@
+Port Cabal-syntax-json to the Cabal-syntax 3.19 API (stable-haskell fork,
+branch hkm/sh-merge2-ports = upstream master + haskell/cabal#12356).
+
+* CondTree/CondBranch lost the constraint type parameter (CondTree v c a ->
+  CondTree v a; CondNode lost its middle field).
+* Verbosity split: silent/normal are VerbosityFlags; wrap them with
+  mkVerbosity defaultVerbosityHandles for readGenericPackageDescription.
+* Distribution.Compat.Newtype is gone (upstream "Scrap
+  Distribution.Compat.Newtype"): the FieldGrammar *Ala methods take
+  `Coercible a b` and a `proxy a b`, so convert with `coerce`; the ViaUnpack
+  deriving (which relied on Newtype's fundep) becomes plain instances for
+  TestedWith, List and MQuoted, and Vertically loses its Newtype instance.
+* freeTextField/freeTextFieldDef/prefixedFields use Text;
+  freeTextFieldDefST was removed.
+* Token and Token' wrap Text rather than String: derive their JSON via a
+  new ToJSON Text instance.
+
+The golden test suite (293 tests) passes against this Cabal.
+
+diff --git a/Cabal-syntax-json.cabal b/Cabal-syntax-json.cabal
+index bf72b57..52ec368 100644
+--- a/Cabal-syntax-json.cabal
++++ b/Cabal-syntax-json.cabal
+@@ -12,6 +12,7 @@ library
+   build-depends:      base         ^>=4.19 || ^>=4.20 || ^>=4.21
+                     , bytestring   ^>=0.11 || ^>=0.12
+                     , containers    >=0.6.8
++                    , text
+                     , Cabal        ^>=3.10 || ^>=3.12 || ^>=3.14
+                     , Cabal-syntax ^>=3.10 || ^>=3.12 || ^>=3.14
+                     , pretty       ^>=1.1
+diff --git a/app/Main.hs b/app/Main.hs
+index 6ab88a2..2a9db9c 100644
+--- a/app/Main.hs
++++ b/app/Main.hs
+@@ -184,7 +184,8 @@ main' Opts{..} fn = do
+         Just (OtherOS os) -> putWarn $ "Specialising to unknown operating system: " ++ os ++ "."
+         _ -> pure ()
+ 
+-    gpd <- readGenericPackageDescription Verbosity.silent Nothing (makeSymbolicPath fn)
++    -- Cabal-syntax 3.17: `silent` is a VerbosityFlags; readGenericPackageDescription wants a Verbosity.
++    gpd <- readGenericPackageDescription (Verbosity.mkVerbosity Verbosity.defaultVerbosityHandles Verbosity.silent) Nothing (makeSymbolicPath fn)
+ 
+     let env = Env optsOs optsArch optsCompiler optsFlags
+         GPD top components0 =
+@@ -214,7 +215,7 @@ formatJson =
+     renderJson . toJSON
+ 
+ process
+-    :: ComponentMap (C.CondTree ConfVar c (FieldMap (Fragment Json)))
++    :: ComponentMap (C.CondTree ConfVar (FieldMap (Fragment Json)))
+     -> ComponentMap (FieldMap (Fragment Json))
+ process components0 = components4
+   where
+diff --git a/src/Cabal/Syntax/CondTree.hs b/src/Cabal/Syntax/CondTree.hs
+index b88cb52..cea0f74 100644
+--- a/src/Cabal/Syntax/CondTree.hs
++++ b/src/Cabal/Syntax/CondTree.hs
+@@ -139,11 +139,11 @@ simplifyCondTree eval (CondTree nodes) =
+                 Just ts' -> [CondIfThen c' (CondTree ts')]
+ 
+ -- | Convert 'Distribution.Types.CondTree.CondTree' from Cabal-syntax into our 'CondTree'.
+-convertCondTree :: C.CondTree v c a -> CondTree v a
+-convertCondTree (C.CondNode a _ ifs) =
++convertCondTree :: C.CondTree v a -> CondTree v a
++convertCondTree (C.CondNode a ifs) =
+     CondTree (CondNode a :| map convertCondBranch ifs)
+ 
+-convertCondBranch :: C.CondBranch v c a -> CondNode v a
++convertCondBranch :: C.CondBranch v a -> CondNode v a
+ convertCondBranch (C.CondBranch c thenTree Nothing) =
+     CondIfThen
+         c
+diff --git a/src/Cabal/Syntax/GenericPackageDescription.hs b/src/Cabal/Syntax/GenericPackageDescription.hs
+index bcd2ae2..e134fbb 100644
+--- a/src/Cabal/Syntax/GenericPackageDescription.hs
++++ b/src/Cabal/Syntax/GenericPackageDescription.hs
+@@ -53,7 +53,7 @@ import Cabal.Syntax.ListMap qualified as ListMap
+ import Cabal.Syntax.Pretty (PrettyFieldClass (..), prettySection)
+ import Cabal.Syntax.Utils (FoldableWithIndex (..), Semialign (..))
+ 
+-type CondTree' a = CondTree ConfVar [Dependency] a
++type CondTree' a = CondTree ConfVar a
+ 
+ data GPD a b = GPD (FieldMap a) (ComponentMap b)
+     deriving (Show, Eq)
+@@ -108,7 +108,7 @@ runGenericPackageDescription
+     -> GenericPackageDescription
+     -> GPD
+         (Fragment Json)
+-        (CondTree ConfVar [Dependency] (FieldMap (Fragment Json)))
++        (CondTree ConfVar (FieldMap (Fragment Json)))
+ runGenericPackageDescription v gpd =
+     GPD (FieldMap meta) (ComponentMap components)
+   where
+diff --git a/src/Cabal/Syntax/Json.hs b/src/Cabal/Syntax/Json.hs
+index 4b49496..a2b9787 100644
+--- a/src/Cabal/Syntax/Json.hs
++++ b/src/Cabal/Syntax/Json.hs
+@@ -12,12 +12,13 @@ import Data.Foldable (Foldable (..))
+ import Data.Functor.Identity (Identity (Identity))
+ import Data.Kind (Type)
+ import Data.List.NonEmpty (NonEmpty)
++import Data.Text (Text)
++import Data.Text qualified as T
+ 
+-import Distribution.Compat.Newtype (Newtype (unpack))
+ import Distribution.Compiler (CompilerFlavor)
+ import Distribution.FieldGrammar
+     ( FilePathNT (..)
+-    , List
++    , List (..)
+     , MQuoted (..)
+     , SpecLicense (..)
+     , SpecVersion (..)
+@@ -88,14 +89,14 @@ newtype ViaPretty a = ViaPretty a
+ instance Pretty a => ToJSON (ViaPretty a) where
+     toJSON (ViaPretty a) = JsonString $ prettyShow a
+ 
+-newtype ViaUnpack a = ViaUnpack a
++-- Cabal-syntax 3.19 replaced its 'Newtype' class with 'Coercible', which has
++-- no functional dependency to derive the wrapped type from, so the newtypes
++-- that used to go through a @ViaUnpack@ deriving get plain instances below.
+ 
+-instance (ToJSON o, Newtype o n) => ToJSON (ViaUnpack n) where
+-    toJSON (ViaUnpack n) = toJSON $ unpack n
++-- Cabal-syntax 3.19 made Token and Token' wrap Text rather than String.
++deriving via Text instance ToJSON Token
+ 
+-deriving via String instance ToJSON Token
+-
+-deriving via String instance ToJSON Token'
++deriving via Text instance ToJSON Token'
+ 
+ deriving via String instance ToJSON FilePathNT
+ 
+@@ -113,7 +114,8 @@ deriving via ViaPretty CompatLicenseFile instance ToJSON CompatLicenseFile
+ 
+ deriving via ViaPretty VersionRange instance ToJSON VersionRange
+ 
+-deriving via ViaUnpack TestedWith instance ToJSON TestedWith
++instance ToJSON TestedWith where
++    toJSON = toJSON . getTestedWith
+ 
+ deriving via ViaPretty CompilerFlavor instance ToJSON CompilerFlavor
+ 
+@@ -121,7 +123,8 @@ deriving via ViaPretty SpecVersion instance ToJSON SpecVersion
+ 
+ deriving via ViaPretty SpecLicense instance ToJSON SpecLicense
+ 
+-deriving via (ViaUnpack (List sep b a)) instance ToJSON a => ToJSON (List sep b a)
++instance ToJSON a => ToJSON (List sep b a) where
++    toJSON (List xs) = toJSON xs
+ 
+ deriving via (ViaPretty CompatFilePath) instance ToJSON CompatFilePath
+ 
+@@ -143,7 +146,8 @@ deriving via (ViaPretty Extension) instance ToJSON Extension
+ 
+ deriving via (ViaPretty Language) instance ToJSON Language
+ 
+-deriving via (ViaUnpack (MQuoted a)) instance ToJSON a => ToJSON (MQuoted a)
++instance ToJSON a => ToJSON (MQuoted a) where
++    toJSON = toJSON . getMQuoted
+ 
+ deriving via (ViaPretty BenchmarkType) instance ToJSON BenchmarkType
+ 
+@@ -211,13 +215,16 @@ instance ToJSON c => ToJSON (Condition c) where
+     toJSON (COr l r) = JsonObject ["or" .= JsonArray [toJSON l, toJSON r]]
+     toJSON (CAnd l r) = JsonObject ["and" .= JsonArray [toJSON l, toJSON r]]
+ 
+-instance (ToJSON v, ToJSON c, ToJSON a) => ToJSON (CondTree v c a) where
+-    toJSON (CondNode a _ []) =
++-- Cabal-syntax 3.17 dropped the constraint type parameter from CondTree /
++-- CondBranch (CondTree v c a -> CondTree v a) and CondNode lost its middle
++-- (constraints) field.
++instance (ToJSON v, ToJSON a) => ToJSON (CondTree v a) where
++    toJSON (CondNode a []) =
+         toJSON a
+-    toJSON (CondNode a _ bs) =
++    toJSON (CondNode a bs) =
+         JsonArray $ toJSON a : map toJSON bs
+ 
+-instance (ToJSON v, ToJSON c, ToJSON a) => ToJSON (CondBranch v c a) where
++instance (ToJSON v, ToJSON a) => ToJSON (CondBranch v a) where
+     toJSON (CondBranch a t Nothing) =
+         JsonObject
+             [ ("_if", toJSON a)
+@@ -233,6 +240,9 @@ instance (ToJSON v, ToJSON c, ToJSON a) => ToJSON (CondBranch v c a) where
+ instance ToJSON v => ToJSON (ListMap String v) where
+     toJSON m = JsonObject [(k, toJSON v) | (k, v) <- itoList m]
+ 
++instance ToJSON Text where
++    toJSON = JsonString . T.unpack
++
+ instance ToJSON Char where
+     toJSON c = JsonString [c]
+     toJSONList = JsonString
+diff --git a/src/Cabal/Syntax/JsonFieldGrammar.hs b/src/Cabal/Syntax/JsonFieldGrammar.hs
+index b0a41e6..0061e29 100644
+--- a/src/Cabal/Syntax/JsonFieldGrammar.hs
++++ b/src/Cabal/Syntax/JsonFieldGrammar.hs
+@@ -5,13 +5,14 @@ import Data.List.NonEmpty qualified as NE
+ 
+ import Distribution.CabalSpecVersion (CabalSpecVersion)
+ import Distribution.Compat.Lens (ALens', aview)
+-import Distribution.Compat.Newtype (Newtype, alaf, pack')
+-import Distribution.FieldGrammar (FieldGrammar (..), defaultFreeTextFieldDefST)
++import Data.Coerce (Coercible, coerce)
++import Data.Text (Text)
++import Data.Text qualified as T
++import Distribution.FieldGrammar (FieldGrammar (..))
+ import Distribution.Fields (FieldName)
+ import Distribution.Pretty (Pretty (..))
+ import Distribution.Utils.Generic (fromUTF8BS, fromUTF8LBS)
+ import Distribution.Utils.Json (Json (..), renderJson)
+-import Distribution.Utils.ShortText qualified as ST
+ 
+ import Text.PrettyPrint (Doc, text)
+ 
+@@ -46,13 +47,13 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
+         fg v . aview f
+ 
+     uniqueFieldAla
+-        :: (ToJSON b, Newtype a b)
++        :: forall b a proxy s. (ToJSON b, Coercible a b)
+         => FieldName
+-        -> (a -> b)
++        -> proxy a b
+         -> ALens' s a
+         -> JSONFieldGrammar s a
+-    uniqueFieldAla fn _pack l = JsonFG $ \_ ->
+-        pure . scalarFragment fn . toJSON . pack' _pack . aview l
++    uniqueFieldAla fn _ l = JsonFG $ \_ ->
++        pure . scalarFragment fn . toJSON . (coerce :: a -> b) . aview l
+ 
+     booleanFieldDef
+         :: FieldName
+@@ -66,58 +67,52 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
+                 else [scalarFragment fn (toJSON b)]
+ 
+     optionalFieldAla
+-        :: (ToJSON b, Newtype a b)
++        :: forall b a proxy s. (ToJSON b, Coercible a b)
+         => FieldName
+-        -> (a -> b)
++        -> proxy a b
+         -> ALens' s (Maybe a)
+         -> JSONFieldGrammar s (Maybe a)
+-    optionalFieldAla fn _pack l = JsonFG $ \_ ->
+-        maybe mempty (pure . scalarFragment fn . toJSON . pack' _pack) . aview l
++    optionalFieldAla fn _ l = JsonFG $ \_ ->
++        maybe mempty (pure . scalarFragment fn . toJSON . (coerce :: a -> b)) . aview l
+ 
+     optionalFieldDefAla
+-        :: (ToJSON b, Newtype a b, Eq a)
++        :: forall b a proxy s. (ToJSON b, Coercible a b, Eq a)
+         => FieldName
+-        -> (a -> b)
++        -> proxy a b
+         -> ALens' s a
+         -> a
+         -> JSONFieldGrammar s a
+-    optionalFieldDefAla fn _pack l def = JsonFG $ \_ s ->
++    optionalFieldDefAla fn _ l def = JsonFG $ \_ s ->
+         let x = aview l s
+          in if x == def
+                 then mempty
+-                else [scalarFragment fn (toJSON (pack' _pack x))]
++                else [scalarFragment fn (toJSON (coerce x :: b))]
+ 
+     freeTextField
+         :: FieldName
+-        -> ALens' s (Maybe String)
+-        -> JSONFieldGrammar s (Maybe String)
++        -> ALens' s (Maybe Text)
++        -> JSONFieldGrammar s (Maybe Text)
+     freeTextField fn l = JsonFG $ \_ ->
+-        maybe mempty (pure . scalarFragment fn . toJSON) . aview l
++        maybe mempty (pure . scalarFragment fn . JsonString . T.unpack) . aview l
+ 
+     freeTextFieldDef
+         :: FieldName
+-        -> ALens' s String
+-        -> JSONFieldGrammar s String
++        -> ALens' s Text
++        -> JSONFieldGrammar s Text
+     freeTextFieldDef fn l = JsonFG $ \_ s ->
+         let x = aview l s
+-         in if x == ""
++         in if T.null x
+                 then mempty
+-                else [scalarFragment fn (JsonString x)]
+-
+-    freeTextFieldDefST
+-        :: FieldName
+-        -> ALens' s ST.ShortText
+-        -> JSONFieldGrammar s ST.ShortText
+-    freeTextFieldDefST = defaultFreeTextFieldDefST
++                else [scalarFragment fn (JsonString (T.unpack x))]
+ 
+     monoidalFieldAla
+-        :: (ToJSON b, Monoid a, Newtype a b)
++        :: forall b a proxy s. (ToJSON b, Monoid a, Coercible a b)
+         => FieldName
+-        -> (a -> b)
++        -> proxy a b
+         -> ALens' s a
+         -> JSONFieldGrammar s a
+-    monoidalFieldAla fn _pack l = JsonFG $ \_ s ->
+-        case toJSON (pack' _pack $ aview l s) of
++    monoidalFieldAla fn _ l = JsonFG $ \_ s ->
++        case toJSON (coerce (aview l s) :: b) of
+             JsonArray js ->
+                 case NE.nonEmpty js of
+                     Nothing -> []
+@@ -126,11 +121,11 @@ instance FieldGrammar ToJSON JSONFieldGrammar where
+ 
+     prefixedFields
+         :: FieldName
+-        -> ALens' s [(String, String)]
+-        -> JSONFieldGrammar s [(String, String)]
++        -> ALens' s [(Text, Text)]
++        -> JSONFieldGrammar s [(Text, Text)]
+     prefixedFields fnPfx l = JsonFG $ \_ kv ->
+         foldMap
+-            (\(fn, s) -> [scalarFragment' (fromUTF8BS fnPfx ++ fn) (JsonString s)])
++            (\(fn, s) -> [scalarFragment' (fromUTF8BS fnPfx ++ T.unpack fn) (JsonString (T.unpack s))])
+             (aview l kv)
+ 
+     knownField :: FieldName -> JSONFieldGrammar s ()
+@@ -182,7 +177,7 @@ instance Pretty (Fragment Json) where
+     pretty (ScalarFragment a) =
+         prettyJson a
+     pretty (ListLikeFragment as) =
+-        alaf Vertically foldMap prettyJson as
++        case foldMap (Vertically . prettyJson) as of Vertically d -> d
+ 
+ prettyJson :: Json -> Doc
+ prettyJson = text . fromUTF8LBS . renderJson
+diff --git a/src/Cabal/Syntax/Pretty.hs b/src/Cabal/Syntax/Pretty.hs
+index e3a16bf..ccc0c07 100644
+--- a/src/Cabal/Syntax/Pretty.hs
++++ b/src/Cabal/Syntax/Pretty.hs
+@@ -7,7 +7,6 @@ module Cabal.Syntax.Pretty
+     , Vertically (..)
+     ) where
+ 
+-import Distribution.Compat.Newtype (Newtype)
+ import Distribution.Fields.Pretty (PrettyField (..))
+ import Distribution.Pretty (Pretty (..))
+ import Distribution.Simple.Utils (toUTF8BS)
+@@ -24,10 +23,10 @@ import Cabal.Syntax.Utils (FoldableWithIndex (..))
+ class PrettyFieldClass a where
+     prettyField :: a -> [PrettyField ()]
+ 
+-instance PrettyFieldClass a => PrettyFieldClass (CondTree ConfVar c a) where
+-    prettyField (CondNode a _ bs) = prettyField a <> concatMap prettyField bs
++instance PrettyFieldClass a => PrettyFieldClass (CondTree ConfVar a) where
++    prettyField (CondNode a bs) = prettyField a <> concatMap prettyField bs
+ 
+-instance PrettyFieldClass a => PrettyFieldClass (CondBranch ConfVar c a) where
++instance PrettyFieldClass a => PrettyFieldClass (CondBranch ConfVar a) where
+     prettyField (CondBranch c thenTree Nothing) =
+         [ prettySection "if" [ppCondition c] (prettyField thenTree)
+         ]
+@@ -83,8 +82,6 @@ newtype Vertically = Vertically Doc
+ 
+ deriving via Doc instance Pretty Vertically
+ 
+-instance Newtype Doc Vertically
+-
+ instance Semigroup Vertically where
+     Vertically lhs <> Vertically rhs = Vertically (lhs $$ rhs)
+ 
+diff --git a/src/Cabal/Syntax/Simplify.hs b/src/Cabal/Syntax/Simplify.hs
+index 1612648..98b897c 100644
+--- a/src/Cabal/Syntax/Simplify.hs
++++ b/src/Cabal/Syntax/Simplify.hs
+@@ -34,13 +34,13 @@ simplifyGPD env (GenericPackageDescription{..}) =
+ 
+ -- | Simplifies a CondTree using a partial flag assignment. Conditions that cannot be evaluated are left untouched.
+ simplifyCondTree
+-    :: forall v c a
+-     . (Monoid a, Monoid c)
++    :: forall v a
++     . (Monoid a)
+     => (v -> Either v Bool)
+-    -> CondTree v c a
+-    -> CondTree v c a
+-simplifyCondTree eval (CondNode a c ifs) =
+-    CondNode a c branches <> mconcat trees
++    -> CondTree v a
++    -> CondTree v a
++simplifyCondTree eval (CondNode a ifs) =
++    CondNode a branches <> mconcat trees
+   where
+     (trees, branches) = partitionEithers $ map (simplifyCondBranch eval) ifs
+ 
+@@ -49,10 +49,10 @@ simplifyCondTree eval (CondNode a c ifs) =
+ -- transforming the CondBranch into a CondTree. Therefore this function returns either a CondTree or
+ -- a CondBranch.
+ simplifyCondBranch
+-    :: (Monoid a, Monoid c)
++    :: (Monoid a)
+     => (v -> Either v Bool)
+-    -> CondBranch v c a
+-    -> Either (CondTree v c a) (CondBranch v c a)
++    -> CondBranch v a
++    -> Either (CondTree v a) (CondBranch v a)
+ simplifyCondBranch eval (CondBranch cv t me) =
+     case fst (simplifyCondition cv eval) of
+         Lit True -> Left $ simplifyCondTree eval t
+diff --git a/tests/Tests.hs b/tests/Tests.hs
+index 7d0b916..259ab2f 100644
+--- a/tests/Tests.hs
++++ b/tests/Tests.hs
+@@ -78,7 +78,7 @@ goldenTests = do
+             fmap (testGroup cabalfile) $ do
+                 let simple = mkTest "original" cabalfile ".json" []
+ 
+-                gpd <- readGenericPackageDescription Verbosity.silent Nothing (makeSymbolicPath cabalfile)
++                gpd <- readGenericPackageDescription (Verbosity.mkVerbosity Verbosity.defaultVerbosityHandles Verbosity.silent) Nothing (makeSymbolicPath cabalfile)
+ 
+                 let test_flags =
+                         mconcat

@@ -56,7 +56,7 @@ let
         (p: if builtins.isFunction p
           then p { inherit  (package.identifier) version; inherit revision; }
           else p) build-tools))) ++
-    lib.optional (pkgconfig != []) buildPackages.cabalPkgConfigWrapper;
+    lib.optional (pkgconfig != []) buildPackages.cabalPkgConfigWrapperReal;
 
   drv =
     stdenv.mkDerivation ({

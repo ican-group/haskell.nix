@@ -47,8 +47,8 @@ let
   # Keep this in step with `version` in `haskell-nix.v2-cabal-install`
   # (overlays/haskell.nix).  It is not mainline's 3.16.1.0 here: this
   # branch builds the v2 cabal from the stable-haskell fork, which is
-  # 3.17.0.1.
-  v2CabalInstallVersion = "3.17.0.1";
+  # 3.19.0.0.
+  v2CabalInstallVersion = "3.19.0.0";
 
   # Shared helper that wraps a real ghc into a "shim" with cabal-
   # near-compiler aliases, ghcjs settings patch, and native-musl
@@ -106,14 +106,6 @@ let
         let e = pkgs.haskell-nix.iserv-proxy-exes.${compiler-nix-name} or null;
         in if e == null then null
            else e.evalWith.${evalPackages.stdenv.hostPlatform.system} or e;
-    # Deliberately NOT routed through `templateHaskell`: that is null
-    # whenever a project sets `crossTemplateHaskellSupport = false`, which
-    # would silently disable the native-builder pinning for exactly the
-    # slices (the injected boot packages) that need it.  See
-    # `sliceRequiredSystemFeatures` in comp-v2-builder.nix.
-    emulatorSystemFeatures = pkgs.haskell-nix.emulatorSystemFeatures or [];
-    emulatorNativeBuilderPackages = pkgs.haskell-nix.emulatorNativeBuilderPackages or [];
-    emulatorNativeBuilderTH = pkgs.haskell-nix.emulatorNativeBuilderTH or (_: false);
   };
 
   haddockBuilder = haskellLib.weakCallPackage pkgs ./haddock-builder.nix {

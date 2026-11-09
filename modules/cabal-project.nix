@@ -184,6 +184,29 @@ in {
       '';
     };
 
+    usePatchedHsc2hs = mkOption {
+      type = bool;
+      default = true;
+      description = ''
+        Offer cabal's solver haskell.nix's patched hsc2hs as
+        `hsc2hs-''${pkgs.haskell-nix.hsc2hs-patched-version}`, from a small
+        package repository added to the project (`haskell-nix-hsc2hs`).
+        It is stable-haskell's batch cross-compilation fork of hsc2hs with
+        haskell.nix's fix to it (see overlays/hsc2hs.nix), which makes
+        cross-compiled `.hsc` files much faster to process -- around 15x
+        for the GHC JavaScript backend and 20x for wasm.
+
+        It is only a candidate.  It is chosen when a plan needs hsc2hs as a
+        build tool (`build-tool-depends` or the legacy `build-tools`) and
+        the version satisfies the constraints on it; otherwise cabal picks
+        another version as usual.  Packages that do not ask for hsc2hs keep
+        using the compiler's.
+
+        A project that sets `active-repositories` has to list
+        `haskell-nix-hsc2hs` itself for the repository to be used.
+      '';
+    };
+
     # Used by mkCabalProjectPkgSet
     pkg-def-extras = mkOption {
       type = nullOr (listOf unspecified);
@@ -208,6 +231,20 @@ in {
     };
   };
   config = lib.mkMerge [
+    # The patched hsc2hs (see `usePatchedHsc2hs` and overlays/hsc2hs.nix).
+    # The repository is a store path, as head.hackage's is in
+    # test/head-hackage.nix: plan.json records it as the package's
+    # `repo.uri`, which lib/load-cabal-plan.nix fetches the tarball from.
+    # Unsigned, hence no root keys and a zero threshold.
+    (lib.mkIf config.usePatchedHsc2hs {
+      cabalProjectLocal = lib.mkBefore ''
+        repository haskell-nix-hsc2hs
+          url: file:${config.evalPackages.haskell-nix.hsc2hs-patched-repo}
+          secure: True
+          root-keys:
+          key-threshold: 0
+      '';
+    })
     # Musl host: every executable should be statically linked.
     # comp-builder achieves this at build time by adding
     # `--ghc-option=-optl=-static` to the per-component
@@ -607,13 +644,25 @@ in {
       # stripping applies to nested `''` strings separately, which would
       # push these lines to column 0 and change their cabal scope from the
       # stanza to the whole project.
+      #
+      # The two paths are interpolated WITHOUT their string context.  With
+      # it, the project text -- and so every wasm plan-to-nix IFD, plus the
+      # dot-cabal repos built from it -- depended on actually building
+      # libffi-wasm, i.e. the whole wasm LLVM/clang/lld chain, before any
+      # wasm project could even be planned at evaluation time.  The solver
+      # never reads these dirs (libffi-wasm is plain C: no .cabal, no .pc);
+      # only the rts build does.  The context would not reach the build
+      # anyway -- plan-to-nix round-trips this text through a file -- and the
+      # rts slices already get libffi-wasm into their sandbox through the
+      # component `libs` set further down.  The text is byte-identical, so
+      # plan.json and every UnitId are unchanged.
       rtsWasmExtras = lib.optionalString isWasm ("\n"
         + "  -- GHC's wasm backend uses JSFFI, but the rts C sources still\n"
         + "  -- include ffi.h; nixpkgs' wasi toolchain ships no libffi, so\n"
         + "  -- point at the libffi-wasm build (same one hadrian wasm\n"
         + "  -- bindists use).\n"
-        + "  extra-include-dirs: ${shGhc.libffi-wasm.dev}/include\n"
-        + "  extra-lib-dirs: ${shGhc.libffi-wasm.out}/lib");
+        + "  extra-include-dirs: ${builtins.unsafeDiscardStringContext "${shGhc.libffi-wasm.dev}"}/include\n"
+        + "  extra-lib-dirs: ${builtins.unsafeDiscardStringContext "${shGhc.libffi-wasm.out}"}/lib");
       # Whether to build the dynamic/shared way for the TARGET's boot
       # libraries.  This must key off the target platform (`tp`), NOT
       # `shGhc.enableShared`: `shGhc` is the BUILD compiler (selected from
@@ -718,6 +767,17 @@ in {
       # `ghc` has no Backpack, tests or benchmarks, and is the one package
       # whose id the compiler hard-codes.
       v2LocalPackageSliceNames = [ "ghc" ];
+      # `allow-boot-library-installs: True` (below, outside the boot-package
+      # markers so the shell keeps it too): cabal 3.19 (stable-haskell/merge)
+      # brings back upstream's hard "non-reinstallable" constraints, so
+      # `base`, `ghc-internal`, `ghc`, `template-haskell`, ... must resolve
+      # to an INSTALLED instance -- and the -target compiler's db is empty:
+      #   rejecting: base-4.22.1.0 (constraint from non-reinstallable
+      #   package requires installed instance)
+      # The older fork had dropped those constraints entirely (its Note
+      # [No non-reinstallable constraints]).  With the flag, the merge
+      # adds only wired-in unit-id pins, which this compiler does not
+      # report, and never pins a package the project lists as a target.
       cabalProjectLocal = lib.mkBefore ''
         -- Added by the stable-haskell boot-package injection (see the
         -- `injectStableHaskellBootPackages` option): the compiler ships no
@@ -772,6 +832,7 @@ in {
         package ${p}
           profiling-detail: none
         '') bootPkgNames}
+        allow-boot-library-installs: True
         -- Forked boot packages that live outside the GHC tree.
         source-repository-package
           type: git
@@ -945,8 +1006,9 @@ in {
       inputMap = {
         "https://github.com/stable-haskell/Cabal.git/f2e0a89e15cf6604cec9d93e26a4b3caf459b076" =
           pkgs.haskell-nix.sources.ghc914-sh-cabal;
+        # Patched, as the compiler's own hsc2hs is (overlays/hsc2hs.nix).
         "https://github.com/stable-haskell/hsc2hs.git/d07eea1260894ce5fe456f881fbc62366c9eb1b7" =
-          pkgs.haskell-nix.sources.ghc914-sh-hsc2hs;
+          pkgs.haskell-nix.hsc2hs-patched-src;
       };
       # rts/configure AC_PATH_PROGs programs that are not cabal-level
       # dependencies (DERIVE_CONSTANTS, GENAPPLY, NM, OBJDUMP, PYTHON).

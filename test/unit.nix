@@ -32,8 +32,89 @@ let
     rev = "487eea1c249537d34c27f6143dff2b9d5586c657";
     sha256 = "077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123";
   };
+
+  # Whether a derivation carrying cabal license `lic` (mapped the way the
+  # component builders map it) gets past nixpkgs' check-meta.  The test
+  # package set does not allow unfree packages.
+  licenseEvaluates = lic: (builtins.tryEval
+    (pkgs.runCommand "haskell-nix-license-check" {
+      meta.license = haskellLib.cabalToNixpkgsLicense lic;
+    } "touch $out").drvPath).success;
 in
 lib.runTests {
+  # Free licenses must stay free under nixpkgs' check-meta, which treats a
+  # license in a list (what `cabalToNixpkgsLicense` returns) without `free` as
+  # unfree.  Cabal turns the legacy unversioned `license: LGPL` into
+  # `LicenseRef-LGPL` (cpphs, polyparse).
+  testLicenseLegacyLGPLEvaluates = {
+    expr = licenseEvaluates "LicenseRef-LGPL";
+    expected = true;
+  };
+  testLicenseCompoundEvaluates = {
+    expr = licenseEvaluates "BSD-3-Clause AND MIT AND ISC";
+    expected = true;
+  };
+  # ...while a license that really is unfree is refused, so the checks above
+  # go through check-meta rather than passing vacuously.
+  testLicenseUnfreeIsRefused = {
+    expr = licenseEvaluates "CC-BY-NC-4.0";
+    expected = false;
+  };
+  # `NONE` (no license declared) is named, not `null`, so a refusal reports
+  # it as such rather than as "unfree license ('unknown')".
+  testLicenseNoneIsNamed = {
+    expr = map (l: l.shortName) (haskellLib.cabalToNixpkgsLicense "NONE");
+    expected = [ "NONE" ];
+  };
+
+  # `shadowedNonReinstallablePkgs` flags names in `nonReinstallablePkgs` that the
+  # project pins to a version different from the compiler-shipped one (#1657).
+
+  # Fires only for the pinned-to-a-different-version entry.
+  testShadowedNonReinstallableFires = {
+    expr = haskellLib.shadowedNonReinstallablePkgs {
+      nonReinstallablePkgs = [ "base" "bytestring" "ghc-prim" ];
+      compilerPackages = { base = "4.18.0.0"; bytestring = "0.11.4.0"; ghc-prim = "0.10.0"; };
+      packages = { bytestring = { package.identifier.version = "0.12.0.0"; }; };
+    };
+    expected = [ "bytestring" ];
+  };
+
+  # A normal project (planned version == shipped version) yields nothing.
+  testShadowedNonReinstallableSilentWhenMatching = {
+    expr = haskellLib.shadowedNonReinstallablePkgs {
+      nonReinstallablePkgs = [ "base" "bytestring" ];
+      compilerPackages = { base = "4.18.0.0"; bytestring = "0.11.4.0"; };
+      packages = { bytestring = { package.identifier.version = "0.11.4.0"; }; };
+    };
+    expected = [ ];
+  };
+
+  # Nothing is flagged when no `nonReinstallablePkgs` entry is overridden
+  # (absent, or present but shadowed to null).
+  testShadowedNonReinstallableIgnoresUnpinned = {
+    expr = haskellLib.shadowedNonReinstallablePkgs {
+      nonReinstallablePkgs = [ "base" "rts" ];
+      compilerPackages = { base = "4.18.0.0"; rts = "1.0.2"; };
+      packages = { rts = null; };
+    };
+    expected = [ ];
+  };
+
+  # A by-name override record (no package definition) is skipped without
+  # touching its undefined `package.identifier.version`.
+  testShadowedNonReinstallableIgnoresOverrideOnly = {
+    expr = haskellLib.shadowedNonReinstallablePkgs {
+      nonReinstallablePkgs = [ "base" "Cabal" ];
+      compilerPackages = { base = "4.18.0.0"; Cabal = "3.10.1.0"; };
+      packages = { Cabal = {
+        hasPackageDefinition = false;
+        package.identifier.version = throw "option used but not defined";
+      }; };
+    };
+    expected = [ ];
+  };
+
   # identity function for applyComponents
   test-applyComponents-id = {
     expr = haskellLib.applyComponents (_componentId: component: component) emptyConfig;
@@ -51,10 +132,104 @@ lib.runTests {
     expected = componentsConfig.components;
   };
 
+  # mkFlakeHaddock collects the `doc` output of every component that produces
+  # haddock (a library/test with doHaddock enabled exposes a `doc` attr), keyed
+  # by component-id, and skips components without docs — exes/benchmarks and
+  # haddock-disabled libraries (see #1932).
+  testMkFlakeHaddock =
+    let
+      mkComp = id: extra: { passthru.identifier.component-id = id; } // extra;
+    in {
+      expr = haskellLib.mkFlakeHaddock {
+        pkgA.components = {
+          library = mkComp "pkgA:lib:pkgA" { doc = "DOC-libA"; };
+          exes.e = mkComp "pkgA:exe:e" { };            # no doc -> skipped
+          # v2 slice without documentation: `doc` throws, `docEnabled` is false.
+          sublibs.v2 = mkComp "pkgA:lib:v2" { doc = throw "no docs"; docEnabled = false; };
+          # v2 slice with documentation.
+          sublibs.v2doc = mkComp "pkgA:lib:v2doc" { doc = "DOC-v2"; docEnabled = true; };
+          sublibs.s = mkComp "pkgA:lib:s" { doc = "DOC-subA"; };
+          tests.t = mkComp "pkgA:test:t" { doc = "DOC-testA"; };
+          foreignlibs = { };
+          benchmarks = { };
+        };
+        pkgB.components = {
+          library = mkComp "pkgB:lib:pkgB" { };        # haddock disabled -> no doc -> skipped
+          sublibs = { }; exes = { }; tests = { };
+          foreignlibs = { }; benchmarks = { };
+        };
+      };
+      expected = {
+        "pkgA:lib:pkgA" = "DOC-libA";
+        "pkgA:lib:s" = "DOC-subA";
+        "pkgA:lib:v2doc" = "DOC-v2";
+        "pkgA:test:t" = "DOC-testA";
+      };
+    };
+
+  # A project with no haddock-producing components yields an empty group,
+  # matching what `doHaddock = false` produces.
+  testMkFlakeHaddockEmpty = {
+    expr = haskellLib.mkFlakeHaddock {
+      pkgB.components.library.passthru.identifier.component-id = "pkgB:lib:pkgB";
+    };
+    expected = { };
+  };
+
+  # mkFlakeCiJobs surfaces the haddock group so hydra builds documentation.
+  testMkFlakeCiJobsHaddock = {
+    expr = (haskellLib.mkFlakeCiJobs { roots = "ROOTS"; } {
+      packages = { }; checks = { }; coverage = { }; devShells = { };
+      checkedProject = { };
+      haddock = { "pkgA:lib:pkgA" = "DOC"; };
+    }).haddock;
+    expected = { "pkgA:lib:pkgA" = "DOC"; };
+  };
+
+  # The haddock arg defaults to {} so any other caller of mkFlakeCiJobs keeps
+  # working, and an empty group is left out so the jobs match a project that
+  # has not opted in.
+  testMkFlakeCiJobsHaddockDefault = {
+    expr = (haskellLib.mkFlakeCiJobs { roots = "ROOTS"; } {
+      packages = { }; checks = { }; coverage = { }; devShells = { };
+      checkedProject = { };
+    }) ? haddock;
+    expected = false;
+  };
+
   # testing that the tests work
   testId = {
     expr = lib.id 1;
     expected = 1;
+  };
+
+  # `dependToLib` returns the library component of a dependency package.
+  testDependToLibResolvesLibrary = {
+    expr = haskellLib.dependToLib { identifier.name = "foo"; components.library = "the-lib"; };
+    expected = "the-lib";
+  };
+
+  # A sublib `depends` value is already the derivation (no `components`), so it
+  # is passed through unchanged.
+  testDependToLibPassesSublibThrough = {
+    expr = haskellLib.dependToLib "already-a-derivation";
+    expected = "already-a-derivation";
+  };
+
+  # A package with `components` but no `library` (unplanned or unbuildable) must throw
+  # rather than silently vanish or give an opaque `attribute 'library' missing`
+  # (see #1379).  `runTests` can only assert that evaluation fails; the message
+  # wording is checked out of band.
+  testDependToLibThrowsForUnplannedPackage = {
+    expr = (builtins.tryEval
+      (haskellLib.dependToLib { identifier.name = "foo"; components = { }; })).success;
+    expected = false;
+  };
+
+  # The shared message names the package (used by v1 and the v2 builder).
+  testUnplannedLibraryMessageNamesPackage = {
+    expr = lib.hasInfix "package 'foo' is not available" (haskellLib.unplannedLibraryMessage "foo");
+    expected = true;
   };
 
   testParseBlock1 = {
@@ -193,6 +368,25 @@ lib.runTests {
     in {
       expr = sourceRepos crlf;
       expected = sourceRepos lf;
+    };
+
+  # A v2 slice's config fields come from its own plan unit's
+  # configure-args only (no project-wide baseline), sorted so the fragment
+  # text is canonical.
+  testV2PragmasOfOwnUnit =
+    let
+      globals = import ../builder/v2-project-globals.nix { inherit lib; } {
+        planJson = [];
+      };
+    in {
+      expr = globals.pragmasOf [
+        "--prefix=./dist-newstyle/store/host/x86_64-unknown-linux"
+        "--enable-coverage" "--disable-shared" "--enable-optimization"
+        "--disable-debug-info" "--ghc-option=-O2" "--disable-shared"
+      ];
+      expected = [
+        "coverage: True" "debug-info: 0" "optimization: True" "shared: False"
+      ];
     };
 
   testParseRepositoryBlock =

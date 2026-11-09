@@ -63,6 +63,27 @@ with types;
               = "0dxx8cp2xndpw3jwiawch2dkrkp15mil7pyx7dvd810pwc22pm2q"; };
       '';
     };
+    inputMap = mkOption {
+      type = nullOr attrs;
+      default = {};
+      description = ''
+        Specifies the contents of the git urls referenced by the
+        `extra-deps` in the stack.yaml file.  This is the stack
+        equivalent of the `cabalProject` `inputMap` argument and is
+        the recommended way to make private git repositories (served
+        over ssh/git) and fully offline builds work.
+
+        Keys are the repository url (optionally suffixed with
+        `/<rev>`) and values are the corresponding local path or flake
+        input.  When a key of the form `<url>/<rev>` is present the
+        value is used directly.  When a bare `<url>` key is used the
+        value's `.rev` attribute is checked against the `commit` in the
+        stack.yaml file.
+
+        For example:
+          inputMap = { "https://github.com/jgm/pandoc-citeproc" = inputs.pandoc-citeproc; };
+      '';
+    };
     branchMap = mkOption {
       type = nullOr unspecified;
       default = null;

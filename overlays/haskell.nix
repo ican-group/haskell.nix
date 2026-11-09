@@ -30,23 +30,9 @@ final: prev: {
         # reuses one instance instead of re-deriving it per `cabalProject`.
         eval-systems = [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
 
-        # `requiredSystemFeatures` for every derivation that may run a
-        # host-platform binary through an EMULATOR: the `iserv-proxy
-        # --pipe <emulator>` used for Template Haskell on a cross target
-        # (qemu-user / hyper-linux via `overlays/linux-cross.nix`, wine
-        # via `overlays/mingw_w64.nix`), and the `testWrapper` that runs
-        # a cross-built test exe.
-        #
-        # Why this exists: qemu user-mode needs faithful signal, mmap and
-        # TLS semantics, and it does not get them when it is ITSELF being
-        # emulated.  On the zw3rk farm the `x86_64-linux` build slots are
-        # served by the M4s' `nix-linux-builder` VMs, whose kernel is
-        # aarch64 -- so an x86_64 `qemu-aarch64` runs under Rosetta and
-        # then tries to emulate aarch64 on top.  A slice that evaluates a
-        # splice under that stack can die with
-        #   qemu: uncaught target signal 11 (Segmentation fault)
-        # and then hang until nix's 7200s timeout, while the SAME
-        # derivation builds green on a real x86_64 host.
+        # `requiredSystemFeatures` for the checks (`haskellLib.check`) whose
+        # test exes cannot run on an emulated builder; see
+        # `emulatorNativeBuilderCheck` below for which ones those are.
         #
         # Empty by default: this is build-farm policy, and requiring a
         # feature the user's nix does not advertise would make these
@@ -57,95 +43,34 @@ final: prev: {
         # convenience -- the zw3rk Hydra withholds it from the darwin
         # hosts' linux `buildMachines` entries (the external derivation
         # builder cannot implement it) while the one real linux host
-        # advertises it, so requiring it lands these derivations exactly
-        # where an emulator works.
+        # advertises it, so requiring it lands these checks exactly where
+        # their exes run.
         #
-        # The three knobs below choose WHICH derivations get these
-        # features; with this list empty they have no effect.
-        # The Android ARM32 personality fix removes one emulator failure,
-        # but does not fix the cross-compiler stalls described below.
+        # This used to pin much more: Template Haskell slices for hosts
+        # whose splices run through an emulator, a deny-list of packages
+        # (`base`, `th-orphans`), the native stage-2 GHC library, and
+        # Android ARM32 checks.  On 2026-10-24 all of those were built on
+        # the `nix-linux-builder` VMs instead and passed (th-dlls,
+        # js-template-haskell and with-packages for aarch64 glibc/musl,
+        # i686, mingw/ucrt and armv7a, plus the armv7a test exes, which
+        # qemu's PER_LINUX32 fallback from #2585 now runs).  What still
+        # fails there is a transient deadlock of the x86_64 cross ghc
+        # under Rosetta (all threads parked in `futex_lock_pi`); it hits
+        # ghc-internal and unix as often as base, so no package pin avoids
+        # it, and a retry builds.
         emulatorSystemFeatures = prev.haskell-nix.emulatorSystemFeatures or [];
 
-        # ...but ONLY for these packages.  There is exactly one native
-        # linux builder, so pinning every emulator-using cross slice to
-        # it would serialise the whole android / aarch64 job set behind
-        # a 4-job machine that is also the Hydra server.  Most cross
-        # slices never evaluate a splice, and of those that do, most
-        # survive the nested emulation; only a few reliably do not.
-        #
-        # So this is a deny-list of known-bad packages, not a blanket
-        # rule.  The test for adding a name is an A/B on the SAME
-        # derivation: it fails on a `nix-linux-builder` host and builds
-        # green when forced native with `nix build --builders ""`.  That
-        # A/B is the whole criterion, and it is worth actually running --
-        # most cross failures in this jobset have nothing to do with the
-        # emulator ([Cabal-7125] link errors, OOM kills, genuine compiler
-        # bugs) and moving those achieves nothing.
-        #
-        # These historical A/B failures explain the fallback policy.
-        # Do NOT use the presence of `qemu: uncaught target signal 11` as
-        # the test.  That catches only one of the two shapes, and reading
-        # a host name is not evidence at all:
-        #
-        #   th-orphans  aarch64-android.  Its `Language.Haskell.TH.
-        #               .Instances` splice segfaults the interpreter
-        #               ~3s in, then hangs until the 7200s timeout;
-        #               the identical derivation builds in ~21s on a
-        #               native x86_64 host.
-        #
-        #   base        armv7a-android.  The silent shape: no iserv, no
-        #               qemu, no `uncaught target signal` anywhere in the
-        #               log -- the cross ghc itself stalls under Rosetta
-        #               and burns the full 7200s timeout.  Forced native
-        #               the same derivation completes in 70s.  A ~100x
-        #               gap, and nothing in the log names the emulator,
-        #               which is exactly why the A/B is the criterion.
-        emulatorNativeBuilderPackages =
-          prev.haskell-nix.emulatorNativeBuilderPackages or [ "th-orphans" "base" ];
-
-        # ...and EVERY test exe run (`haskellLib.check`) for a host platform
-        # matching this predicate, whatever the package. Without the Android
-        # ARM32 patch, bionic's startup calls `personality(PER_LINUX32)`,
-        # which qemu-arm passes to the host kernel, and the kernel of a
-        # `nix-linux-builder` VM on Apple silicon (no AArch32 EL0) rejects
-        # it, so every exe dies before `main`:
-        #   libc: error setting PER_LINUX32 personality: Invalid argument
-        #   qemu: uncaught target signal 6 (Aborted) - core dumped
-        # The A/B holds: the cabal-simple check that aborted on
-        # aarch64-darwin-b prints `Hello, Haskell!` forced native.
-        #
-        # 32-bit x86 Linux (musl32) is the other: its exes need no emulator
-        # on a real x86_64 host, but under Rosetta in a `nix-linux-builder`
-        # VM an i686 ELF cannot be executed at all --
+        # Every check for a host platform matching this predicate is
+        # pinned.  32-bit x86 Linux (musl32) is the one that needs it: the
+        # test exe itself runs, but under Rosetta in a `nix-linux-builder`
+        # VM an i686 ELF that it spawns directly cannot be executed at all
         #   check-datadir-tool: readCreateProcess: posix_spawnp: invalid
         #   argument (Exec format error)
-        # -- while the same check passes forced native on linux-0.  Only
-        # checks are pinned -- they are small, and they are what fails.
+        # (every attempt, on three VMs, in eval 3029), while the same check
+        # passes on a real x86_64 host.
         emulatorNativeBuilderCheck =
           prev.haskell-nix.emulatorNativeBuilderCheck
-            or (platform: (platform.isAndroid && platform.isAarch32)
-                       || (platform.isLinux && platform.isx86_32));
-
-        # ...and every slice of a component that declares
-        # `usesTemplateHaskell` (modules/component-options.nix), for a
-        # host platform matching this predicate: one whose splices run
-        # through an emulator (qemu-user / wine via iserv-proxy) or as
-        # i686 code, which Rosetta cannot run at all.  ghcjs and wasm
-        # run their splices in node, natively, and an x86_64 Linux host
-        # (musl64, static) runs them directly, so those are left out.
-        # So is aarch64 Android: the `nix-linux-builder` VMs are aarch64
-        # machines, and android th-dlls built on every VM attempt and failed on
-        # linux-0 (`libdl.a is a stub --- use libdl.so instead`).  aarch64
-        # glibc is the opposite: on a VM ghc914-sh's th-dlls splice segfaulted
-        # in qemu and sat out the 7200s timeout, while every th-dlls variant
-        # (ghc914-sh and ghc9141, with and without -fexternal-interpreter)
-        # builds forced native on an x86_64 host.
-        emulatorNativeBuilderTH =
-          prev.haskell-nix.emulatorNativeBuilderTH
-            or (platform: !platform.isGhcjs && !platform.isWasm
-                       && (platform.isWindows
-                           || (platform.isLinux && !platform.isx86_64
-                               && !(platform.isAarch64 && platform.isAndroid))));
+            or (platform: platform.isLinux && platform.isx86_32);
 
         # nixpkgs used to run `cabal` / `nix-tools`, keyed by eval system
         # and memoised at the fixpoint level.  Non-native systems are
@@ -270,10 +195,22 @@ final: prev: {
             }:
             let
                 # The Stackage release referenced in the stack config
-                pkg-def = stackage.${stack-pkgs.resolver} or (throw ''
-                This version of stackage.nix does not know about the Stackage resolver ${stack-pkgs.resolver}.
-                You may need to update haskell.nix to one that includes a newer stackage.nix.
-                '');
+                # A compiler-only snapshot (`resolver: ghc-X`, or a snapshot
+                # file whose own resolver is `{ compiler: ghc-X }`, as every
+                # commercialhaskell/stackage-snapshots file has) is not a
+                # Stackage release, so updating stackage.nix will not help.
+                pkg-def = stackage.${stack-pkgs.resolver} or (throw (
+                  if final.lib.hasPrefix "ghc-" stack-pkgs.resolver
+                  then ''
+                  The stack project resolves to the compiler-only snapshot ${stack-pkgs.resolver},
+                  which haskell.nix does not support: it needs a Stackage release (lts-* or nightly-*).
+                  If the snapshot is a commercialhaskell/stackage-snapshots file, use the matching
+                  lts-X.Y or nightly-YYYY-MM-DD name as the resolver instead.
+                  ''
+                  else ''
+                  This version of stackage.nix does not know about the Stackage resolver ${stack-pkgs.resolver}.
+                  You may need to update haskell.nix to one that includes a newer stackage.nix.
+                  ''));
                 # The compiler referenced in the stack config
                 compiler = (stack-pkgs.extras hackageForStack).compiler or (pkg-def hackageForStack).compiler;
                 patchesModule = ghcHackagePatches.${compiler.nix-name} or {};
@@ -592,6 +529,17 @@ final: prev: {
               # extra-hackage-tarballs | no            | workaround |
               # -----------------------+---------------+------------+
               #
+              # Secure extra-hackage-repos are re-bootstrapped (`cabal v2-update`
+              # from a `file:` url) with this `nix-tools`' cabal rather than
+              # linked as is.  A repo pinned with `--sha256` is a fixed-output
+              # derivation, so its `01-index.cache` was written by whichever cabal
+              # first built it and is never rebuilt.  When the binary format of
+              # that cache changes (as it did in cabal-install 3.19) cabal fails
+              # with "Non-matching structured hashes" and then cannot regenerate
+              # the cache in the read-only store.  The `aaa` root key works as in
+              # `bootstrapIndexTarball`; the repo was already verified when it was
+              # fetched.  (Do not add `--ignore-expiry`: with it cabal rejects the
+              # expired root.json of an old pinned repo, without it cabal accepts it.)
               final.runCommand "dot-cabal" {
                 nativeBuildInputs = [ nix-tools.exes.cabal (final.lndir or final.xorg.lndir) ] ++ cabal-issue-8352-workaround;
               } ''
@@ -601,7 +549,16 @@ final: prev: {
                 # prepopulate extra-hackage-repos
                 ${final.lib.concatStrings (final.lib.mapAttrsToList (name: repo: ''
                   mkdir -p $out/packages/${name}
-                  lndir ${repo} $out/packages/${name}
+                  if [ -e ${repo}/root.json ]; then
+                    CABAL_DIR=$(mktemp -d)
+                    mkdir -p $CABAL_DIR/packages/${name}
+                    printf 'repository %s\n  url: file:%s\n  secure: True\n  root-keys: aaa\n  key-threshold: 0\n' \
+                      ${name} ${repo} > $CABAL_DIR/config
+                    CABAL_DIR=$CABAL_DIR cabal v2-update ${name}
+                    cp -r $CABAL_DIR/packages/${name}/. $out/packages/${name}/
+                  else
+                    lndir ${repo} $out/packages/${name}
+                  fi
                 '') extra-hackage-repos)}
                 # prepopulate extra-hackage-tarballs
                 ${final.lib.concatStrings (final.lib.mapAttrsToList (name: repo: ''
@@ -672,12 +629,17 @@ final: prev: {
         # This handles private repositories with the `is-private` argument
         # (with `builtins.fetchGit`), as well as handling stack-based projects
         # with the `type` argument.
-        mkCacheLine = { name, url, rev, ref ? null, subdir ? ".", sha256 ? null, cabal-file ? "${name}.cabal", type ? "cabal", is-private ? false }:
+        mkCacheLine = { name, url, rev, ref ? null, subdir ? ".", sha256 ? null, cabal-file ? "${name}.cabal", type ? "cabal", is-private ? false, input ? null }:
           let
             # Fetch the entire repo, using either pkgs.fetchgit or
             # builtins.fetchGit depending on whether the repo is private.
+            # When the repo was resolved via `inputMap`
+            # (see `lib/stack-cache-generator.nix`) use the mapped local
+            # path / flake input directly instead of fetching it.
             entireRepo =
-              if is-private
+              if input != null
+              then input
+              else if is-private
               then
                 # It doesn't make sense to specify sha256 on a private repo
                 # because it is not used by buitins.fetchGit.
@@ -768,10 +730,28 @@ final: prev: {
             # TODO: this should be moved into `call-stack-to-nix`
             { packages =
                 let
-                  repoToAttr = { name, url, rev, ref ? null, sha256 ? null, subdir ? null, is-private ? false, ... }: {
+                  repoToAttr = { name, url, rev, ref ? null, sha256 ? null, subdir ? null, is-private ? false, input ? null, ... }:
+                    let hasSubdir = subdir != null && subdir != "."; in {
                     ${name} = {
                       src =
-                        if is-private
+                        # When a dependency url was resolved via `inputMap`
+                        # (see `lib/stack-cache-generator.nix`) use the mapped
+                        # local path / flake input directly instead of
+                        # fetching it again.  Select the subdir with
+                        # `cleanSourceWith` rather than the `postUnpack` below:
+                        # a mapped input may itself be a cleaned source, and
+                        # the component source cleaning assumes the package is
+                        # at the root of `src`, so it would drop the subdir.
+                        if input != null
+                        then
+                          if hasSubdir
+                            then final.haskell-nix.haskellLib.cleanSourceWith {
+                              src = input;
+                              subDir = subdir;
+                              name = "${name}-src";
+                            }
+                            else input
+                        else if is-private
                         then
                           builtins.fetchGit
                             ({ inherit url rev; } //
@@ -779,7 +759,7 @@ final: prev: {
                             )
                         else
                           final.fetchgit { inherit url rev sha256; };
-                    } // final.buildPackages.lib.optionalAttrs (subdir != null && subdir != ".") { postUnpack = "sourceRoot+=/${subdir}; echo source root reset to $sourceRoot"; };
+                    } // final.buildPackages.lib.optionalAttrs (input == null && hasSubdir) { postUnpack = "sourceRoot+=/${subdir}; echo source root reset to $sourceRoot"; };
                   };
 
                   cacheMap = builtins.map repoToAttr cache;
@@ -1155,6 +1135,7 @@ final: prev: {
                   coverage = final.lib.optionalAttrs project.args.flake.doCoverage
                     (haskellLib.projectCoverageCiJobs
                       project selectPackages project.args.flake.coverageProjectModule);
+                  inherit (project.args.flake) doHaddock;
                 };
                 forAllCrossCompilers = prefix: project: (
                     [{ ${prefix} = mkFlake project; }]
@@ -1289,17 +1270,18 @@ final: prev: {
         withInputs = final.lib.recurseIntoAttrs;
 
         # The v2 builder's `cabal-install`, built via `haskell-nix.tool`:
-        # the stable-haskell cabal fork (3.17, branch stable-haskell/master)
+        # the stable-haskell cabal fork (3.19, branch hkm/sh-merge2-ports)
         # pulled via source-repository-package — the same sources
-        # make-install-plan links (see nix-tools/cabal.project).  This
-        # gives the per-slice `cabal v2-build` the cross-compilation
-        # "stage" system (--with-build-compiler / build:/host: constraints)
-        # so build-time tool deps resolve in the build scope.
-        # Branch `hkm/installed-sublibs` (2 commits on top of
-        # stable-haskell/master 01d053ac): lets installed instances satisfy
-        # named sub-library deps — required by the ghc-bin slice, whose
-        # +threaded/+debug flags depend on the composed installed rts's
-        # flavour sublibs (rts:threaded-nodebug etc.).
+        # make-install-plan links (see nix-tools-sh/cabal.project).  That
+        # branch is Andrea Bedini's `stable-haskell/merge` (upstream master
+        # plus the cross-compilation series haskell/cabal#12356) with
+        # haskell.nix's fork commits on top.  It gives the per-slice
+        # `cabal v2-build` the cross-compilation "stage" system
+        # (--with-build-compiler / build: constraints) so build-time tool
+        # deps resolve in the build scope, and lets installed instances
+        # satisfy named sub-library deps — required by the ghc-bin slice,
+        # whose +threaded/+debug flags depend on the composed installed
+        # rts's flavour sublibs (rts:threaded-nodebug etc.).
         #
         # Two pins here:
         #
@@ -1344,7 +1326,7 @@ final: prev: {
                           + "in `overlays/haskell.nix`.")
                  else picked;
             mkTool = evalSystem: final.pkgsBuildBuild.haskell-nix.tool compiler-nix-name "cabal" {
-              version = "3.17.0.1";
+              version = "3.19.0.0";
               builderVersion = 1;
               # Run the tool project's plan-to-nix on the consumer's eval
               # platform.  Without this it defaults to the pkgsBuildBuild
@@ -1356,20 +1338,18 @@ final: prev: {
                 source-repository-package
                     type: git
                     location: https://github.com/stable-haskell/Cabal.git
-                    tag: f3482d8abc62e93e58574ef1be7cdc51d5d8d146
-                    --sha256: sha256-i8eSe3NvUsaHjYmStDhGYa6byZYFJt6xwyFwhlFETfM=
+                    tag: 7156caf47a32a963e7a36328f32ce5940a743a3c
+                    --sha256: sha256-MogUmtmf7nmC1oR301OkODBfaespx3T9OVunrrpY5ZQ=
                     subdir: Cabal
                             Cabal-syntax
                             cabal-install
                             cabal-install-solver
                             hooks-exe
 
-                source-repository-package
-                    type: git
-                    location: https://github.com/stable-haskell/hackage-security.git
-                    tag: baaad2e189a8203966f7d3f752a348f02eefd1b2
-                    --sha256: sha256-mVWZCWGJKsSjQSqb5iw0Q8fmV+4aFZVL4zOmMaNnEhA=
-                    subdir: hackage-security
+                -- hackage-security's releases bound Cabal/Cabal-syntax below
+                -- the fork's 3.19 (the stable-haskell/hackage-security fork
+                -- this used to pin is 0.6.3.2, capped at < 3.18).
+                allow-newer: hackage-security:Cabal, hackage-security:Cabal-syntax
               '';
               modules = [{
                 # (No sublib-pruning patch: a slice's solve needs the deps of
@@ -1380,8 +1360,7 @@ final: prev: {
                 packages.cabal-install.patches = [
                   ../builder/cabal-install-patches/skip-installed-revdeps-in-completed.patch
                   ../builder/cabal-install-patches/setup-build-num-jobs-env.patch
-                  ../builder/cabal-install-patches/inlibrary-build-stage-exe-platform.patch
-                  ../builder/cabal-install-patches/haddock-toolchain-self-reference.patch
+                  ../builder/cabal-install-patches/wired-in-pins-follow-allow-boot-library-installs.patch
                 ];
                 # The Cabal LIBRARY, not the tool: `v2-build` links it in and
                 # uses it as the build system for `build-type: Simple`, so a
@@ -1389,6 +1368,7 @@ final: prev: {
                 packages.Cabal.patches = [
                   ../builder/cabal-install-patches/static-external-only-when-supported.patch
                   ../builder/cabal-install-patches/no-object-for-unemitted-signature.patch
+                  ../builder/cabal-install-patches/configure-script-posix-path.patch
                 ];
               }];
             };
@@ -1799,6 +1779,10 @@ final: prev: {
             # and `ghc-boot-packages`); caching the derivation here means those
             # evals substitute it instead of rebuilding it via IFD.
             ghc-generated = ghc.generated-light;
+          } // final.lib.optionalAttrs (ifdLevel > 0 && ghc ? configured-src-check) {
+            # Cross compilers configure those eval-time trees with a nixpkgs
+            # boot GHC; check they match what the real boot GHC gives.
+            inherit (ghc) configured-src-check;
           } // final.lib.optionalAttrs (ifdLevel > 1) {
             # Things that require two levels of IFD to build (inputs should be in level 1)
             nix-tools-unchecked = final.pkgsBuildBuild.haskell-nix.nix-tools-unchecked;

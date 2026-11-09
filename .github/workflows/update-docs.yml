@@ -8,6 +8,11 @@ on:
 env:
   GH_TOKEN: ${{ github.token }}
 
+# The default GITHUB_TOKEN is read-only in the ican-group org, so ask for
+# write access to push gh-pages.
+permissions:
+  contents: write
+
 jobs:
   upload-docs:
     runs-on: ubuntu-latest

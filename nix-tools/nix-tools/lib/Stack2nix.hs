@@ -35,10 +35,10 @@ import Cabal2Nix hiding (Git)
 import qualified Cabal2Nix as C2N
 import Cabal2Nix.Util
 
-import Stack2nix.Cache (appendCache, cacheHits)
+import NixTools.Cache (appendCache, cacheHits)
 import Stack2nix.CLI (Args(..))
 import Stack2nix.Project
-import Stack2nix.Stack (Stack(..), Dependency(..), Location(..), PackageFlags, GhcOptions)
+import Stack2nix.Stack (Stack(..), Dependency(..), Location(..), PackageFlags, GhcOptions, GhcOptionsValue(..))
 import Stack2nix.External.Resolve
 
 import qualified Data.HashMap.Strict as HM
@@ -80,12 +80,12 @@ stack2nix args (Stack resolver compiler pkgs pkgFlags ghcOpts) =
         error $ concat ((\(name, _) ->
           "Duplicate definitions for package " <> show name <> "\n") <$> duplicates)
      return . mkNonRecSet $
-       [ "extras" $= ("hackage" ==> mkNonRecSet
+       [ "extras" $= ("hackage" ==> mkLets [ hackageVersionHelper ] (mkNonRecSet
                      ([ "packages" $= mkNonRecSet (snd <$> allPackages) ]
                    ++ [ "compiler.version" $= fromString (quoted ver)
                       | (Just c) <- [compiler], let ver = filter (`elem` (".0123456789" :: [Char])) c]
                    ++ [ "compiler.nix-name" $= fromString (quoted name)
-                      | (Just c) <- [compiler], let name = filter (`elem` ((['a'..'z']++['0'..'9']) :: [Char])) c]))
+                      | (Just c) <- [compiler], let name = filter (`elem` ((['a'..'z']++['0'..'9']) :: [Char])) c])))
        , "resolver"  $= fromString (quoted resolver)
        , "modules" $= mkList [
            mkParamset [("lib", Nothing)] True ==> mkNonRecSet [ "packages" $= mkNonRecSet flags ]
@@ -107,11 +107,11 @@ stack2nix args (Stack resolver compiler pkgs pkgFlags ghcOpts) =
 extraDeps2nix :: [Dependency] -> [(T.Text, Binding NExpr)]
 extraDeps2nix pkgs =
   let extraDeps = [(pkgId, info) | PkgIndex pkgId info <- pkgs]
-  in [ (toText pkg, quoted (toText pkg) $= ((((mkSym "hackage" @. toText pkg) @. quoted (toText ver)) @. "revisions") @. "default"))
+  in [ (toText pkg, quoted (toText pkg) $= hackageVersion (toText pkg) (toText ver) "default")
      | (PackageIdentifier pkg ver, Nothing) <- extraDeps ]
-  ++ [ (toText pkg, quoted (toText pkg) $= ((((mkSym "hackage" @. toText pkg) @. quoted (toText ver)) @. "revisions") @. quoted (T.pack sha)))
+  ++ [ (toText pkg, quoted (toText pkg) $= hackageVersion (toText pkg) (toText ver) (T.pack sha))
      | (PackageIdentifier pkg ver, (Just (Left sha))) <- extraDeps ]
-  ++ [ (toText pkg, quoted (toText pkg) $= ((((mkSym "hackage" @. toText pkg) @. quoted (toText ver)) @. "revisions") @. toText revNo))
+  ++ [ (toText pkg, quoted (toText pkg) $= hackageVersion (toText pkg) (toText ver) (toText revNo))
      | (PackageIdentifier pkg ver, (Just (Right revNo))) <- extraDeps ]
   where parsePackageIdentifier :: String -> Maybe PackageIdentifier
         parsePackageIdentifier = simpleParse
@@ -131,11 +131,13 @@ flags2nix pkgFlags =
   | (pkgName, flags) <- HM.toList pkgFlags
   ]
 
--- | Converts 'GhcOptions' into @{ packageName = { ghcOptions = "..."; }; }@
+-- | Converts 'GhcOptions' into @{ packageName = { ghcOptions = [ "..." ]; }; }@
+-- A scalar @stack.yaml@ value becomes a single element and each entry of a
+-- snapshot's array becomes its own element (see #1676).
 ghcOptions2nix :: GhcOptions -> [Binding NExpr]
 ghcOptions2nix ghcOptions =
   [ quoted pkgName $= mkNonRecSet
-    [ "ghcOptions" $= mkList [ mkStr opts ] ]
+    [ "ghcOptions" $= mkList (map mkStr (ghcOptionsList opts)) ]
   | (pkgName, opts) <- HM.toList ghcOptions
   ]
 
@@ -217,7 +219,7 @@ packages2nix args pkgs =
                 prettyNix <$> cabal2nix True (argDetailLevel args) src cabalFile
               -- Only update the cache if there is not already a record
               cacheHits (argCacheFile args) url rev subdir >>= \case
-                [hit] | hit == (pkg, nix) -> return ()
+                hits | (pkg, nix) `elem` hits -> return ()
                 _ -> appendCache (argCacheFile args) url rev subdir sha256 pkg nix
               return (fromString pkg, fromString pkg $= mkPath False nix)
 

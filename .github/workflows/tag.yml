@@ -4,6 +4,11 @@ on:
   schedule:
     - cron: '0 0 * * 0'
 
+# The default GITHUB_TOKEN is read-only in the ican-group org, so ask for
+# write access to push the tag.
+permissions:
+  contents: write
+
 jobs:
   tag-repo:
     runs-on: ubuntu-latest

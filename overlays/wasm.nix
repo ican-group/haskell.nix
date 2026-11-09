@@ -1,43 +1,64 @@
-final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
+final: prev: let
   # Remove lit's max-time.py self-test. It hangs in the nix build sandbox
   # due to a Python multiprocessing.Pool deadlock (`_help_stuff_finish`
   # acquires `inqueue._rlock` without releasing it) combined with a leaked
   # signal mask that leaves SIGTERM blocked in the worker, so `pool.terminate()`
   # can't kill it. nix-shell builds complete fine; only nix-build hangs.
-  llvmPackages_21 =
+  #
+  # Only on the haskell-wasm-patched libllvm below, the one LLVM we build
+  # ourselves.  It used to be applied to `llvmPackages_21` as well, but there
+  # it changed the hash of an otherwise stock LLVM that cache.nixos.org has
+  # (nixpkgs' wasm build-platform LLVM is the same derivation as the
+  # top-level one), so we rebuilt -- and re-tested -- it for nothing.  On
+  # darwin that application was lost anyway: the stdenv's final stage
+  # replaces `llvmPackages_21`'s libllvm with the bootstrap stage's, after the
+  # user overlays, and the patched LLVM then hung in this test on Hydra.
+  withoutMaxTimeTest = drv: drv.overrideAttrs (old: {
+    postPatch = (old.postPatch or "") + ''
+      rm utils/lit/tests/max-time.py
+    '';
+  });
+in prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
+  # The haskell-wasm LLVM patch, applied to llvm, clang and lld only (the
+  # subprojects it touches).  Each of those builds from its own subdirectory
+  # of nixpkgs' monorepo source (`sourceRoot = <src>/llvm` etc.), so `-p2`
+  # strips `a/<subproject>/`.  This used to be applied to a patched copy of
+  # the whole ~150k-file monorepo used as `monorepoSrc`, which every LLVM
+  # package then copied its subdirs out of; copying that tree is what ran the
+  # Apple builders' Linux VMs out of file descriptors ("Too many open files in
+  # system").  With nixpkgs' own `monorepoSrc`, the other LLVM packages'
+  # sources are the same as nixpkgs' too.
+  llvmPackages =
     let
-      f = llvmFinal: llvmPrev: {
-        libllvm = llvmPrev.libllvm.overrideAttrs (old: {
-          postPatch = (old.postPatch or "") + ''
-            rm utils/lit/tests/max-time.py
-          '';
+      # In `prePatch`, i.e. before nixpkgs' own patches, which is the order it
+      # had on the monorepo: nixpkgs' gnu-install-dirs.patch also changes
+      # llvm's cmake/modules/AddLLVM.cmake, and after it this hunk no longer
+      # applies.
+      withHaskellPatch = p: drv: drv.overrideAttrs (old: {
+        prePatch = (old.prePatch or "") + ''
+          patch -p2 < ${./patches/wasm/llvm + "/haskell-wasm-${p}.patch"}
+        '';
+      });
+      g = _: llvmPrev: {
+        # nixpkgs' llvm gnu-install-dirs.patch and the haskell-wasm patch both
+        # change cmake/modules/AddLLVM.cmake and do not apply together;
+        # ./patches/wasm/llvm/gnu-install-dirs.patch is the version that
+        # applies after it.  Swap it in directly: `patchesFn` no longer
+        # reaches the patches through `llvmPackages_21.override`.
+        libllvm = (withHaskellPatch "llvm" (withoutMaxTimeTest llvmPrev.libllvm)).overrideAttrs (old: {
+          patches = map (p:
+            if final.lib.hasSuffix "-gnu-install-dirs.patch" (toString p)
+            then ./patches/wasm/llvm/gnu-install-dirs.patch
+            else p) old.patches;
         });
+        libclang = withHaskellPatch "clang" llvmPrev.libclang;
+        lld = withHaskellPatch "lld" llvmPrev.lld;
       };
       # Preserve `.override` after `overrideScope`; see nixpkgs#447012.
-      override = args: (prev.llvmPackages_21.override args).overrideScope f;
+      override = args: (final.llvmPackages_21.override args).overrideScope g;
     in prev.lib.makeOverridable
-      (prev.lib.mirrorFunctionArgs prev.llvmPackages_21.override override)
+      (prev.lib.mirrorFunctionArgs final.llvmPackages_21.override override)
       { };
-  llvmPackages = final.llvmPackages_21.override {
-    patchesFn = p: p // { "llvm/gnu-install-dirs.patch" = [{path = ./patches/wasm;}]; };
-    monorepoSrc =
-      # A plain source-tree copy (buildPhase = "true"): build it with the
-      # BUILD-platform stdenv, never `final.stdenv`.  `final.stdenv` here is the
-      # wasm *cross* stdenv, whose `cc` is the wasm clang — and that clang is
-      # built FROM this very `monorepoSrc`, so using it closes a bootstrap cycle
-      # (clang → monorepoSrc → final.stdenv → clang → …) that evaluates to an
-      # infinite recursion.  A source copy needs no target compiler.
-      final.buildPackages.stdenv.mkDerivation {
-        pname = "llvm-source";
-        version = final.llvmPackages_21.llvm.version + "-haskell";
-        src = final.llvmPackages_21.llvm.monorepoSrc;
-        patches = ./patches/wasm/llvm/haskell-wasm-llvm-project.patch;
-        buildPhase = "true";
-        installPhase = ''
-          cp -r . $out
-        '';
-      };
-  };
   # GHC's wasm backend still requires the haskell-wasm wasi-libc fork — GHC's
   # own toolchain (ghc-wasm-meta) ships a forked wasi-sdk and states plainly
   # that "Upstream wasi-sdk won't work yet"; the fork's patches are NOT
@@ -80,7 +101,8 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
     # Drop nixpkgs' CMake configuration outright, not just its hook.  Every
     # derivation attribute is evaluated even when unused, and nixpkgs'
     # `cmakeFlags` for wasilibc reference the wasi `compiler-rt`, which reaches
-    # `compiler-rt-src` -> `llvm-source-…-haskell`.stdenv -> stdenv and back:
+    # `compiler-rt-src` -> (the patched `monorepoSrc` this overlay used to
+    # build).stdenv -> stdenv and back:
     # infinite recursion while evaluating `libc_bin` of the wasi
     # llvm-binutils-wrapper.  We drive the fork's Makefile directly, so these
     # are dead weight; clearing them cuts the edge that closes the cycle.
@@ -95,6 +117,23 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
       runHook preConfigure
       patchShebangs ./scripts
       export BUILTINS_LIB=$($CC --print-libgcc-file-name)
+      # The extra shared libraries (libdl.so, libwasi-emulated-*.so, ...) are
+      # linked with `--target=wasm32-wasi -resource-dir <the Makefile's own>`
+      # so that clang finds compiler-rt there.  But the cc-wrapper appends its
+      # `-resource-dir=<wrapper>/resource-root` after the Makefile's flags, so
+      # the wrapper's wins, and that only has compiler-rt where clang looks
+      # for the wrapper's own target (lib/wasip1/), not for wasm32-wasi
+      # (lib/wasm32-unknown-wasi/libclang_rt.builtins.a):
+      #   wasm-ld: error: cannot open .../resource-root/lib/wasm32-unknown-wasi/libclang_rt.builtins.a
+      # Use a copy of the wrapper's resource dir with the builtins also where
+      # wasm32-wasi looks, appended after the wrapper's flag so that it wins.
+      wrapperResourceDir=$($CC -print-resource-dir)
+      wantedBuiltins=$($CC --target=wasm32-wasi --print-libgcc-file-name)
+      resourceDir=$PWD/nix-resource-dir
+      cp -rL --no-preserve=mode "$wrapperResourceDir/." "$resourceDir/"
+      mkdir -p "$(dirname "$resourceDir/''${wantedBuiltins#$wrapperResourceDir/}")"
+      ln -sf "$BUILTINS_LIB" "$resourceDir/''${wantedBuiltins#$wrapperResourceDir/}"
+      export NIX_CFLAGS_COMPILE="''${NIX_CFLAGS_COMPILE-} -resource-dir=$resourceDir"
       runHook postConfigure
     '';
     # No CHECK_SYMBOLS=yes: that self-test diffs clang's predefined macros
@@ -110,11 +149,24 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.targetPlatform.isWasm {
     # derivation).  nixpkgs' wasilibc no longer has a `share` output, so the
     # sysroot/share metadata (predefined-macros.txt etc.) is not copied — it is
     # build-verification output, not needed by libc consumers.
-    installPhase = ''
+    #
+    # The fork builds for the `wasm32-wasi` triple, but nixpkgs' cc-wrapper
+    # looks where nixpkgs' own wasilibc installs (its `passthru.incdir` and
+    # `libdir`, now `wasm32-wasip1`): `-idirafter <dev>/include/wasm32-wasip1`
+    # and `-B <out>/lib/wasm32-wasip1`.  Headers under include/wasm32-wasi
+    # were not found ("'bits/alltypes.h' file not found" building libcxx).
+    # Install there, and keep `wasm32-wasi` as a symlink for the haskell.nix
+    # code that looks in lib/wasm32-wasi.
+    installPhase =
+      let incdir = old.passthru.incdir or "/include/wasm32-wasi";
+          libdir = old.passthru.libdir or "/lib/wasm32-wasi";
+      in ''
       runHook preInstall
       mkdir -p "$out/lib" "$dev/include"
-      cp -r sysroot/lib/wasm32-wasi "$out/lib"
-      cp -r sysroot/include/wasm32-wasi "$dev/include"
+      cp -r sysroot/lib/wasm32-wasi "$out${libdir}"
+      cp -r sysroot/include/wasm32-wasi "$dev${incdir}"
+      [ -e "$out/lib/wasm32-wasi" ] || ln -s "$(basename "${libdir}")" "$out/lib/wasm32-wasi"
+      [ -e "$dev/include/wasm32-wasi" ] || ln -s "$(basename "${incdir}")" "$dev/include/wasm32-wasi"
       runHook postInstall
     '';
   });

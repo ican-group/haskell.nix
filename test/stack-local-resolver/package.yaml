@@ -1,4 +1,5 @@
 name: stack-local-resolver
+license:             BSD3
 
 dependencies:
 - base

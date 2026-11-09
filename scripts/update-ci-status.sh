@@ -33,7 +33,7 @@
 set -euo pipefail
 
 HYDRA="${HYDRA:-https://ci.zw3rk.com}"
-PROJECT="${PROJECT:-input-output-hk-haskell-nix}"
+PROJECT="${PROJECT:-ican-group-haskell-nix}"
 JOBSET="${JOBSET:-master}"
 PARALLEL="${PARALLEL:-12}"
 

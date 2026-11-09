@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: "30 0 * * *"
 
+# The default GITHUB_TOKEN is read-only in the ican-group org, so ask for
+# write access to push the updated pins.
+permissions:
+  contents: write
+
 jobs:
   update-pins:
     runs-on: ubuntu-latest

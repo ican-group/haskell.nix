@@ -11,13 +11,12 @@
       default = false;
       description = ''
         Declare that building this component runs Template Haskell splices.
-        When cross compiling for a host whose splices run through an
-        emulator (see `haskell-nix.emulatorNativeBuilderTH`), the component's
-        build then requires `haskell-nix.emulatorSystemFeatures`, which
-        keeps it off builders where that emulator is itself emulated.
-        Nothing can tell ahead of time whether a component will evaluate a
-        splice, so this has to be said by whoever knows -- e.g. in a
-        project's `modules`:
+        When cross compiling (builder v2) for a dynamically linked musl
+        host, such a component is built with `-fexternal-interpreter`: the
+        in-process interpreter cannot load musl shared objects into the
+        glibc compiler.  Nothing can tell ahead of time whether a component
+        will evaluate a splice, so this has to be said by whoever knows --
+        e.g. in a project's `modules`:
         `packages.th-orphans.components.library.usesTemplateHaskell = true;`
       '';
     };
@@ -30,6 +29,34 @@
     setupBuildFlags = lib.mkOption {
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [];
+    };
+
+    buildJobs = lib.mkOption {
+      description = ''
+        Number of jobs to pass to `Setup build` as `-jN` for this component.
+        `null` (the default) keeps the standard behaviour of `-j` capped at
+        `min(NIX_BUILD_CORES, 4)`.  Set to `1` to build sequentially (useful
+        for memory-hungry packages that OOM under parallel builds), or to any
+        other positive integer to pin the parallelism.
+
+        The v2 (`builderVersion = 2`) builder passes it to the component's
+        slice, whose `Setup build` gets the same `-jN`.  Each library and
+        sublibrary is its own slice (except for `build-type: Custom`
+        packages, which build as one slice), so to cover a whole package set
+        `packages.<name>.buildJobs`, which applies to every component on
+        both builders.
+
+        Two v1 exceptions:
+
+        * `contentAddressed` components always build with `-j1`, because a
+          deterministic output is the point of `__contentAddressed`.  A larger
+          `buildJobs` is ignored there.
+        * ghcjs components pass no `-j` at all by default.  An explicitly set
+          `buildJobs` is honoured, but leaving it `null` does not introduce the
+          capped default.
+      '';
+      type = lib.types.nullOr lib.types.ints.positive;
+      default = null;
     };
 
     testFlags = lib.mkOption {

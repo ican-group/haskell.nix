@@ -15,15 +15,8 @@ in
 {
    haskell-nix = prev.haskell-nix // final.lib.optionalAttrs isLinuxCross ({
      templateHaskell = builtins.mapAttrs (_compiler-nix-name: iserv-proxy-exes:
-        # Slices compiled with this wrapper (and tests run through its
-        # `testWrapper`) can spawn the emulator.  Carry the two knobs
-        # that decide which of them have to build on a host where an
-        # emulator actually works -- see `emulatorSystemFeatures` and
-        # `emulatorNativeBuilderPackages` in `overlays/haskell.nix`.
         let mkTH = exes:
-          { inherit (final.haskell-nix)
-              emulatorSystemFeatures emulatorNativeBuilderPackages; }
-          // import ./linux-cross.nix ({
+          import ./linux-cross.nix ({
           inherit (final.stdenv) hostPlatform buildPlatform;
           inherit (final) stdenv lib;
           inherit (final.pkgsBuildBuild) writeShellScriptBin symlinkJoin runCommand makeWrapper;

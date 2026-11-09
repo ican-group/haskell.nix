@@ -1,0 +1,9 @@
+name: stack-inputMap
+license:             BSD3
+
+dependencies:
+- base
+- cabal-simple
+
+library:
+  source-dirs: src

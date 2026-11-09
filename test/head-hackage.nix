@@ -114,10 +114,21 @@
         in assert out != s; out;
       forFromSourceBootLibs =
         drop "  constraints: ghci installed\n"
-          (drop ", ghcjs-overlay:override" stripped);
+          (drop ", ghcjs-overlay:override" withHsc2hs);
+
+      # Every project gets haskell.nix's `haskell-nix-hsc2hs` repository (the
+      # `usePatchedHsc2hs` option), but this file names the active ones, so it
+      # has to be named here too or the tests never see the patched hsc2hs.
+      # Rewritten like the url above, so a plain `cabal` run driven by the
+      # file -- where that repository does not exist -- is unaffected.
+      withHsc2hs =
+        let
+          from = "active-repositories: hackage.haskell.org";
+          out = builtins.replaceStrings [ from ] [ "${from}, haskell-nix-hsc2hs" ] stripped;
+        in assert out != stripped; out;
     in
       assert stripped != urlFixed;
-      if bootLibsFromSource then forFromSourceBootLibs else stripped;
+      if bootLibsFromSource then forFromSourceBootLibs else withHsc2hs;
 
   # Empty, and kept only so the ~30 test call sites that thread `testInputMap`
   # through need no edit.  It used to map the published url to the local

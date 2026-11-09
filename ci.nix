@@ -26,39 +26,7 @@
     "unstable" = inputs.nixpkgs-unstable;
   };
 
-  nixpkgsArgs = {
-    # set checkMaterialization as per top-level argument
-    overlays = [
-      haskellNix.overlay
-      (final: prev: {
-        haskell-nix = prev.haskell-nix // {
-          inherit checkMaterialization;
-          # Pin emulator-sensitive derivations to the zw3rk farm's one real
-          # linux host -- see `emulatorSystemFeatures` in overlays/haskell.nix.
-          emulatorSystemFeatures = [ "recursive-nix" ];
-        };
-      })
-      (import ./test/overlay.nix)
-    ];
-    # Needed for dwarf tests
-    config = haskellNix.config // {
-      permittedInsecurePackages = [
-        "libdwarf-20210528"
-        "libdwarf-20181024"
-        "dwarfdump-20181024"
-      ];
-      allowUnfreePredicate = pkg: builtins.elem (lib.getName pkg) [
-        "platform-tools"
-        "ndk"
-        "android-sdk-ndk"
-        "android-sdk-platform-tools"
-        "aarch64-unknown-linux-android-ndk-toolchain-wrapper"
-        "aarch64-unknown-linux-android-ndk-toolchain"
-        "armv7a-unknown-linux-androideabi-ndk-toolchain-wrapper"
-        "armv7a-unknown-linux-androideabi-ndk-toolchain"
-      ];
-    };
-  };
+  nixpkgsArgs = import ./ci-nixpkgs-args.nix { inherit haskellNix lib checkMaterialization; };
 
   compilerNixNames = nixpkgsName: nixpkgs: builtins.listToAttrs (
     (lib.mapAttrsToList (compiler-nix-name: runTests: {
@@ -234,7 +202,13 @@ dimension "Nixpkgs version" nixpkgsVersions (nixpkgsName: pinnedNixpkgsSrc:
         })
         # GHCJS builds its own template haskell runner.
         // pkgs.lib.optionalAttrs (ifdLevel >= 2 && !builtins.elem crossSystemName ["ghcjs" "wasi32"])
-            pkgs.haskell-nix.iserv-proxy-exes.${compiler-nix-name}
+            # The `evalSystem` variant, not the default: the default is the
+            # build platform's (`pkgsBuildBuild`) variant, so on an
+            # x86_64-linux job its iserv-proxy plan-to-nix IFDs ran as
+            # x86_64-linux while everything else in the eval ran on
+            # `evalSystem`.  The exe derivations are the same either way.
+            (pkgs.haskell-nix.iserv-proxy-exes.${compiler-nix-name}.evalWith.${evalSystem}
+              or pkgs.haskell-nix.iserv-proxy-exes.${compiler-nix-name})
         // pkgs.lib.optionalAttrs (ifdLevel >= 3) {
           hello = (pkgs.haskell-nix.hackage-package { name = "hello"; version = "1.0.0.2"; inherit evalSystem compiler-nix-name; }).getComponent "exe:hello";
         })

@@ -99,16 +99,42 @@ in {
     || isBenchmark componentId;
   mayHaveExecutable = isExecutableType;
 
+  # Names in `nonReinstallablePkgs` that a project pins to a version other than
+  # the one shipped with the compiler.  Such overrides are silently dropped by
+  # the `nonReinstallablePkgs` shadow in `config.hsPkgs`, so callers warn about
+  # them rather than letting the build fail later with an opaque
+  # `installed package ... is broken due to missing package X-<ver>` error
+  # (see #1657).  `packages` maps a package name to its module config (or null,
+  # for a shadowed entry); `compilerPackages` maps a name to the version string
+  # the compiler ships.  Only packages actually pinned to a differing version
+  # are returned, so a normal project yields `[]`.
+  shadowedNonReinstallablePkgs = { nonReinstallablePkgs, packages, compilerPackages }:
+    lib.filter (name:
+         packages ? ${name}
+      && packages.${name} != null
+      # A `packages.<name>` record that only carries by-name overrides has
+      # no `package.identifier` (see `hasPackageDefinition` in
+      # modules/package.nix); reading its version would throw.
+      && (packages.${name}.hasPackageDefinition or true)
+      && compilerPackages ? ${name}
+      && (packages.${name}.package.identifier.version or null) != null
+      && packages.${name}.package.identifier.version != compilerPackages.${name}
+    ) nonReinstallablePkgs;
+
   # Was there a reference to the package source in the `cabal.project` or `stack.yaml` file.
   # This is used to make the default `packages` list for `shellFor`.
   isLocalPackage = p: p.isLocal or false;
   isRedirectPackage = p: p.isRedirect or false;
-  selectLocalPackages = lib.filterAttrs (_n: p: p != null && isLocalPackage p && !isRedirectPackage p);
+  # A build-machine twin (`<id>:build`, lib/load-cabal-plan.nix) is the
+  # build machine's copy of a package, not a package of the project: leave it
+  # out of project-wide selections (coverage reports, shells, ...).
+  isBuildTwinKey = n: lib.hasSuffix ":build" n;
+  selectLocalPackages = lib.filterAttrs (n: p: p != null && isLocalPackage p && !isRedirectPackage p && !isBuildTwinKey n);
 
   # if it's a project package it has a src attribute set with an origSubDir attribute.
   # project packages are a subset of localPackages
   isProjectPackage = p: p.isProject or false;
-  selectProjectPackages = lib.filterAttrs (_n: p: p != null && isLocalPackage p && isProjectPackage p && !isRedirectPackage p);
+  selectProjectPackages = lib.filterAttrs (n: p: p != null && isLocalPackage p && isProjectPackage p && !isRedirectPackage p && !isBuildTwinKey n);
 
   # Format a componentId as it should appear as a target on the
   # command line of the setup script.
@@ -246,13 +272,9 @@ in {
   check = import ./check.nix {
     inherit stdenv lib haskellLib;
     inherit (pkgs) pkgsBuildBuild;
-    # A `testWrapper` means the exe cannot run on the build host
-    # unaided (qemu-user / hyper-linux / wine).  Only the packages
-    # named in `emulatorNativeBuilderPackages`, or every check for a host
-    # matching `emulatorNativeBuilderCheck`, are pinned -- see
-    # `overlays/haskell.nix`.
+    # Every check for a host matching `emulatorNativeBuilderCheck` is
+    # pinned -- see `overlays/haskell.nix`.
     emulatorSystemFeatures = pkgs.haskell-nix.emulatorSystemFeatures or [];
-    emulatorNativeBuilderPackages = pkgs.haskell-nix.emulatorNativeBuilderPackages or [];
     emulatorNativeBuilderCheck = pkgs.haskell-nix.emulatorNativeBuilderCheck or (_: false);
   };
 
@@ -349,14 +371,22 @@ in {
   # subdirectory they carry it first (`./test/cabal-22/dist-newstyle/...`,
   # every test project); match any leading path.  Anchoring on
   # `./dist-newstyle` sent every unit of such a plan to "host", which merged
-  # the two stages' configure-args in the slice project
-  # (builder/v2-project-globals.nix) and let a Host `shared: True` reach the
-  # Build-stage tools.
+  # the two stages' configure-args in the slice project and let a Host
+  # `shared: True` reach the Build-stage tools.
   # Pre-existing units carry neither; callers treat them per context
   # (in a two-stage plan they are all build-stage — the target db is
   # empty).  Defaults to "host": mainline plans are single-stage.
+  # The explicit `stage` (stable-haskell/merge cabal, nix-tools-sh's
+  # make-install-plan) or `machine` (haskell/cabal#12356) field wins: the
+  # 3.19 merge plans carry neither marker below, which put every unit in
+  # "host" and let a BUILD twin own a shared id first-wins (aarch64
+  # `resourcet` composed the native `primitive`).  Same order as
+  # comp-v2-builder's `planStage`.
   planUnitStage = p:
     let
+      fromField =
+        let s = p.stage or p.machine or null;
+        in if s == "host" || s == "build" then s else null;
       fromArgs =
         let ms = builtins.concatMap (a:
               let m = builtins.match "--prefix=(.*/)?dist-newstyle/store/([a-z]+)/.*" (toString a);
@@ -366,7 +396,8 @@ in {
       fromDist =
         let m = builtins.match "(.*/)?dist-newstyle/build/([a-z]+)/.*" (p.dist-dir or "");
         in if m == null then null else builtins.elemAt m 1;
-    in if fromArgs != null then fromArgs
+    in if fromField != null then fromField
+       else if fromArgs != null then fromArgs
        else if fromDist != null then fromDist
        else "host";
 
@@ -431,19 +462,38 @@ in {
   # In the case of sublibs the `depends` value should already be the derivation.
   dependToLib = d:
     # Do not simplify this to `d.components.library or d`, as that
-    # will not give a good error message if the `.library`
-    # is missing (happens if the package is unplanned,
-    # but has overrides).
-    # It would be nice to put an `assert` here, but there is
-    # currently no good way to get the name of the dependency
-    # when it is not in the plan.  The attribute path of
-    # `d` in the `nix` error should include the name
-    # eg. `packages.Cabal.components.library`.
+    # would silently drop the dependency when `.library` is missing
+    # (which happens when the package is unplanned but has overrides).
+    # A package value carries its `identifier` (see hspkg-builder.nix), so
+    # when the library component is absent we can throw a message naming the
+    # dependency instead of the opaque `attribute 'library' missing` error
+    # (see #1379).  Checking `d.components ? library` adds no strictness: the
+    # non-error path already forces `d.components` to read `.library`.
     if d ? components
-    then if d ? instantiations
-         then d.components.library.override { inherit (d) instantiations; }
-         else d.components.library
+    then if d.components ? library
+         then if d ? instantiations
+              then d.components.library.override { inherit (d) instantiations; }
+              else d.components.library
+         else throw (unplannedLibraryMessage (d.identifier.name or null))
     else d;
+
+  # The error for a dependency whose package has no library component (#1379).
+  # `applyComponents` omits the library when the package is not in the plan,
+  # but also when it is not buildable or not individually planned, so the
+  # message lists every cause.  Shared by `dependToLib` (v1) and the v2
+  # builder's dependency-slice lookup.
+  unplannedLibraryMessage = name:
+    let pkg = if name == null then "<name>" else name;
+    in "haskell.nix: the library of package '${if name == null then "<unknown>" else name}'"
+      + " is not available. Either the package has no library at all (for"
+      + " example it only has executables), it is not in the install plan"
+      + " (often because it was given overrides via `modules` /"
+      + " `packages.${pkg}` without being a dependency of the project),"
+      + " its library is not buildable (`packages.${pkg}.package.buildable`"
+      + " or `buildable: False` in the .cabal file), or the library was not"
+      + " planned (`packages.${pkg}.components.library.planned` is false)."
+      + " Make sure the project depends on it and that its library is"
+      + " buildable, or remove the override.";
 
   projectOverlays = import ./project-overlays.nix {
     inherit lib haskellLib;
@@ -542,6 +592,26 @@ in {
           package)
       { };
 
+  # Flake haddock documentation, keyed by component name like `mkFlakePackages`.
+  # Only library/test components with `doHaddock` enabled expose a `doc` output
+  # (see `builder/comp-builder.nix`), so guarding on `component ? doc` selects
+  # exactly those and skips exes, benchmarks and haddock-disabled components —
+  # no null or broken jobs (see #1932).  v2 slices (`builderVersion = 2`)
+  # differ: every library has a `doc` attr, which throws unless the plan built
+  # it with documentation, and `docEnabled` says which.
+  mkFlakeHaddock =
+    foldrAttrVals
+      (package: acc:
+        foldComponents
+          subComponentTypes
+          (component: a:
+            if component ? doc && (component.docEnabled or true)
+              then a // { ${component.passthru.identifier.component-id} = component.doc; }
+              else a)
+          acc
+          package)
+      { };
+
   # Flake package names that are flat and match the cabal component names.
   mkFlakeApps =
     foldrAttrVals
@@ -585,6 +655,7 @@ in {
         , coverage
         , devShells
         , checkedProject
+        , haddock ? {}
     }: {
       # Run all the tests and code coverage
       checks = removeRecurseForDerivations checks;
@@ -596,6 +667,11 @@ in {
         devShells;
       # Build tools and cache tools needed for the project
       inherit (project) roots;
+    }
+    # Make sure the haddock documentation builds (only when requested, so
+    # projects that do not opt in keep exactly the same jobs)
+    // lib.optionalAttrs (haddock != {}) {
+      inherit haddock;
     }
     # Build the plan-nix and check it if materialized
     // lib.optionalAttrs (checkedProject ? plan-nix) {
@@ -613,10 +689,14 @@ in {
         , apps ? mkFlakeApps haskellPackages
         , checks ? mkFlakeChecks (collectChecks' haskellPackages)
         , coverage ? {}
+        # Set `doHaddock = true` to also build the haddock documentation of the
+        # project components in CI so broken docs are caught (#1932).
+        , doHaddock ? false
+        , haddock ? lib.optionalAttrs doHaddock (mkFlakeHaddock haskellPackages)
         , devShell ? project.shell
         , devShells ? { default = devShell; }
         , checkedProject ? project.appendModule { checkMaterialization = true; }
-        , ciJobs ? mkFlakeCiJobs project { inherit checks coverage packages devShells checkedProject; }
+        , ciJobs ? mkFlakeCiJobs project { inherit checks coverage packages haddock devShells checkedProject; }
         , hydraJobs ? ciJobs
       }: {
       inherit
