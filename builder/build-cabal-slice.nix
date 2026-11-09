@@ -485,7 +485,18 @@ let
            ''}/bin/ghc";
   twoStageFlags = lib.optionalString twoStage (
     " --with-build-compiler=${twoStageBuildGhcBin}"
-    + " --with-build-hc-pkg=${twoStageBuildGhc}/bin/ghc-pkg");
+    + " --with-build-hc-pkg=${twoStageBuildGhc}/bin/ghc-pkg"
+    # The build machine's own pkg-config (#2628).  cabal configures one
+    # toolchain per machine and neither inherits the other's programs, so
+    # `--with-pkg-config` (the target-prefixed wrapper) does not answer for
+    # it, and nothing on PATH is called plain `pkg-config` in a cross slice:
+    # a build-stage source goal with `pkgconfig-depends` was rejected with
+    # "no pkg-config executable was found".  The native metadata wrapper
+    # answers the solve the same way plan-nix's did; the tools themselves
+    # are composed from `buildStoreSlices`, which carry their real
+    # build-platform libraries.  Program paths do not enter unit ids.
+    + " --with-build-pkg-config=${buildMachinePkgConfig}/bin/pkg-config");
+  buildMachinePkgConfig = pkgsBuildBuild.cabalPkgConfigWrapperFor pkgconfNames;
 
   # The BUILD-stage `setup` executable cabal compiles for each unit is linked
   # by the BUILD compiler against that compiler's OWN registered `text` -- and
