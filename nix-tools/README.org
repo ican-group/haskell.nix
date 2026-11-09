@@ -26,7 +26,7 @@ into a ~nix~ expression and then doing the lifting in Nix.
 
 * QuickStart
 
-View the [[https://input-output-hk.github.io/haskell.nix/][haskell.nix documentation]] for instructions on how to get
+View the [[https://ican-group.github.io/haskell.nix/][haskell.nix documentation]] for instructions on how to get
 started with your own project.
 
 * Building

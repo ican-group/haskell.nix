@@ -678,23 +678,23 @@ As a result, there will be some drawbacks:
     cached. Usage of `cleanSourceHaskell` will need to be updated.
 
 ## October 12, 2019
- * [`shellFor`](https://input-output-hk.github.io/haskell.nix/reference/library/#shellfor) no longer sets `CABAL_CONFIG` by default.
+ * [`shellFor`](https://ican-group.github.io/haskell.nix/reference/library.html#shellfor) no longer sets `CABAL_CONFIG` by default.
    This avoids surprising users, but means that Cabal may select a plan which is different to your Haskell.nix package set.
    If you would like the old behaviour, use `shellFor { exactDeps = true; }`.
 
 ## August 9, 2019
- * Add the [`haskellLib.collectComponents`](https://input-output-hk.github.io/haskell.nix/reference/library/#haskellLib) function.
+ * Add the [`haskellLib.collectComponents`](https://ican-group.github.io/haskell.nix/reference/library.html#haskelllib) function.
 
 ## June 21, 2019
- * Add `ghcWithPackages` and `ghcWithHoogle` to hsPkgs ([documentation](https://input-output-hk.github.io/haskell.nix/reference/library/#package-set-functions).
+ * Add `ghcWithPackages` and `ghcWithHoogle` to hsPkgs ([documentation](https://ican-group.github.io/haskell.nix/reference/library.html#ghcwithpackages).
  * Benchmark components can now build successfully.
  * Reduced the closure bloat of nix-tools, and added closure size limit to CI.
  * Added more reference documentation and set up auto-generated
-   documentation for [Module Options](https://input-output-hk.github.io/haskell.nix/reference/modules/).
+   documentation for [Module Options](https://ican-group.github.io/haskell.nix/reference/modules.html).
  * Miscellaneous bug fixes.
 
 ## June 7, 2019
-  * Several additions to the [documentation](https://input-output-hk.github.io/haskell.nix/).
+  * Several additions to the [documentation](https://ican-group.github.io/haskell.nix/).
     * More information about getting nix-tools, Haskell.nix, pinning.
     * Updates the stack-to-nix and cabal-to-nix guides.
     * Adds a section on development environments.
