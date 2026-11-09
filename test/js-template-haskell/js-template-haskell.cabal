@@ -1,6 +1,7 @@
 cabal-version:      3.0
 name:               js-template-haskell
 version:            0.1.0.0
+license:            BSD-3-Clause
 category:           Repro
 build-type:         Simple
 

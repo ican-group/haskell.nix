@@ -19,10 +19,11 @@ haskell.nix sets this env var to `pkgs.stdenv.buildPlatform`'s OS
 when invoking `make-install-plan`, so plan-nix unit-ids match what
 slice cabal v2-build computes on the build platform regardless of
 which system happens to evaluate the plan-nix derivation.
-
+diff --git a/src/Distribution/Client/PackageHash.hs b/src/Distribution/Client/PackageHash.hs
+index f9cec43ab..617e84500 100644
 --- a/src/Distribution/Client/PackageHash.hs
 +++ b/src/Distribution/Client/PackageHash.hs
-@@ -65,6 +65,8 @@
+@@ -64,6 +64,8 @@ import Distribution.Types.PkgconfigVersion (PkgconfigVersion)
  import qualified Data.ByteString.Lazy.Char8 as LBS
  import qualified Data.Map as Map
  import qualified Data.Set as Set
@@ -31,7 +32,7 @@ which system happens to evaluate the plan-nix derivation.
  
  -------------------------------
  -- Calculating package hashes
-@@ -78,9 +80,22 @@
+@@ -77,9 +79,22 @@ import qualified Data.Set as Set
  -- See 'hashedInstalledPackageIdLong' vs 'hashedInstalledPackageIdShort'.
  hashedInstalledPackageId :: PackageHashInputs -> InstalledPackageId
  hashedInstalledPackageId

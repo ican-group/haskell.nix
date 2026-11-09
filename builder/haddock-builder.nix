@@ -83,7 +83,19 @@ let
       ++ componentDrv.executableToolDepends
       ++ (lib.optional (ghc.useLdLld or false) llvmPackages.bintools);
 
-    configurePhase = ''
+    configurePhase =
+      # Configuring for ghcjs runs emcc, which needs a writable cache.  Without
+      # one it falls back to /tmp/_cache, which is not writable in the darwin
+      # sandbox ("emcc: error: cache directory "/tmp/_cache" is not writable").
+      # Same as comp-builder.nix's prePatch.
+      lib.optionalString stdenv.hostPlatform.isGhcjs ''
+      export HOME=$(mktemp -d)
+      export EM_CACHE=$(mktemp -d)
+      if [ -d ${buildPackages.emscripten}/share/emscripten/cache ]; then
+        cp -r ${buildPackages.emscripten}/share/emscripten/cache/* $EM_CACHE/
+        chmod +w -R $EM_CACHE
+      fi
+      '' + ''
       mkdir -p $configFiles
       mkdir -p $ghc
       wrappedGhc=$ghc

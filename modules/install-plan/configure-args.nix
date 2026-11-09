@@ -76,7 +76,8 @@
       # e.g. `package <pkg>\n  profiling: True` /
       # `debug-info: 2` in cabal.project and have v1 honour it
       # without also needing module-level toggles.  v2 reads from
-      # plan.json directly via `projectConfigPragmas`, so the
+      # each unit's own plan.json configure-args (comp-v2-builder
+      # `configFields`), so the
       # picked-up values are merely consistent there.
       hasEnableFlag = name: lib.elem ("--enable-${name}") args;
       enableFlags =

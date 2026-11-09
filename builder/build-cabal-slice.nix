@@ -55,6 +55,26 @@ let outerGhc = ghc; in
                               # Forwarded from the slice's
                               # `component.hardeningDisable` module
                               # option by `comp-v2-builder.nix`.
+, buildJobs ? null           # Per-component `buildJobs` (see
+                             # modules/component-options.nix): when set,
+                             # pins `Setup build -jN` in place of the
+                             # capped default below.
+, buildPlatformCompiler ? false
+                             # True when `ghc` is the BUILD platform's compiler
+                             # in a cross package set: a two-stage plan's
+                             # build-stage unit (comp-v2-builder's
+                             # `isBuildStageUnit`, `ghc.buildGHC`).  Such a
+                             # compiler asks for the native toolchain by plain
+                             # name (its `ar command` is `ar`), which the cross
+                             # stdenv does not put on PATH -- `base-orphans`
+                             # failed with "The program 'ar' is required but it
+                             # could not be found" -- so `buildStageCc` and the
+                             # native binutils are added as build-platform deps.
+, buildStoreSlices ? []      # A two-stage slice's BUILD-machine tool slices
+                             # (comp-v2-builder `buildStageToolSlices`):
+                             # composed into `store/build/<platform>`, so
+                             # cabal's per-machine receipt check finds the
+                             # tools installed instead of rebuilding them.
 , depSlices ? []
 , localRepo ? null           # derivation with <pkg>-<ver>.tar.gz files
 , v2Fragment ? null          # per-package build-time-composition fragment
@@ -294,12 +314,23 @@ let
   staticHostSalt = lib.replaceStrings [ "-" "." ] [ "_" "_" ]
     stdenv.hostPlatform.config;
 
-  # On cross, `cabalPkgConfigWrapper` is named
+  # A slice's pkg-config table is the map restricted to the names declared by
+  # the packages in its slicing repo: this one, its staged build-tool and
+  # metadata sources, and its dep slices' (`repo-frag`, composed in the
+  # buildPhase; cabal solves every source goal).  No smaller table leaves the
+  # solve equal to plan-nix's.
+  pkgconfNames = lib.sort lib.lessThan (lib.unique
+    (lib.concatMap (f: f.pkgconfNames)
+       (lib.optional (v2Fragment != null) v2Fragment
+        ++ buildToolSourceFrags ++ metadataSourceFrags)
+     ++ lib.concatMap (d: d.pkgconfNames) depSlices));
+  pkgConfigWrapper = buildPackages.cabalPkgConfigWrapperFor pkgconfNames;
+  # On cross, `pkgConfigWrapper` is named
   # `${targetPrefix}pkg-config` (e.g. `x86_64-w64-mingw32-pkg-config`).
   # Cabal calls plain `pkg-config` by default, so for cross we have
   # to point it at the prefixed binary via `--with-pkg-config=`.
-  # Mirrors comp-builder.nix:345.
-  pkgConfigPrefix = buildPackages.cabalPkgConfigWrapper.targetPrefix;
+  # Mirrors comp-builder.nix's `--with-pkg-config=`.
+  pkgConfigPrefix = pkgConfigWrapper.targetPrefix;
   # Only emit cross-aware overrides; for native, cabal finds
   # everything on PATH itself.  Avoiding `--with-PROG=` flags on
   # native is also important for UnitId stability — every entry
@@ -624,6 +655,9 @@ let
   # The build-platform C compiler for build-stage tool sources; see
   # `depsBuildBuild` below for why its placement depends on the target.
   buildStageCc = [ pkgsBuildBuild.stdenv.cc pkgsBuildBuild.libiconv ];
+  needsBuildStageCc = buildToolSourceFrags != [] || buildPlatformCompiler;
+  buildStageToolchain = buildStageCc
+    ++ lib.optional buildPlatformCompiler pkgsBuildBuild.stdenv.cc.bintools;
   buildCcInDepsBuildBuild =
     stdenv.hostPlatform != stdenv.buildPlatform && !stdenv.hostPlatform.isGhcjs;
 in
@@ -640,7 +674,7 @@ stdenv.mkDerivation ({
   LC_ALL = "en_US.UTF-8";
 } // lib.optionalAttrs (stdenv.buildPlatform.libc == "glibc") {
   LOCALE_ARCHIVE = "${buildPackages.glibcLocales}/lib/locale/locale-archive";
-} // lib.optionalAttrs (buildToolSourceFrags != [] && stdenv.buildPlatform.isDarwin) {
+} // lib.optionalAttrs (needsBuildStageCc && stdenv.buildPlatform.isDarwin) {
   # A build-stage build-tool (happy/hsc2hs) compiled from source inside a
   # ghcjs-target slice links `-static -liconv` with the NATIVE build compiler,
   # but the compiler's fixed clang-wrapper reads a `NIX_LDFLAGS_<salt>` this
@@ -648,6 +682,8 @@ stdenv.mkDerivation ({
   # honours the `LIBRARY_PATH` env var for `-l` search (salt-independent), so
   # point it at the build-platform libiconv.  Darwin only — the flag/lib layout
   # is macOS-specific and other build hosts don't hit the ghcjs-slice case.
+  # A build-machine slice of a ghcjs plan (`buildPlatformCompiler`: alex,
+  # happy as their own slices) links the same way and needs it as well.
   LIBRARY_PATH = "${pkgsBuildBuild.libiconv}/lib";
 } // {
   # GHCJS runs Template Haskell splices by linking the splice as a
@@ -661,15 +697,11 @@ stdenv.mkDerivation ({
   #
   # `lndir` is used in the buildPhase to compose dep slices into
   # `$out/store` as a symlink tree — see comments there.
-  # `cabalPkgConfigWrapper` (haskell.nix's build-time pkg-config
-  # wrapper, matching comp-builder.nix:432) is needed when any
-  # package in the cabal plan has `pkgconfig-depends:` — cabal's
-  # solver invokes pkg-config to query module versions.  This slice
-  # re-runs the solver for the subset of packages it can see, so
-  # rather than plumb a per-slice flag we always include it.
+  # `pkgConfigWrapper` is always present: without a pkg-config cabal rejects
+  # every `pkgconfig-depends:` of a source goal (see `pkgConfigWithFlag`).
   nativeBuildInputs = [ ghc cabal-install
                         (pkgsBuildBuild.lndir or pkgsBuildBuild.xorg.lndir)
-                        buildPackages.cabalPkgConfigWrapper
+                        pkgConfigWrapper
                         # `jq` is used by the unit-id mismatch diagnostic
                         # to extract / pretty-print plan.json entries for
                         # the diff between plan-nix and the slice's
@@ -718,8 +750,8 @@ stdenv.mkDerivation ({
     # sub-build inside a ghcjs-target slice gets no native `-L` for it
     # ("ld: library not found for -liconv").  Adding it as a build-platform
     # native input puts `-L<libiconv>/lib` into the build wrapper's search.
-    ++ lib.optionals (buildToolSourceFrags != [] && !buildCcInDepsBuildBuild)
-         buildStageCc
+    ++ lib.optionals (needsBuildStageCc && !buildCcInDepsBuildBuild)
+         buildStageToolchain
     ++ extraNativeBuildInputs;
   # ...but on a C-capable cross target the build compiler must go in
   # `depsBuildBuild`, not `nativeBuildInputs`.  In `nativeBuildInputs` the
@@ -731,8 +763,8 @@ stdenv.mkDerivation ({
   # `depsBuildBuild` it only sees build-platform deps.  Native slices keep the
   # old placement (build == host, so no difference and no rebuild), and so
   # does ghcjs, which has no target C libraries to leak.
-  depsBuildBuild = lib.optionals (buildToolSourceFrags != [] && buildCcInDepsBuildBuild)
-    buildStageCc;
+  depsBuildBuild = lib.optionals (needsBuildStageCc && buildCcInDepsBuildBuild)
+    buildStageToolchain;
   # `depSlices` go in `propagatedBuildInputs` so stdenv chains each
   # slice's `nix-support/propagated-build-inputs` transitively.
   # Concretely: `cardano-lmdb:lib:ffi` declares `pkgconfig = [lmdb]`
@@ -766,8 +798,24 @@ stdenv.mkDerivation ({
   # slice $out is a tree of /nix/store symlinks anyway — nothing to
   # strip that the dep slices haven't already stripped themselves.
   dontStrip = true;
-  inherit passthru;
+  passthru = passthru // { inherit pkgconfNames; };
 
+  # Store layout: the stable-haskell cabal (3.19 `merge`) keys its store by
+  # machine and platform, `store/{host,build}/<platform>/`.  There is no
+  # `build` -> `host` alias any more.  It made the build machine's package db
+  # the host machine's whenever the two share a platform directory, and GHC's
+  # `Target platform` drops the libc, so a musl `-target` cross put its glibc
+  # build-machine units in the musl host db (`ghc-internal ... missing
+  # dependency rts-1.0.3`).  It also shipped build-stage tool dirs under
+  # `host/<build-platform>`, where downstream slices composed them read-only
+  # and then failed writing over them when they rebuilt the tool (mingw
+  # `happy`: an `ioError` creating `cabal-hash.txt`).  Build-stage units now
+  # stay in this slice's real `store/build/<platform>` -- where the paths
+  # cabal bakes into them (a tool's `Paths_<pkg>` datadir) keep resolving --
+  # and the compose step below never carries a dep's `build` dir downstream,
+  # so each consuming slice builds its own build-stage goals, as before.
+  # Natively the merge cabal has no build machine at all (the build and host
+  # compilers are the same), so everything is `host`.
   buildPhase = ''
     set -euo pipefail
 
@@ -858,19 +906,8 @@ stdenv.mkDerivation ({
         # instrumentation instead of building.
         depSliceCount=$((depSliceCount + 1))
         # Compose per top-level entry rather than `lndir`ing `$d/store`
-        # wholesale, so the dep's `build` -> `host` alias can be SKIPPED.
-        # That alias is now kept in every slice's output (see the
-        # installPhase), because cabal bakes `<slice>/dist-newstyle/store/
-        # build/<plat>/lib/<unit>/share` into a BUILD-stage tool's
-        # `Paths_<pkg>` datadir and the binary needs it to resolve forever
-        # after -- `alex` failed with
-        #   .../store/build/.../alex-3.5.4.2-.../share/AlexTemplate.hs:
-        #   openFile: does not exist
-        # when it was dropped.  Following it here instead would relink every
-        # unit a second time (it points at `host`, which we have already
-        # walked) and, worse, materialise `build/` as a REAL directory that
-        # shadows this slice's own alias below -- which is exactly why it
-        # used to be deleted.  Skipping is the cheap half of that trade.
+        # wholesale, so the dep's `build` dir is SKIPPED: build-stage
+        # units are this slice's to build (see the note above buildPhase).
         local sub b
         for sub in "$d"/store/*; do
           [ -e "$sub" ] || continue
@@ -894,6 +931,54 @@ stdenv.mkDerivation ({
       fi
     done
     sliceMark "composed starting store from $depSliceCount dep slices"
+    ${lib.optionalString (twoStage && buildStoreSlices != []) (
+      # Build-machine tool slices.  A build-machine slice runs cabal
+      # single-stage with the native compiler, so its units sit in its
+      # `store/host/<native platform>`; here they are the BUILD store.
+      # Only that platform's dir, and only slices marked `build-machine`
+      # (a tool's transitive deps can include host slices, and a musl
+      # host shares the glibc build platform's dir name).  Receipts are
+      # copied, not linked, and the db recached, so a tool cabal still
+      # decides to rebuild (a unit-id mismatch) is written over cleanly.
+      ''
+      buildPlatformDir=$(${twoStageBuildGhc}/bin/ghc --info \
+        | sed -n 's/.*("Target platform","\([^"]*\)").*/\1/p' | head -1)
+      declare -A seenBuildDeps
+      buildDepCount=0
+      addBuildDep() {
+        local d=$1
+        [ -n "$d" ] && [ -f "$d/nix-support/build-machine" ] \
+          && [ -d "$d/store/host/$buildPlatformDir" ] \
+          && [ -z "''${seenBuildDeps[$d]:-}" ] || return 0
+        seenBuildDeps[$d]=1
+        buildDepCount=$((buildDepCount + 1))
+        mkdir -p "$storeDir/build/$buildPlatformDir"
+        lndir -silent "$d/store/host/$buildPlatformDir" "$storeDir/build/$buildPlatformDir"
+      }
+      for tool in ${lib.concatMapStringsSep " " toString buildStoreSlices}; do
+        addBuildDep "$tool"
+        if [ -f "$tool/nix-support/transitive-deps" ]; then
+          while IFS= read -r tdep; do
+            addBuildDep "$tdep"
+          done < "$tool/nix-support/transitive-deps"
+        fi
+      done
+      buildStoreDir=$storeDir/build/$buildPlatformDir
+      if [ -d "$buildStoreDir" ]; then
+        for f in "$buildStoreDir"/units/*; do
+          [ -L "$f" ] || continue
+          cp --remove-destination "$(readlink -f "$f")" "$f"
+          chmod u+w "$f"
+        done
+        rm -f "$buildStoreDir"/package.conf.d/package.cache \
+              "$buildStoreDir"/package.conf.d/package.cache.lock
+        if [ -d "$buildStoreDir/package.conf.d" ]; then
+          ${twoStageBuildGhc}/bin/ghc-pkg \
+            --package-db="$buildStoreDir/package.conf.d" recache
+        fi
+      fi
+      sliceMark "composed build store from $buildDepCount build-tool slices"
+    '')}
 
     # --- Staged store layout (stable-haskell cabal fork) --------------
     # The fork's `v2-build` takes its install dirs and store package dbs
@@ -912,24 +997,14 @@ stdenv.mkDerivation ({
     #    `$out/dist-newstyle/store/...`) resolves through a symlink that
     #    lives in `$out` forever, and the store files themselves land in
     #    `$storeDir` where the compose/capture protocol expects them.
-    #  * The fork plans every unit in a stage — `build` (runs on the
-    #    build machine: setup scripts, build tools) or `host` — and each
-    #    stage gets its own store dir.  Natively both stages are the
-    #    same toolchain and a unit's id is the same hash in either
-    #    stage, so symlink `build` → `host`: a unit captured once (from
-    #    its own slice, host stage) satisfies downstream build-stage
-    #    lookups (e.g. `Cabal` for a dep's setup script) without a
-    #    rebuild.  Cross stages differ by platform, so they still land
-    #    in separate `<platform>/` subdirs below the shared link.
-    #    (Both symlinks are inert for mainline cabal, which never looks
-    #    at `<dist>/store/`.)
+    #  * The fork plans every unit for a machine — `build` (setup
+    #    scripts, build tools) or `host` — each with its own store dir.
+    #    (The symlink is inert for mainline cabal, which never looks at
+    #    `<dist>/store/`.)
     distDir=$out/dist-newstyle
     mkdir -p $distDir
     ln -sfn ../store $distDir/store
     mkdir -p $storeDir/host
-    if [ ! -e $storeDir/build ]; then
-      ln -sn host $storeDir/build
-    fi
 
     # Locate the store dir cabal reads/writes package dbs in, for
     # whichever of the two layouts is in play, setting:
@@ -950,7 +1025,14 @@ stdenv.mkDerivation ({
     # holds a SECOND platform dir — build-stage units (native) reached
     # through the `build` → `host` link — so the host dir must be picked
     # by name, not by glob order.
-    hostPlatformDir=$(${ghcBin} --info 2>/dev/null \
+    hostPlatformDir=$(${
+      # By absolute path: a `-target` cross compiler has no target prefix,
+      # so a bare `ghc` resolves through PATH, and in a Template Haskell
+      # slice (the `-with-iserv` wrapper) the native compiler can win.  Its
+      # `Target platform` named the BUILD platform's dir as the host's, and
+      # the build-stage eviction below then removed the real host units
+      # (android `resourcet` rebuilding an evicted `primitive`).
+      "${ghc}/bin/${ghcBin}"} --info 2>/dev/null \
       | sed -n 's/.*("Target platform","\([^"]*\)").*/\1/p' | head -1)
 
     discoverStore() {
@@ -1459,7 +1541,9 @@ stdenv.mkDerivation ({
       cp ${haskellLib.textFile "program-options"   v2Fragment.programOptionsBlock}   $selfFrag/nix-support/v2-frag/program-options
       cp ${haskellLib.textFile "doc"               v2Fragment.docBlock}              $selfFrag/nix-support/v2-frag/doc
       cp ${haskellLib.textFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $selfFrag/nix-support/v2-frag/extra-lib-dirs
-      cp ${haskellLib.textFile "config"            v2Fragment.configBlock}           $selfFrag/nix-support/v2-frag/config
+      cp ${haskellLib.textFile "config-fields"     (lib.concatMapStrings (f: f + "\n") v2Fragment.configFields)} \
+        $selfFrag/nix-support/v2-frag/config-fields
+      printf '%s' ${lib.escapeShellArg v2Fragment.stage} > $selfFrag/nix-support/v2-frag/stage
       cp ${haskellLib.textFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
         $selfFrag/nix-support/v2-frag/setup-constraints
       cp ${pkgs.writeText "source-repo-block" v2Fragment.sourceRepoBlock} \
@@ -1473,6 +1557,22 @@ stdenv.mkDerivation ({
         addBlk "$dep"
         [ -f "$dep/nix-support/transitive-deps" ] && while IFS= read -r d; do addBlk "$d"; done < "$dep/nix-support/transitive-deps"
       done
+      ${lib.optionalString (twoStage && buildStoreSlices != []) (
+        # The build-tool slices' fragments too, so this cabal plans each tool
+        # the way the plan (and the tool's own slice) did: alex's config
+        # fields, deriveConstants' `source-repository-package` block.
+        # Without them the tool was planned under another unit id and
+        # rebuilt here despite the composed one.  A tool whose package also
+        # has a host fragment here (hspec-discover) must be added too: the
+        # config composition keeps the two stages apart
+        # (compose-config-blocks.awk), and the other block groups prefer
+        # the host fragment (`sortedByNameHostFirst`).
+        ''
+        for tool in ${lib.concatMapStringsSep " " toString buildStoreSlices}; do
+          addBlk "$tool"
+          [ -f "$tool/nix-support/transitive-deps" ] && while IFS= read -r d; do addBlk "$d"; done < "$tool/nix-support/transitive-deps"
+        done
+      '')}
 
       # depends-closure fragments (extra-packages + constraints scope).
       # Seeded purely from the library `depends` edges (`libDepSlices` =
@@ -1496,6 +1596,46 @@ stdenv.mkDerivation ({
       # extra-package), so we keep just one — matching how the Nix side
       # dedups via `sliceCanonicalNames` / `libConstraintPins` (by name).
       sortedByName() { local f; for f in "$@"; do printf '%s\t%s\n' "$(cat "$f"/nix-support/v2-frag/pkg-name)" "$f"; done | sort -t"$(printf '\t')" -k1,1 -u; }
+
+      # A fragment's stage as this cabal sees it.  A single-stage cabal
+      # (no `--with-build-compiler`) has only host units, whatever plan the
+      # fragment's unit came from.
+      fragStage() {
+        ${if twoStage
+          then ''cat "$1/nix-support/v2-frag/stage" 2>/dev/null || echo host''
+          else "echo host"}
+      }
+      # One fragment per package name, preferring the HOST unit's: a plain
+      # `package <name>` stanza's program options (`ghc-options`, ...)
+      # reach only host units under the fork, so a host package's blocks
+      # must come from its host fragment, not a build-machine twin's.  The
+      # store path breaks remaining ties, so the choice never depends on
+      # the order of the fragments.
+      sortedByNameHostFirst() {
+        local f
+        for f in "$@"; do
+          printf '%s\t%s\t%s\n' "$(cat "$f"/nix-support/v2-frag/pkg-name)" \
+            "$([ "$(fragStage "$f")" = host ] && echo 0 || echo 1)" "$f"
+        done | LC_ALL=C sort -t"$(printf '\t')" -k1,1 -k2,2 -k3,3 \
+             | awk -F'\t' '!seen[$1]++ { print $1 "\t" $3 }'
+      }
+      # `package <name>` / `package <stage>:*` configuration blocks from the
+      # closure's fragments (see compose-config-blocks.awk).
+      composeConfigBlocks() {
+        local f n st line
+        for f in "$@"; do
+          [ -f "$f/nix-support/v2-frag/config-fields" ] || continue
+          n=$(cat "$f/nix-support/v2-frag/pkg-name")
+          st=$(fragStage "$f")
+          printf '%s\t%s\t-\n' "$n" "$st"
+          while IFS= read -r line; do
+            [ -n "$line" ] && printf '%s\t%s\t%s\n' "$n" "$st" "$line"
+          done < "$f/nix-support/v2-frag/config-fields"
+        done | LC_ALL=C sort -u \
+             | awk -f ${./compose-config-blocks.awk} \
+             | LC_ALL=C sort \
+             | awk -F'\t' '{ k = $1 SUBSEP $2; if (k != prev) { print "package " $2; prev = k } print "  " $3 }'
+      }
 
       # Is `<pkg> ==<ver>` (a fragment's version pin) already composed
       # into the staged store db?  Used below to route such deps through
@@ -1540,11 +1680,12 @@ stdenv.mkDerivation ({
         done < <(sortedByName "''${libFrags[@]}")
         [ -n "$epline" ] && echo "extra-packages: $epline"
 
-        # Seven block groups, grouped by type, name-sorted across the closure.
-        # `config` is the configuration-pragma delta against the skeleton's
-        # `package *` baseline (v2-project-globals.nix `perPkgConfigBlocks`).
-        for blk in config flags ghc-options configure-options program-options doc extra-lib-dirs; do
-          while IFS=$'\t' read -r name f; do cat "$f/nix-support/v2-frag/$blk"; done < <(sortedByName "''${blkFrags[@]}")
+        # Configuration blocks, composed from the closure's own units'
+        # config fields (compose-config-blocks.awk); then the other block
+        # groups, grouped by type, name-sorted across the closure.
+        composeConfigBlocks "''${blkFrags[@]}"
+        for blk in flags ghc-options configure-options program-options doc extra-lib-dirs; do
+          while IFS=$'\t' read -r name f; do cat "$f/nix-support/v2-frag/$blk"; done < <(sortedByNameHostFirst "''${blkFrags[@]}")
         done
 ${lib.optionalString (metadataSourceFrags != []) ''
         # Plan flag assignments for metadata-staged (solver-only)
@@ -1665,7 +1806,12 @@ ${lib.optionalString (metadataSourceFrags != []) ''
     # `HASKELLNIX_BUILD_NUM_JOBS` from the env at build time and feeds
     # it to `Setup build -jN`.  Build-phase flag, so UnitIds stay
     # stable.
-    export HASKELLNIX_BUILD_NUM_JOBS=$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES))
+    export HASKELLNIX_BUILD_NUM_JOBS=${
+      # A component's `buildJobs` replaces the cap (e.g. `-j1` for a
+      # memory-hungry package).  Unset leaves the script text unchanged.
+      if buildJobs == null
+      then "$(($NIX_BUILD_CORES > 4 ? 4 : $NIX_BUILD_CORES))"
+      else toString buildJobs}
 
     ${lib.optionalString (expectedPackage != null) ''
       # Dry-run the plan first and verify that cabal isn't planning
@@ -1724,6 +1870,12 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       expected_pkg=${lib.escapeShellArg expectedPackage}
       allowed_build_tools=${lib.escapeShellArg
         (lib.concatStringsSep " " allowedBuildToolPackages)}
+      # Strict on both machines: a build-machine unit in this list is a
+      # rebuild too.  Two-stage slices compose this plan's build-machine
+      # tool slices into their build store (`buildStoreSlices`), and
+      # build-machine slices compose theirs as dep slices, so cabal's
+      # receipt check reuses every tool; one planned here means its unit id
+      # diverged from the composed slice's, which is a bug to fix.
       extras=$(awk -v expected="$expected_pkg" -v allowed="$allowed_build_tools" '
         BEGIN {
           n = split(allowed, a, " ")
@@ -1739,15 +1891,7 @@ ${lib.optionalString (metadataSourceFrags != []) ''
           #   ` - host rts-headers-1.0.3 (lib) (requires build)`
           # so the `<name>-<version>` token is $3, not $2.  Skip a leading stage
           # keyword.  (A real package is never named exactly build/host/target.)
-          #
-          # BUILD-stage units are tolerated wholesale: the fork elaborates
-          # build tools (and their setup-style deps, e.g. the Cabal fork
-          # for Custom setups) as inplace units of the consuming plan, so
-          # the first slice that needs one legitimately builds it into the
-          # composed store (where unit receipts let later slices reuse it).
-          # Only HOST-stage extras indicate a real composition failure.
-          if (pkg_ver == "build") next
-          if (pkg_ver == "host" || pkg_ver == "target") pkg_ver = $3
+          if (pkg_ver == "build" || pkg_ver == "host" || pkg_ver == "target") pkg_ver = $3
           n = split(pkg_ver, parts, "-")
           for (i = n; i > 0; i--) if (parts[i] ~ /^[0-9]+(\.[0-9]+)*$/) break
           if (i <= 1) { name = pkg_ver }
@@ -1886,10 +2030,22 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       # listed via `extra-packages:` in cabal.project AND its tarball
       # is in the slicing repo's index — both conditions are met by
       # comp-v2-builder for non-shim slices.
+      ${
+        # A doc slice runs only `v2-haddock`.  cabal 3.19 applies its
+        # `--haddock-*` flags to the target even when it is not a local
+        # package, and they are unit-id inputs (`haddock-html` /
+        # `-hyperlink-source` / `-quickjump` in cabal-hash.txt), so
+        # `v2-haddock` builds the documented unit under its own id.  A
+        # `v2-build` first was at best a no-op (the target's plain slice is
+        # composed in), but when the deps came from doc slices it built a
+        # third, undocumented unit of the target, and the slice then captured
+        # two units of its target (tests.sublib-docs).
+        lib.optionalString (!doHaddock) ''
       echo "--- cabal v2-build ${target} ---"
       time { cabal $cabalGlobalArgs v2-build $cabalCmdArgs -v ${target} 2>&1 \
         | tee $buildRoot/build.log | sliceStamp; }
       sliceMark "cabal v2-build"
+      ''}
       ${lib.optionalString doHaddock ''
         echo "--- cabal v2-haddock ${target} ---"
         time { cabal $cabalGlobalArgs v2-haddock $cabalCmdArgs \
@@ -1913,14 +2069,15 @@ ${lib.optionalString (metadataSourceFrags != []) ''
                               -path "*/dist/doc/html/$tgt_pkg/$tgt_cname" \
                               -type d -print -quit 2>/dev/null || true)
           if [ -n "$sublib_html_src" ]; then
-            # The sublib's conf was just written by `cabal v2-build`'s
-            # register step before `v2-haddock` ran; find its uid by
-            # the cabal-mangled `z-<pkg>-z-<sublib>` name.  Re-discover
-            # first: if the composed starting store was empty, cabal
-            # created the store dir during the build we just ran.
+            # The sublib's conf was just written by `v2-haddock`'s
+            # register step; find its uid by the cabal-mangled
+            # `z-<pkg>-z-<sublib>` name, skipping the composed plain
+            # unit.  Re-discover first: if the composed starting store
+            # was empty, cabal created the store dir during the build.
             discoverStore
             for conf in $ghcDir/$storePkgDb/*.conf; do
               [ -e "$conf" ] || continue
+              grep -qxF "$(basename "$conf")" $buildRoot/confs-before && continue
               if [ "$(awk '/^name:/ {print $2; exit}' "$conf")" \
                    = "z-$tgt_pkg-z-$tgt_cname" ]; then
                 target_uid=$(awk '/^id:/ {print $2; exit}' "$conf")
@@ -2043,33 +2200,13 @@ ${lib.optionalString (metadataSourceFrags != []) ''
     # are ours; symlinks are dep-slice content that we just leave
     # in place so downstream consumers can follow them back to the
     # original dep slices.
-    # KEEP the staged-layout alias (`build` → `host`).  It used to be
-    # dropped here, on the grounds that every consuming slice re-creates it
-    # and that leaving it made `lndir` traverse the store twice downstream.
-    # The first half is true of the CONSUMER's store; it is not true of the
-    # paths cabal bakes into artifacts.  A BUILD-stage tool's `Paths_<pkg>`
-    # datadir is spelled `<this slice>/dist-newstyle/store/build/<plat>/
-    # lib/<unit>/share` -- an absolute path into THIS output -- so deleting
-    # the alias left it dangling for good:
-    #   alex: .../store/build/.../alex-3.5.4.2-.../share/AlexTemplate.hs:
-    #         openFile: does not exist
-    # (`ghc-lib-ghc-<triple>`, where genprimopcode's lexer runs alex).  The
-    # host-stage units were never affected -- their baked paths say `host/`,
-    # which is the real directory.
-    # The double-traversal it was avoiding is handled in the buildPhase
-    # instead: the compose step skips a dep's `build` entry by name, so
-    # nothing follows the alias and `build/` is never materialised.
     # The fork's staged install leaves `<unit>.lock` files directly in
     # the store dir (its `storeIncomingDirectory` IS the store dir);
     # they're staging debris like `incoming/` below.
     rm -f $out/store/host/*/*.lock 2>/dev/null || true
-    # `host/` was pre-created for the stage-unifying `build` link; with
-    # the mainline (ghc-*) layout it stays empty — drop it (rmdir only
-    # removes empty dirs), and the alias with it, or the output would ship
-    # a `build` symlink pointing at a directory that is no longer there.
-    if rmdir $out/store/host 2>/dev/null; then
-      rm -f $out/store/build
-    fi
+    # `host/` is pre-created; with the mainline (ghc-*) layout it stays
+    # empty — drop it (rmdir only removes empty dirs).
+    rmdir $out/store/host 2>/dev/null || true
     discoverStore
     if [ -z "$ghcDir" ]; then
       rm -rf $out/store
@@ -2081,7 +2218,13 @@ ${lib.optionalString (metadataSourceFrags != []) ''
         # solver-tools wrapper) — they point into $buildRoot and would
         # ship dangling.  Symlinks only; real confs are the slice's own.
         shopt -s nullglob
-        for conf in $ghcDir/$storePkgDb/*.conf; do
+        for conf in $ghcDir/$storePkgDb/*.conf ${
+          # Every platform dir, not only the compiler's: a build-machine
+          # unit's slice (`buildPlatformCompiler`) injects them into the
+          # composed HOST db, the only one that exists before its cabal
+          # creates `host/<build-platform>` (aarch64 `tagged`:
+          # noBrokenSymlinks on `host/aarch64-unknown-linux/package.conf.d`).
+          "$storeDir/*/*/package.conf.d/*.conf"}; do
           [ -L "$conf" ] || continue
           case "$(readlink "$conf")" in
             "$buildRoot"/global-conf-snapshot/*) rm "$conf" ;;
@@ -2142,7 +2285,7 @@ ${lib.optionalString (metadataSourceFrags != []) ''
           # exist in both stages under different unit ids.
           uid=$(jq -r --arg exe "exe:$newBin" \
             '.["install-plan"][]
-             | select(.["component-name"] == $exe and ((.stage // "host") == "host"))
+             | select(.["component-name"] == $exe and ((.stage // .machine // "host") == "host"))
              | .id' \
             "$distDir/cache/plan.json" 2>/dev/null | head -n1)
           # The fork's elaborated plan carries a stage prefix on unit
@@ -2175,12 +2318,12 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       : > $buildRoot/host-stage-unit-ids
       if [ -f "$distDir/cache/plan.json" ]; then
         jq -r '.["install-plan"][]
-               | select(.stage == "build")
+               | select((.stage // .machine) == "build")
                | .id | sub("^(host|build):"; "")' \
           "$distDir/cache/plan.json" 2>/dev/null | sort -u \
           > $buildRoot/build-stage-unit-ids || true
         jq -r '.["install-plan"][]
-               | select((.stage // "host") == "host")
+               | select((.stage // .machine // "host") == "host")
                | .id | sub("^(host|build):"; "")' \
           "$distDir/cache/plan.json" 2>/dev/null | sort -u \
           > $buildRoot/host-stage-unit-ids || true
@@ -2385,6 +2528,12 @@ ${lib.optionalString (metadataSourceFrags != []) ''
         fi
       done
     } | sort -u > $out/nix-support/transitive-deps
+    ${lib.optionalString (buildPlatformCompiler
+        || (!twoStage && stdenv.hostPlatform.config == stdenv.buildPlatform.config))
+      # Marks a slice whose units run on the build machine (a two-stage
+      # plan's build-machine unit, or any native slice) for a two-stage
+      # consumer's `buildStoreSlices` compose.
+      "touch $out/nix-support/build-machine"}
 
     ${lib.optionalString (v2Fragment != null) ''
       # --- v2 build-time-composition fragment (additive; STEP 1) -----
@@ -2416,7 +2565,9 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       cp ${haskellLib.textFile "program-options"   v2Fragment.programOptionsBlock}   $out/nix-support/v2-frag/program-options
       cp ${haskellLib.textFile "doc"               v2Fragment.docBlock}              $out/nix-support/v2-frag/doc
       cp ${haskellLib.textFile "extra-lib-dirs"    v2Fragment.extraLibDirsBlock}     $out/nix-support/v2-frag/extra-lib-dirs
-      cp ${haskellLib.textFile "config"            v2Fragment.configBlock}           $out/nix-support/v2-frag/config
+      cp ${haskellLib.textFile "config-fields"     (lib.concatMapStrings (f: f + "\n") v2Fragment.configFields)} \
+        $out/nix-support/v2-frag/config-fields
+      printf '%s' ${lib.escapeShellArg v2Fragment.stage} > $out/nix-support/v2-frag/stage
       printf '%s' ${lib.escapeShellArg v2Fragment.constraintLine} > $out/nix-support/v2-frag/constraint
       cp ${haskellLib.textFile "setup-constraints" (lib.concatMapStrings (s: s + "\n") v2Fragment.setupConstraints)} \
         $out/nix-support/v2-frag/setup-constraints

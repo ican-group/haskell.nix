@@ -2,6 +2,7 @@ cabal-version: 1.12
 
 name:           cabal-doctests-test
 version:        0.1.0.0
+license:        BSD3
 build-type:     Custom
 
 custom-setup

@@ -36,6 +36,15 @@ themselves. This is what the [`shellFor`][shellFor] function does.
 {{#include development/shell.nix}}
 ```
 
+Calling `shellFor` evaluates a new copy of the project with the shell
+arguments added.  That is fine for a `shell.nix` like this one, which
+uses nothing else from the project.  If the same evaluation also uses
+other outputs of the project (for instance a flake that exposes its
+packages as well as a dev shell), pass the arguments as the `shell`
+argument when creating the project and use its `shell` attribute
+instead (for example `project.shell`), so the project is only evaluated
+once.
+
 See also: [Haskell.nix Library Reference: `shellFor`][shellFor]
 
 [shellFor]: ../reference/library.md#shellfor

@@ -37,6 +37,9 @@ let
   #     (armv7a-android-prebuilt / aarch32 cross).
   #   * Windows targets reported as `<cpu>-unknown-mingw32`, not
   #     nixpkgs' `<cpu>-w64-windows` (ucrt64 / mingwW64 cross).
+  #   * WASI targets reported as `wasm32-unknown-wasi`, not nixpkgs'
+  #     `wasm32-unknown-wasip1` (wasi32): configure's GHC_CONVERT_OS
+  #     and ghc-toolchain's stringEncodeOS both spell the OS `wasi`.
   #
   # Mirror those normalisations here so the dummy and real `--info`
   # outputs match — verified by `tests.dummy-ghc-info` on
@@ -49,7 +52,10 @@ let
         else if cpu.name == "armv7a" then "armv7"
         else cpu.name;
       vendorName = if p.isWindows then "unknown" else vendor.name;
-      kernelName = if p.isWindows then "mingw32" else kernel.name;
+      kernelName =
+        if p.isWindows then "mingw32"
+        else if p.isWasi then "wasi"
+        else kernel.name;
     in
       "${cpuName}-${vendorName}-${kernelName}";
   # The stable-haskell fork brands its `--info` with `Edition` (hardcoded in
@@ -501,8 +507,8 @@ let
       nativeBuildInputs = [
         # `cabal2json` is Cabal-syntax-json, so it has to be able to parse the
         # boot packages' `.cabal` files.  Stable-haskell boot libs come from the
-        # Cabal 3.17 fork, so they get the fork's cabal2json (the
-        # `cabal-syntax-json-condtree-3.17` port); every other compiler keeps
+        # Cabal fork (3.19), so they get the fork's cabal2json (the
+        # `cabal-syntax-json-cabal-3.19` port); every other compiler keeps
         # the shared 3.16 one.  This is the one nix-tools consumer that is NOT
         # reachable through the `nix-tools` project option, so it has to
         # discriminate here.

@@ -63,7 +63,8 @@ package set. Your project will have a [`mkStackPkgSet`](../reference/library.md#
 > **Note:**
 >
 > Note that `haskell.nix` will automatically use `qemu` to emulate the target
-> when necessary to run Template Haskell splices.
+> when necessary to run Template Haskell splices.  See
+> [Cross-compiling Template Haskell: how it works](./cross-template-haskell.md).
 
 ### Static executables with Musl libc
 

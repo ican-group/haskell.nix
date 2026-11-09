@@ -1,4 +1,5 @@
 name: stack-source-repo
+license:             BSD3
 
 dependencies:
 - base

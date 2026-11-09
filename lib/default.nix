@@ -125,12 +125,16 @@ in {
   # This is used to make the default `packages` list for `shellFor`.
   isLocalPackage = p: p.isLocal or false;
   isRedirectPackage = p: p.isRedirect or false;
-  selectLocalPackages = lib.filterAttrs (_n: p: p != null && isLocalPackage p && !isRedirectPackage p);
+  # A build-machine twin (`<id>:build`, lib/load-cabal-plan.nix) is the
+  # build machine's copy of a package, not a package of the project: leave it
+  # out of project-wide selections (coverage reports, shells, ...).
+  isBuildTwinKey = n: lib.hasSuffix ":build" n;
+  selectLocalPackages = lib.filterAttrs (n: p: p != null && isLocalPackage p && !isRedirectPackage p && !isBuildTwinKey n);
 
   # if it's a project package it has a src attribute set with an origSubDir attribute.
   # project packages are a subset of localPackages
   isProjectPackage = p: p.isProject or false;
-  selectProjectPackages = lib.filterAttrs (_n: p: p != null && isLocalPackage p && isProjectPackage p && !isRedirectPackage p);
+  selectProjectPackages = lib.filterAttrs (n: p: p != null && isLocalPackage p && isProjectPackage p && !isRedirectPackage p && !isBuildTwinKey n);
 
   # Format a componentId as it should appear as a target on the
   # command line of the setup script.
@@ -367,14 +371,22 @@ in {
   # subdirectory they carry it first (`./test/cabal-22/dist-newstyle/...`,
   # every test project); match any leading path.  Anchoring on
   # `./dist-newstyle` sent every unit of such a plan to "host", which merged
-  # the two stages' configure-args in the slice project
-  # (builder/v2-project-globals.nix) and let a Host `shared: True` reach the
-  # Build-stage tools.
+  # the two stages' configure-args in the slice project and let a Host
+  # `shared: True` reach the Build-stage tools.
   # Pre-existing units carry neither; callers treat them per context
   # (in a two-stage plan they are all build-stage — the target db is
   # empty).  Defaults to "host": mainline plans are single-stage.
+  # The explicit `stage` (stable-haskell/merge cabal, nix-tools-sh's
+  # make-install-plan) or `machine` (haskell/cabal#12356) field wins: the
+  # 3.19 merge plans carry neither marker below, which put every unit in
+  # "host" and let a BUILD twin own a shared id first-wins (aarch64
+  # `resourcet` composed the native `primitive`).  Same order as
+  # comp-v2-builder's `planStage`.
   planUnitStage = p:
     let
+      fromField =
+        let s = p.stage or p.machine or null;
+        in if s == "host" || s == "build" then s else null;
       fromArgs =
         let ms = builtins.concatMap (a:
               let m = builtins.match "--prefix=(.*/)?dist-newstyle/store/([a-z]+)/.*" (toString a);
@@ -384,7 +396,8 @@ in {
       fromDist =
         let m = builtins.match "(.*/)?dist-newstyle/build/([a-z]+)/.*" (p.dist-dir or "");
         in if m == null then null else builtins.elemAt m 1;
-    in if fromArgs != null then fromArgs
+    in if fromField != null then fromField
+       else if fromArgs != null then fromArgs
        else if fromDist != null then fromDist
        else "host";
 

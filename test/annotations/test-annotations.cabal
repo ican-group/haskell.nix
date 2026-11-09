@@ -1,6 +1,7 @@
 cabal-version: 2.2
 name: test-annotations
 version: 1
+license: BSD-3-Clause
 build-type: Simple
 
 library

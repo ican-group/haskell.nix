@@ -1,6 +1,7 @@
 cabal-version:      2.4
 name:               plugin
 version:            0.1.0.0
+license:            BSD-3-Clause
 author:             Shea Levy
 maintainer:         shea@shealevy.com
 extra-source-files: CHANGELOG.md

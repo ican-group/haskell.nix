@@ -27,19 +27,20 @@ ghc9141, ghc967, ghc984, on both platforms.  Those mainline jobs run the
 v1 builder, and their logs show why they never hit it: for an
 instantiated component they compile the two modules and go straight to
 installPhase, with no archive step at all.
-
---- pa/src/Distribution/Simple/GHC/Internal.hs	2026-08-27 19:31:23
-+++ pb/src/Distribution/Simple/GHC/Internal.hs	2026-08-27 19:31:23
-@@ -90,7 +90,7 @@
+diff --git a/src/Distribution/Simple/GHC/Internal.hs b/src/Distribution/Simple/GHC/Internal.hs
+index a018b8da9..3390301cb 100644
+--- a/src/Distribution/Simple/GHC/Internal.hs
++++ b/src/Distribution/Simple/GHC/Internal.hs
+@@ -86,7 +86,7 @@ import Distribution.Utils.NubList (NubListR, toNubListR)
+ import Distribution.Utils.Path
  import Distribution.Verbosity
- import Distribution.Version (Version)
  import Language.Haskell.Extension
 -import System.Directory (listDirectory)
 +import System.Directory (doesFileExist, listDirectory)
  import System.Environment (getEnv)
  import System.FilePath
    ( takeDirectory
-@@ -639,11 +639,25 @@
+@@ -674,11 +674,25 @@ getHaskellObjects _implInfo lib lbi clbi pref wanted_obj_ext allow_split_objs
              , '.' : wanted_obj_ext == obj_ext
              ]
        return objs

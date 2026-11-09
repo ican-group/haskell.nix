@@ -1,4 +1,5 @@
 name: stack-remote-resolver
+license:             BSD3
 
 dependencies:
 - base

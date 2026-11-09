@@ -290,6 +290,16 @@
             }
           )));
 
+        # Root-cause derivations that fail on the Apple `nix-linux-builder`
+        # VMs; see ./nix-linux-builder-failures.nix.
+        nixLinuxBuilderFailures = {
+          x86_64-linux = import ./nix-linux-builder-failures.nix {
+            haskellNix = self;
+            inherit evalSystem;
+            system = "x86_64-linux";
+          };
+        };
+
         requiredJobs = forEachSystem (system:
           let
             inherit (self.legacyPackages.${system}) releaseTools;
@@ -339,7 +349,7 @@
             # the first because the two cannot share a source tree -- the fork
             # changes the Haskell sources (Cabal2Nix, MakeInstallPlan,
             # ProjectPlanOutput, Freeze, setup-ghcjs) to suit the stable-haskell
-            # Cabal fork at 3.17, not only cabal.project.  Carrying both trees
+            # Cabal fork (3.19), not only cabal.project.  Carrying both trees
             # here, instead of keeping the fork on an unmerged branch, is what
             # lets `nix-tools-sh-*` tags be cut from master commits exactly like
             # mainline ones; see .github/workflows/upload-artifacts-sh.yml.

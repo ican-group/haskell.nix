@@ -13,7 +13,19 @@ final: prev:
       }
     '' + drv.postInstall;
   });
-} //prev.lib.optionalAttrs (prev.stdenv.hostPlatform.isWindows && prev.stdenv.hostPlatform.libc == "ucrt") {
+  # Don't install the terminfo database.  Its entries include names that
+  # differ only by case (`N/NCR260VT300WPP -> ../n/ncr260vt300wpp`), and the
+  # cross build writes it with the BUILD platform's `tic`, which always
+  # assumes mixed-case filenames.  On a builder whose store is
+  # case-insensitive (the darwin hosts' linux VMs) one name lands on the
+  # other, leaving a dangling symlink that fails `noBrokenSymlinks` --
+  # intermittently, depending on which is written last.  Nothing on Windows
+  # can use a database under `/nix/store` anyway; ncurses there drives the
+  # console through its win32 driver.
+  ncurses = if !prev.stdenv.hostPlatform.isWindows then prev.ncurses else prev.ncurses.overrideAttrs (drv: {
+    configureFlags = (drv.configureFlags or []) ++ [ "--disable-db-install" ];
+  });
+} // prev.lib.optionalAttrs (prev.stdenv.hostPlatform.isWindows && prev.stdenv.hostPlatform.libc == "ucrt") {
   windows = prev.windows // {
     # TODO update stdenv.cc so that the wrapper adds -D_UCRT for libc=="ucrt"
     mingw_w64_pthreads = prev.windows.mingw_w64_pthreads.overrideAttrs { CPPFLAGS = "-D_UCRT"; };
@@ -25,8 +37,14 @@ final: prev:
   # > 32 bit pseudo relocation at 0000000140117CE6 out of range, targeting 00006FFFFFF18160, yielding the value 00006FFEBFE00476.
   #
   # This however also means, pretty much all of our haskell packages will need to be built with this as well.
-  libffi = prev.libffi.overrideAttrs (_: {
-    LDFLAGS = "-Wl,--disable-dynamicbase,--disable-high-entropy-va,--image-base=0x400000";
+  #
+  # Set through `env`: libffi 3.8 uses `__structuredAttrs`, where a plain
+  # top-level `LDFLAGS` attribute is no longer exported to the builder, so
+  # the DLL silently went back to a high, relocatable image base.
+  libffi = prev.libffi.overrideAttrs (old: {
+    env = (old.env or {}) // {
+      LDFLAGS = "-Wl,--disable-dynamicbase,--disable-high-entropy-va,--image-base=0x400000";
+    };
   });
 } // {
    libmpc = if !prev.stdenv.hostPlatform.isWindows then prev.libmpc else prev.libmpc.overrideAttrs (drv: {

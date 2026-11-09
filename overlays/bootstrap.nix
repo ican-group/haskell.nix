@@ -372,12 +372,31 @@ in {
 
                 ++ onWasm (fromUntil    "9.12"  "9.12.3" ./patches/ghc/ghc-9.12-wasm-shared-libs.patch)
                 ++ onWasm (fromUntil    "9.12"  "9.12.3" ./patches/ghc/ghc-9.12-wasm-keep-cafs.patch)
+                # nixpkgs now spells the wasi32 target `wasm32-unknown-wasip1`;
+                # GHC's configure and ghc-toolchain only know the OS `wasi`.
+                ++ onWasm (from         "9.12"           ./patches/ghc/ghc-wasm-wasip1-os.patch)
 
                 # See https://github.com/IntersectMBO/plutus/issues/7415#issuecomment-3531989244
                 ++ fromUntil "9.6" "9.9" ./patches/ghc/ghc-profiling-fix.patch
 
                 # See https://gitlab.haskell.org/ghc/ghc/-/merge_requests/15096
                 ++ fromUntil "9.6" "9.12.4" ./patches/ghc/ghc-16bit-elf-section-header-overflow.patch
+
+                # TimerManager: registering threads publish only evaluated timeout queues.
+                # See https://gitlab.haskell.org/ghc/ghc/-/issues/9809 and
+                # https://gitlab.haskell.org/ghc/ghc/-/merge_requests/16863
+                ++ fromUntil "9.6"  "9.8"  ./patches/ghc/ghc-9.6-timer-manager-9809.patch
+                ++ fromUntil "9.8"  "9.10" ./patches/ghc/ghc-9.8-timer-manager-9809.patch
+                ++ fromUntil "9.10" "9.14" ./patches/ghc/ghc-9.10-timer-manager-9809.patch
+                ++ fromUntil "9.14" "9.15" ./patches/ghc/ghc-9.14-timer-manager-9809.patch
+                # TimerManager: on x86_64 Linux cap each backend wait at one second so a
+                # GHC running under Rosetta cannot sit in an indefinite poll after
+                # consuming a suspension request (the patch itself is CPP guarded).
+                # See https://github.com/ican-group/haskell.nix/pull/2609
+                ++ fromUntil "9.6"  "9.8"  ./patches/ghc/ghc-9.6-timer-manager-wait-cap.patch
+                ++ fromUntil "9.8"  "9.10" ./patches/ghc/ghc-9.8-timer-manager-wait-cap.patch
+                ++ fromUntil "9.10" "9.14" ./patches/ghc/ghc-9.10-timer-manager-wait-cap.patch
+                ++ fromUntil "9.14" "9.15" ./patches/ghc/ghc-9.14-timer-manager-wait-cap.patch
                 ;
         in ({
             ghc8107 = traceWarnOld "8.10" (final.callPackage ../compiler/ghc {

@@ -640,13 +640,25 @@ in {
       # stripping applies to nested `''` strings separately, which would
       # push these lines to column 0 and change their cabal scope from the
       # stanza to the whole project.
+      #
+      # The two paths are interpolated WITHOUT their string context.  With
+      # it, the project text -- and so every wasm plan-to-nix IFD, plus the
+      # dot-cabal repos built from it -- depended on actually building
+      # libffi-wasm, i.e. the whole wasm LLVM/clang/lld chain, before any
+      # wasm project could even be planned at evaluation time.  The solver
+      # never reads these dirs (libffi-wasm is plain C: no .cabal, no .pc);
+      # only the rts build does.  The context would not reach the build
+      # anyway -- plan-to-nix round-trips this text through a file -- and the
+      # rts slices already get libffi-wasm into their sandbox through the
+      # component `libs` set further down.  The text is byte-identical, so
+      # plan.json and every UnitId are unchanged.
       rtsWasmExtras = lib.optionalString isWasm ("\n"
         + "  -- GHC's wasm backend uses JSFFI, but the rts C sources still\n"
         + "  -- include ffi.h; nixpkgs' wasi toolchain ships no libffi, so\n"
         + "  -- point at the libffi-wasm build (same one hadrian wasm\n"
         + "  -- bindists use).\n"
-        + "  extra-include-dirs: ${shGhc.libffi-wasm.dev}/include\n"
-        + "  extra-lib-dirs: ${shGhc.libffi-wasm.out}/lib");
+        + "  extra-include-dirs: ${builtins.unsafeDiscardStringContext "${shGhc.libffi-wasm.dev}"}/include\n"
+        + "  extra-lib-dirs: ${builtins.unsafeDiscardStringContext "${shGhc.libffi-wasm.out}"}/lib");
       # Whether to build the dynamic/shared way for the TARGET's boot
       # libraries.  This must key off the target platform (`tp`), NOT
       # `shGhc.enableShared`: `shGhc` is the BUILD compiler (selected from
@@ -751,6 +763,17 @@ in {
       # `ghc` has no Backpack, tests or benchmarks, and is the one package
       # whose id the compiler hard-codes.
       v2LocalPackageSliceNames = [ "ghc" ];
+      # `allow-boot-library-installs: True` (below, outside the boot-package
+      # markers so the shell keeps it too): cabal 3.19 (stable-haskell/merge)
+      # brings back upstream's hard "non-reinstallable" constraints, so
+      # `base`, `ghc-internal`, `ghc`, `template-haskell`, ... must resolve
+      # to an INSTALLED instance -- and the -target compiler's db is empty:
+      #   rejecting: base-4.22.1.0 (constraint from non-reinstallable
+      #   package requires installed instance)
+      # The older fork had dropped those constraints entirely (its Note
+      # [No non-reinstallable constraints]).  With the flag, the merge
+      # adds only wired-in unit-id pins, which this compiler does not
+      # report, and never pins a package the project lists as a target.
       cabalProjectLocal = lib.mkBefore ''
         -- Added by the stable-haskell boot-package injection (see the
         -- `injectStableHaskellBootPackages` option): the compiler ships no
@@ -805,6 +828,7 @@ in {
         package ${p}
           profiling-detail: none
         '') bootPkgNames}
+        allow-boot-library-installs: True
         -- Forked boot packages that live outside the GHC tree.
         source-repository-package
           type: git

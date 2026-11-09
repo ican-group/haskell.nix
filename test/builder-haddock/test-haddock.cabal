@@ -1,7 +1,7 @@
 cabal-version:       2.2
 name:                test-haddock
 version:             0.1.0.0
-license:             NONE
+license:             BSD-3-Clause
 author:              Rodney Lorrimar
 maintainer:          rodney.lorrimar@iohk.io
 

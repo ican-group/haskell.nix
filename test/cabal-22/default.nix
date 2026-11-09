@@ -12,17 +12,16 @@ let
 
   packages = project.hsPkgs;
 
-  # Whether this compiler can produce Haskell shared libraries at all.
-  # ghc914-sh cannot, on purpose: `enableSharedStage2` in
-  # overlays/stable-haskell.nix is False and the stage2 boot libraries come
-  # from `cabal.project.stage2.static`, so the compiler ships no shared way of
-  # any boot library and reports `enableShared = false`.  The comment there
-  # records that the dynamic alternative was tried (3f3cf0506, da6b6dae1) and
-  # reverted, and names this exact class of fallout -- a consumer told
-  # `--enable-shared` that then finds no dynamic way.
+  # Whether the project's library gets a shared object by default.  That
+  # needs a compiler with a shared way of its boot libraries, and cabal only
+  # plans `shared: True` by default when `GHC Dynamic` is YES.  ghc914-sh
+  # ships the dyn way of its boot libraries (`enableSharedStage2` in
+  # overlays/stable-haskell.nix) but its `ghc` is static (`ghcIsDynamic =
+  # false`), so its plans keep `shared: False` unless something asks for it.
   #
   # `or true` so nothing changes for compilers that do not carry the passthru.
-  ghcSupportsShared = project.pkg-set.config.ghc.package.enableShared or true;
+  sharedByDefault = project.pkg-set.config.ghc.package.enableShared or true
+                   && project.pkg-set.config.ghc.package.ghcIsDynamic or true;
 
 in lib.recurseIntoAttrs {
   # When using ghcjs on darwin this test fails with
@@ -63,7 +62,7 @@ in lib.recurseIntoAttrs {
     # passes on ghc914-sh today.  What follows looks for a `.so`/`.dylib` of
     # the project's own library, which such a compiler never emits, and the
     # `find | grep` then fails the whole test under `set -e`.
-    optionalString ghcSupportsShared (''
+    optionalString sharedByDefault (''
       # fixme: posix-specific
       printf "checking that dynamic library is produced... " >& 2
     '' + optionalString stdenv.isLinux ''
