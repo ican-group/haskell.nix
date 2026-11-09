@@ -1,4 +1,5 @@
 name: stack-inputMap
+license:             BSD3
 
 dependencies:
 - base

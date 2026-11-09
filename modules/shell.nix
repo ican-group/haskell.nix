@@ -45,8 +45,8 @@
       description = ''
         How the v2 shell's pre-built library deps are made visible to
         tools the user runs.  One of:
-          * "cabal-store" (default) — the composed store is copied
-            into `~/.cabal/store/<ghc>-inplace/` via a shellHook
+          * "cabal-store" (default) — the composed store is linked
+            into the cabal store (`cabal path --store-dir`) via a shellHook
             (or the explicit `haskell-nix-cabal-store-sync` command).
             `cabal v2-build` then reuses the units directly.  The
             shell's `ghc` is left plain, so `runghc`/`ghci` will not

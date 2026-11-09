@@ -537,6 +537,9 @@ let
             then '' 
               echo No .cabal file found, running hpack on $hpackFile
               hpack $hpackFile
+              for generated in $(dirname $hpackFile)/*.cabal; do
+                echo "/''${generated#./}" >> $TMPDIR/hpack-generated-cabal-files
+              done
             ''
             else ''
               echo "WARNING $hpackFile has no .cabal file and \`supportHpack\` was not set."
@@ -597,7 +600,19 @@ let
     #
     # This is also important as `plan-to-nix` will look for the .cabal files when generating
     # the relevant `pkgs.nix` file with the local .cabal expressions.
-    rsync -a --prune-empty-dirs --chmod=u+w \
+    rsync -a --prune-empty-dirs --chmod=u+w${
+          # Leave out the `.cabal` files the hpack step above generated, so
+          # `plan-to-nix` finds only their `package.yaml` and still emits
+          # `cabal-generator = "hpack"`.  Since nix-tools prefers an existing
+          # `.cabal` over `package.yaml` (#2547, for committed files), it would
+          # otherwise take these as committed: the generator is dropped, the
+          # builders never run hpack, and the package source has no `.cabal`
+          # (`tar: <pkg>/<pkg>.cabal: Not found in archive` in a v2 slice).
+          # Rsync filters are first-match, so this must precede the includes.
+          # Inline and empty without `supportHpack`, so other projects'
+          # plan-nix hashes are unchanged.
+          pkgs.lib.optionalString supportHpack
+            " --exclude-from=<(cat $TMPDIR/hpack-generated-cabal-files 2>/dev/null || true)"} \
           --include '*/' --include '*.cabal' --include 'package.yaml' \
           --exclude '*' \
           $tmp/ $out/

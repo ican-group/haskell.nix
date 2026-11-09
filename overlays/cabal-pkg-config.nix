@@ -1,7 +1,7 @@
 final: prev:
 let
   # Shared by `allPkgConfigWrapper` (plan-time solving) and
-  # `cabalPkgConfigWrapper` (in-slice solving): the pkg-config module
+  # `cabalPkgConfigWrapperFor` (in-slice solving): the pkg-config module
   # universe fabricated from nixpkgs METADATA, no builds involved.
   #
   # Prefer an explicit `pc-version` when the derivation carries one:
@@ -104,7 +104,7 @@ in
   # overrides here.
   allPkgConfigWrapper =
     # `getVersion` / `pkgconfigPkgs` are shared with
-    # `cabalPkgConfigWrapper` below — see the file-level `let`.
+    # `cabalPkgConfigWrapperFor` below — see the file-level `let`.
     prev.pkg-config.overrideAttrs (attrs:
       let
         # These vars moved from attrs to attrs.env in nixpkgs adc8900df1758eda56abd68f7d781d1df74fa531
@@ -153,8 +153,9 @@ in
   #     `--libs` queries for units the slice actually BUILDS need real
   #     paths, and `--modversion` prefers them too.
   #
-  #   * Names with no realized `.pc` fall back to the SAME nixpkgs
-  #     metadata plan-time solving used (`pkgconfigPkgs` above): the
+  #   * Names with no realized `.pc` fall back to the nixpkgs metadata
+  #     plan-time solving used (`pkgconfigPkgs` above), for the names
+  #     the slice's solver can meet: the
   #     slice's solver must see pkgconfig-depends of units it merely
   #     SOLVES — sibling components' deps staged source-only via
   #     comp-v2-builder's `metadataSourceFrags` — without realizing
@@ -173,11 +174,11 @@ in
   #     fake option on failure.
   #     See https://github.com/ican-group/haskell.nix/issues/1642
   #
-  # One derivation serves every slice — the metadata list is the full
-  # `lib/pkgconf-nixpkgs-map.nix` universe, not a per-slice set, so
-  # slices don't fork on it.
-  cabalPkgConfigWrapper = prev.pkg-config.overrideAttrs (attrs: (
+  # `cabalPkgConfigWrapperFor names` carries metadata for `names` alone, so a
+  # slice's hash moves with those names' versions and with nothing else.
+  cabalPkgConfigWrapperFor = names: prev.pkg-config.overrideAttrs (attrs: (
   let
+    metaPkgs = builtins.intersectAttrs (final.lib.genAttrs names (_: null)) pkgconfigPkgs;
     # These vars moved from attrs to attrs.env in nixpkgs adc8900df1758eda56abd68f7d781d1df74fa531
     # ... and then 706de783c83f3e24e5ea2a28e1249320aa19f57e moved them to attrs.passthru
     # Support all three for the time being.
@@ -189,16 +190,16 @@ in
                or attrs.passthru.baseBinName;
     # Assoc-array entries rather than `case` branches: the lookup used to
     # be `v=$(metaversion "$name")`, and a command substitution FORKS.
-    # cabal asks for every name in this universe (~3.5k), so that was 3.5k
-    # forks on top of the pkg-config spawns -- and a 3.5k-branch `case` is
+    # cabal asks for every name in the table (~3.5k for the whole map), so
+    # that was 3.5k forks on top of the pkg-config spawns -- and a `case` is
     # a linear scan, making the whole thing quadratic.  An array is loaded
     # once and indexed in O(1) with no subshell.
     metaVersionEntries = final.lib.concatStrings
       (final.lib.mapAttrsToList (name: ps:
         "    [${final.lib.escapeShellArg name}]=${
           final.lib.escapeShellArg (getVersion (__head ps))}\n")
-        pkgconfigPkgs);
-    metaNames = final.lib.concatMapStrings (n: n + "\n") (__attrNames pkgconfigPkgs);
+        metaPkgs);
+    metaNames = final.lib.concatMapStrings (n: n + "\n") (__attrNames metaPkgs);
     # `writeScript`, not `builtins.toFile`: the script references
     # derivations (the shell), which toFile forbids.
     hybrid = final.writeScript "cabal-pkg-config-hybrid" (''
@@ -236,11 +237,12 @@ in
           # Ask the real pkg-config ONCE which modules it actually has.
           #
           # cabal follows `--list-all` with `--modversion` for every name
-          # it just received, and the list we hand it is the whole
-          # `pkgconf-nixpkgs-map.nix` universe (~3.5k names) rather than
-          # the handful with a real `.pc`.  Shelling out per name then
-          # spawns thousands of processes that are certain to fail --
-          # each one a nixpkgs wrapper script plus the binary it execs.
+          # it just received, and the list we hand it can be the whole
+          # `pkgconf-nixpkgs-map.nix` map (~3.5k names, the v2 shell's
+          # wrapper) rather than the handful with a real `.pc`.  Shelling
+          # out per name then spawns thousands of processes that are
+          # certain to fail -- each one a nixpkgs wrapper script plus the
+          # binary it execs.
           # Measured on a cross-musl slice for a package with NO
           # pkgconfig-depends at all: the real pkg-config knew 0 modules,
           # cabal asked for 3490, and the resulting 6988 spawns were 63 of
@@ -301,4 +303,9 @@ in
       chmod +x $out/bin/${targetPrefix}${baseBinName}
     '';
   }));
+  # No metadata: v1 components and setups, whose `pkgconfig-depends` are all
+  # realized `.pc` files.
+  cabalPkgConfigWrapperReal = final.cabalPkgConfigWrapperFor [];
+  # The whole map, for the v2 shell, which may solve anything.
+  cabalPkgConfigWrapper = final.cabalPkgConfigWrapperFor (__attrNames pkgconfigPkgs);
 }

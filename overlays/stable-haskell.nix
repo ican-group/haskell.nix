@@ -115,7 +115,7 @@ let
   # missing dynamic way (`tests.check-datadir.run`: "Failed to load dynamic
   # interface file for Prelude ... base-4.22.0.0/Prelude.dyn_hi").  False is
   # the honest answer to that, and the one that matches what we build.
-  enableSharedStage2 = false;
+  enableSharedStage2 = true;
   # One string for the native compiler and every `-target` wrapper: they are
   # all the same stage2 `ghc-bin` binary, so their settings files all get this
   # (see the comment in lib/dummy-ghc.nix, which echoes it back).  A cross
@@ -518,6 +518,16 @@ let
       library-profiling: True
       profiling-detail: none
   '') bootLibraries;
+
+  # The dyn way of every boot library (see `enableSharedStage2`).  Only the
+  # libraries: `executable-dynamic` stays False, and there is no `rts
+  # +dynamic` constraint, so the stage2 `ghc` is still a static executable
+  # linked against an rts built without `-DDYNAMIC`.
+  bootLibShared = lib.optionalString enableSharedStage2
+    (lib.concatMapStrings (p: ''
+      package ${p}
+        shared: True
+    '') bootLibraries);
 
   # ── Dump source for plan-time "installed packages" ────────────────────────
   # call-cabal-project-to-nix.nix synthesises the dummy `ghc-pkg dump` (what
@@ -1226,8 +1236,17 @@ ENDSCRIPT
     # source — rts.cabal's rts-threaded-flags gained `cmm-options:
     # -optc-DTHREADED_RTS` (stable-haskell/ghc#191, merged to stable-ghc-9.14) —
     # so no `package rts` ghc-options workaround is needed here.
+    # `inplace-builds: False`: the plan-deterministic ids above
+    # (`base-4.22.1.0`, no `-inplace`) are what cabal 3.19
+    # (stable-haskell/merge) gives a project's own packages only with this
+    # set; the older fork named local units that way unconditionally.  The
+    # local-`packages:` slices set it too (comp-v2-builder.nix
+    # `packagesLine`), so plan and slice agree.  stable-haskell/ghc#200
+    # sets the same in GHC's own cabal.project.
     cabalProjectLocal = ''
+      inplace-builds: False
       ${bootLibProfiling}
+      ${bootLibShared}
       package ghc-bin
         flags: -debug
       package haskeline
@@ -2110,6 +2129,10 @@ ENDSCRIPT
         (pkgs.buildPackages.haskell-nix.tool bootGhcName "libffi-wasm" {
           src = pkgs.buildPackages.haskell-nix.sources.libffi-wasm;
           inherit evalSystem;
+          # libffi-wasm.cabal has no `license:` field, so it reads as NONE,
+          # which nixpkgs' check-meta refuses as unfree.  Upstream added an MIT
+          # LICENSE file in 788aec0a ("add missing license") but not the field.
+          modules = [{ packages.libffi-wasm.package.license = pkgs.lib.mkForce "MIT"; }];
           compilerSelection = bootCompilerSelection;
         })
         pkgs.targetPackages.buildPackages.llvmPackages.clang
@@ -2122,16 +2145,17 @@ ENDSCRIPT
       mkdir cbits
       cp ${pkgs.buildPackages.haskell-nix.sources.libffi-wasm}/cbits/* cbits/
       libffi-wasm
-      wasm32-unknown-wasi-clang -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi.c -o cbits/ffi.o
-      wasm32-unknown-wasi-clang -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi_call.c -o cbits/ffi_call.o
-      wasm32-unknown-wasi-clang -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi_closure.c -o cbits/ffi_closure.o
+      CC=${pkgs.targetPackages.buildPackages.llvmPackages.clang.targetPrefix}clang
+      $CC -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi.c -o cbits/ffi.o
+      $CC -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi_call.c -o cbits/ffi_call.o
+      $CC -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -c cbits/ffi_closure.c -o cbits/ffi_closure.o
 
       mkdir -p $dev/include
       cp cbits/*.h $dev/include
       mkdir -p $out/lib
       llvm-ar -r $out/lib/libffi.a cbits/*.o
 
-      wasm32-unknown-wasi-clang -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -fPIC -fvisibility=default -shared -Wl,--keep-section=target_features,--strip-debug cbits/*.c -o libffi.so
+      $CC -Wall -Wextra -mcpu=mvp -Oz -DNDEBUG -Icbits -fPIC -fvisibility=default -shared -Wl,--keep-section=target_features,--strip-debug cbits/*.c -o libffi.so
       wasm-opt --low-memory-unused --debuginfo -Os libffi.so -o $out/lib/libffi.so
     '';
 

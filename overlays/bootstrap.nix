@@ -372,6 +372,9 @@ in {
 
                 ++ onWasm (fromUntil    "9.12"  "9.12.3" ./patches/ghc/ghc-9.12-wasm-shared-libs.patch)
                 ++ onWasm (fromUntil    "9.12"  "9.12.3" ./patches/ghc/ghc-9.12-wasm-keep-cafs.patch)
+                # nixpkgs now spells the wasi32 target `wasm32-unknown-wasip1`;
+                # GHC's configure and ghc-toolchain only know the OS `wasi`.
+                ++ onWasm (from         "9.12"           ./patches/ghc/ghc-wasm-wasip1-os.patch)
 
                 # See https://github.com/IntersectMBO/plutus/issues/7415#issuecomment-3531989244
                 ++ fromUntil "9.6" "9.9" ./patches/ghc/ghc-profiling-fix.patch

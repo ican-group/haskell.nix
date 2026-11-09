@@ -66,7 +66,6 @@
     inherit (pkgs) lib;
   } {
     planJson = config.plan-json.install-plan;
-    inherit (pkgs.haskell-nix.haskellLib) planUnitStage;
     # Assembled project text for the `documentation:` scan; null (=
     # unknown) when neither piece was threaded into this pkg-set
     # (stack / legacy instantiations).

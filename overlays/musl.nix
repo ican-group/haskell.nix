@@ -24,6 +24,14 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.hostPlatform.isMusl ({
   zstd = prev.zstd.override { static = true; };
   xz = prev.xz.override { enableStatic = true; };
   lzma = prev.lzma.override { enableStatic = true; };
+  # systemd (262) dlopen()s its compression libraries and records them in
+  # ELF `.note.dlopen` notes, which its autoPatchelfHook resolves, so it needs
+  # their shared objects:
+  #   could not satisfy dependency liblzma.so.5 / libzstd.so.1 wanted by .../libsystemd.so.0
+  # Give it nixpkgs' shared xz and zstd rather than the static-only ones
+  # above.  systemdMinimal and systemdLibs are `systemd.override`s, so they
+  # inherit this.
+  systemd = prev.systemd.override { inherit (prev) xz zstd; };
   pcre = prev.pcre.overrideAttrs (_: { dontDisableStatic = true; });
   secp256k1 = prev.secp256k1.overrideAttrs (oldAttrs: {
     configureFlags = oldAttrs.configureFlags ++ ["--enable-static"];

@@ -6,23 +6,13 @@
       flake = false;
       # `stable-ghc-9.14-hn` is the latest `stable-ghc-9.14` plus the fixes this
       # repo needs that the stable branch does not have yet (the previous
-      # history of this branch is kept as `stable-ghc-9.14-hn-old`):
+      # history of this branch is kept as `stable-ghc-9.14-hn-old`).
+      # stable-ghc-9.14 has since taken several of them in its own form (#196,
+      # #197: the JS HEAP8/HEAPU8 exports, Apple ranlib wasm padding in
+      # GHC.SysTools.Ar, the profiling library suffix, x86 PIC jump-table
+      # shortcuts, PEi386 import symbol types, AVX for the vector Cmm).  What
+      # -hn still adds:
       #
-      #   * JS: the HEAP8/HEAPU8 emscripten exports (GHC #26290).  The
-      #     cabalProject-built compilers need them but do not get
-      #     overlays/bootstrap.nix's `onGhcjs` patches; without them every
-      #     ghcjs executable aborts in h$initEmscriptenHeap.
-      #   * GHC.SysTools.Ar: trim Apple ranlib's padding from wasm archive
-      #     members (no upstream equivalent).
-      #   * The package-library profiling suffix: splitting the rts into
-      #     sub-libraries dropped the way suffix from every package's library
-      #     name, so `-prof` links picked the vanilla archives and failed on
-      #     `pushCostCentre` and friends.
-      #   * x86 NCG: keep PIC jump-table shortcuts within the proc; with
-      #     -split-sections they could name another proc's section ("can't
-      #     resolve .text..L..._info - .L...", e.g. prettyprinter), keeping
-      #     the tail-call trampolines those entries then name ("can't
-      #     resolve .L... - .L...", with or without -split-sections).
       #   * system-cxx-std-lib names `stdc++` as an extra library on GNU
       #     toolchains, so an external interpreter loading a C++-using
       #     package's archive gets the C++ runtime (th-dlls hung under wine
@@ -36,10 +26,20 @@
       #   * TimerManager: on x86_64 Linux cap each backend wait at one second
       #     so a GHC running under Rosetta cannot sit in an indefinite poll
       #     after consuming a suspension request (haskell.nix #2609).
-      #   * RTS linker fixes (aarch64 ELF section pool, PEi386 import symbol
-      #     types, ELF visibility macros, ARM PREL31, skip libc.a), MinGW
-      #     symbol exports, bare `android` in GHC_CONVERT_OS, AVX flags on
-      #     32-bit x86, and `--abi-hash` not claiming an executable link.
+      #   * RTS linker: the aarch64 ELF section/GOT pool, skipping libc.a, and
+      #     the MinGW symbol exports time and unix need.
+      #   * `--abi-hash` does not claim an executable link (it stripped
+      #     -dynamic on wasm and then rejected the dyn interfaces).
+      #   * The dyn way defines DYNAMIC (as the prof way defines PROFILING), so
+      #     the boot libraries' shared rts loads (`__fini_array_start`) while
+      #     the vanilla rts that ghc links stays non-dynamic.
+      #   * ghc-bin, the ghc-toolchain packages, rts-fs and system-cxx-std-lib
+      #     declare licenses Cabal reads as BSD-3-Clause.  With none (or, for
+      #     the cabal-version 2.0 system-cxx-std-lib, an SPDX name read as a
+      #     legacy one) nixpkgs' check-meta counts them as unfree and refuses
+      #     to evaluate them.
+      #   * Triples whose OS is `wasip1` (nixpkgs' current spelling of the
+      #     wasi32 target) parse as wasi, in configure and ghc-toolchain.
       url = "git+https://github.com/stable-haskell/ghc?ref=stable-ghc-9.14-hn";
     };
   };

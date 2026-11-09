@@ -361,7 +361,7 @@ let
       "--with-ghc-pkg=${ghc.targetPrefix}ghc-pkg"
       "--with-hsc2hs=${hsc2hsCommand}"
     ] ++ lib.optional (pkgconfig != [])
-      "--with-pkg-config=${buildPackages.cabalPkgConfigWrapper.targetPrefix}pkg-config"
+      "--with-pkg-config=${buildPackages.cabalPkgConfigWrapperReal.targetPrefix}pkg-config"
       ++ lib.optionals (stdenv.hasCC or (stdenv.cc != null))
     ( # CC
       [ "--with-gcc=${stdenv.cc.targetPrefix}cc"
@@ -472,7 +472,7 @@ let
         # (The patched one, when used, is passed by path as `--with-hsc2hs`.)
         && x.identifier.name or "" != "hsc2hs")
       resolvedBuildTools)) ++
-    lib.optional (pkgconfig != []) buildPackages.cabalPkgConfigWrapper;
+    lib.optional (pkgconfig != []) buildPackages.cabalPkgConfigWrapperReal;
 
   # Unfortunately, we need to wrap ghc commands for cabal builds to
   # work in the nix-shell. See ../docs/dev/removing-with-package-wrapper.md.
@@ -868,6 +868,18 @@ let
              cp -r ${testExecutable} $(dirname $out/bin/${exeName})
           ''}
         fi
+      '')
+      # On darwin a foreign library finds its Haskell dependencies through
+      # an rpath to `$configFiles/lib/links` (see make-config-files.nix),
+      # which is a temporary directory unless `keepConfigFiles` is set.
+      # Install those links next to the library and point the rpath there.
+      + (lib.optionalString (stdenv.hostPlatform.isDarwin && componentId.ctype == "flib") ''
+        mkdir -p $out/lib/links
+        cp -P $configFiles/lib/links/*.dylib $out/lib/links/
+        for f in $out/lib/*.dylib; do
+          ${stdenv.cc.bintools.targetPrefix}install_name_tool \
+            -rpath $configFiles/lib/links $out/lib/links "$f"
+        done
       '')
       # In case `setup copy` did not create this
       + (lib.optionalString enableSeparateDataOutput ''

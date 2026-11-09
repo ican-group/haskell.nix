@@ -47,8 +47,8 @@ let
   # Keep this in step with `version` in `haskell-nix.v2-cabal-install`
   # (overlays/haskell.nix).  It is not mainline's 3.16.1.0 here: this
   # branch builds the v2 cabal from the stable-haskell fork, which is
-  # 3.17.0.1.
-  v2CabalInstallVersion = "3.17.0.1";
+  # 3.19.0.0.
+  v2CabalInstallVersion = "3.19.0.0";
 
   # Shared helper that wraps a real ghc into a "shim" with cabal-
   # near-compiler aliases, ghcjs settings patch, and native-musl

@@ -21,8 +21,9 @@
 #
 # The `Cabal-syntax-json` patch ports that package (source of the
 # `cabal2json` exe, pulled via source-repository-package) to the
-# stable-haskell cabal fork's Cabal-syntax 3.17 API, which dropped
-# the constraint type parameter from CondTree/CondBranch.
+# stable-haskell cabal fork's Cabal-syntax 3.19 API: CondTree/CondBranch
+# without the constraint type parameter, the Verbosity split, and
+# `Coercible` in place of the removed `Distribution.Compat.Newtype`.
 #
 # The `file-monitor-literal-fast-path` patch stops
 # `Distribution.Client.FileMonitor` listing a whole directory just to
@@ -60,6 +61,6 @@
     ./cabal-install-patches/file-monitor-literal-fast-path.patch
   ];
   packages.Cabal-syntax-json.patches = [
-    ./cabal-install-patches/cabal-syntax-json-condtree-3.17.patch
+    ./cabal-install-patches/cabal-syntax-json-cabal-3.19.patch
   ];
 }

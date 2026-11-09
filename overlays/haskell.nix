@@ -529,6 +529,17 @@ final: prev: {
               # extra-hackage-tarballs | no            | workaround |
               # -----------------------+---------------+------------+
               #
+              # Secure extra-hackage-repos are re-bootstrapped (`cabal v2-update`
+              # from a `file:` url) with this `nix-tools`' cabal rather than
+              # linked as is.  A repo pinned with `--sha256` is a fixed-output
+              # derivation, so its `01-index.cache` was written by whichever cabal
+              # first built it and is never rebuilt.  When the binary format of
+              # that cache changes (as it did in cabal-install 3.19) cabal fails
+              # with "Non-matching structured hashes" and then cannot regenerate
+              # the cache in the read-only store.  The `aaa` root key works as in
+              # `bootstrapIndexTarball`; the repo was already verified when it was
+              # fetched.  (Do not add `--ignore-expiry`: with it cabal rejects the
+              # expired root.json of an old pinned repo, without it cabal accepts it.)
               final.runCommand "dot-cabal" {
                 nativeBuildInputs = [ nix-tools.exes.cabal (final.lndir or final.xorg.lndir) ] ++ cabal-issue-8352-workaround;
               } ''
@@ -538,7 +549,16 @@ final: prev: {
                 # prepopulate extra-hackage-repos
                 ${final.lib.concatStrings (final.lib.mapAttrsToList (name: repo: ''
                   mkdir -p $out/packages/${name}
-                  lndir ${repo} $out/packages/${name}
+                  if [ -e ${repo}/root.json ]; then
+                    CABAL_DIR=$(mktemp -d)
+                    mkdir -p $CABAL_DIR/packages/${name}
+                    printf 'repository %s\n  url: file:%s\n  secure: True\n  root-keys: aaa\n  key-threshold: 0\n' \
+                      ${name} ${repo} > $CABAL_DIR/config
+                    CABAL_DIR=$CABAL_DIR cabal v2-update ${name}
+                    cp -r $CABAL_DIR/packages/${name}/. $out/packages/${name}/
+                  else
+                    lndir ${repo} $out/packages/${name}
+                  fi
                 '') extra-hackage-repos)}
                 # prepopulate extra-hackage-tarballs
                 ${final.lib.concatStrings (final.lib.mapAttrsToList (name: repo: ''
@@ -1250,17 +1270,18 @@ final: prev: {
         withInputs = final.lib.recurseIntoAttrs;
 
         # The v2 builder's `cabal-install`, built via `haskell-nix.tool`:
-        # the stable-haskell cabal fork (3.17, branch stable-haskell/master)
+        # the stable-haskell cabal fork (3.19, branch hkm/sh-merge2-ports)
         # pulled via source-repository-package — the same sources
-        # make-install-plan links (see nix-tools/cabal.project).  This
-        # gives the per-slice `cabal v2-build` the cross-compilation
-        # "stage" system (--with-build-compiler / build:/host: constraints)
-        # so build-time tool deps resolve in the build scope.
-        # Branch `hkm/installed-sublibs` (2 commits on top of
-        # stable-haskell/master 01d053ac): lets installed instances satisfy
-        # named sub-library deps — required by the ghc-bin slice, whose
-        # +threaded/+debug flags depend on the composed installed rts's
-        # flavour sublibs (rts:threaded-nodebug etc.).
+        # make-install-plan links (see nix-tools-sh/cabal.project).  That
+        # branch is Andrea Bedini's `stable-haskell/merge` (upstream master
+        # plus the cross-compilation series haskell/cabal#12356) with
+        # haskell.nix's fork commits on top.  It gives the per-slice
+        # `cabal v2-build` the cross-compilation "stage" system
+        # (--with-build-compiler / build: constraints) so build-time tool
+        # deps resolve in the build scope, and lets installed instances
+        # satisfy named sub-library deps — required by the ghc-bin slice,
+        # whose +threaded/+debug flags depend on the composed installed
+        # rts's flavour sublibs (rts:threaded-nodebug etc.).
         #
         # Two pins here:
         #
@@ -1305,7 +1326,7 @@ final: prev: {
                           + "in `overlays/haskell.nix`.")
                  else picked;
             mkTool = evalSystem: final.pkgsBuildBuild.haskell-nix.tool compiler-nix-name "cabal" {
-              version = "3.17.0.1";
+              version = "3.19.0.0";
               builderVersion = 1;
               # Run the tool project's plan-to-nix on the consumer's eval
               # platform.  Without this it defaults to the pkgsBuildBuild
@@ -1317,20 +1338,18 @@ final: prev: {
                 source-repository-package
                     type: git
                     location: https://github.com/stable-haskell/Cabal.git
-                    tag: f3482d8abc62e93e58574ef1be7cdc51d5d8d146
-                    --sha256: sha256-i8eSe3NvUsaHjYmStDhGYa6byZYFJt6xwyFwhlFETfM=
+                    tag: 7156caf47a32a963e7a36328f32ce5940a743a3c
+                    --sha256: sha256-MogUmtmf7nmC1oR301OkODBfaespx3T9OVunrrpY5ZQ=
                     subdir: Cabal
                             Cabal-syntax
                             cabal-install
                             cabal-install-solver
                             hooks-exe
 
-                source-repository-package
-                    type: git
-                    location: https://github.com/stable-haskell/hackage-security.git
-                    tag: baaad2e189a8203966f7d3f752a348f02eefd1b2
-                    --sha256: sha256-mVWZCWGJKsSjQSqb5iw0Q8fmV+4aFZVL4zOmMaNnEhA=
-                    subdir: hackage-security
+                -- hackage-security's releases bound Cabal/Cabal-syntax below
+                -- the fork's 3.19 (the stable-haskell/hackage-security fork
+                -- this used to pin is 0.6.3.2, capped at < 3.18).
+                allow-newer: hackage-security:Cabal, hackage-security:Cabal-syntax
               '';
               modules = [{
                 # (No sublib-pruning patch: a slice's solve needs the deps of
@@ -1341,8 +1360,7 @@ final: prev: {
                 packages.cabal-install.patches = [
                   ../builder/cabal-install-patches/skip-installed-revdeps-in-completed.patch
                   ../builder/cabal-install-patches/setup-build-num-jobs-env.patch
-                  ../builder/cabal-install-patches/inlibrary-build-stage-exe-platform.patch
-                  ../builder/cabal-install-patches/haddock-toolchain-self-reference.patch
+                  ../builder/cabal-install-patches/wired-in-pins-follow-allow-boot-library-installs.patch
                 ];
                 # The Cabal LIBRARY, not the tool: `v2-build` links it in and
                 # uses it as the build system for `build-type: Simple`, so a
@@ -1350,6 +1368,7 @@ final: prev: {
                 packages.Cabal.patches = [
                   ../builder/cabal-install-patches/static-external-only-when-supported.patch
                   ../builder/cabal-install-patches/no-object-for-unemitted-signature.patch
+                  ../builder/cabal-install-patches/configure-script-posix-path.patch
                 ];
               }];
             };

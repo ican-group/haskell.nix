@@ -1,6 +1,7 @@
 cabal-version: 3.0
 name:          hsc2hs-patched
 version:       0.1.0.0
+license:       BSD-3-Clause
 build-type:    Simple
 
 executable hsc2hs-patched

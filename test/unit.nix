@@ -32,8 +32,41 @@ let
     rev = "487eea1c249537d34c27f6143dff2b9d5586c657";
     sha256 = "077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123";
   };
+
+  # Whether a derivation carrying cabal license `lic` (mapped the way the
+  # component builders map it) gets past nixpkgs' check-meta.  The test
+  # package set does not allow unfree packages.
+  licenseEvaluates = lic: (builtins.tryEval
+    (pkgs.runCommand "haskell-nix-license-check" {
+      meta.license = haskellLib.cabalToNixpkgsLicense lic;
+    } "touch $out").drvPath).success;
 in
 lib.runTests {
+  # Free licenses must stay free under nixpkgs' check-meta, which treats a
+  # license in a list (what `cabalToNixpkgsLicense` returns) without `free` as
+  # unfree.  Cabal turns the legacy unversioned `license: LGPL` into
+  # `LicenseRef-LGPL` (cpphs, polyparse).
+  testLicenseLegacyLGPLEvaluates = {
+    expr = licenseEvaluates "LicenseRef-LGPL";
+    expected = true;
+  };
+  testLicenseCompoundEvaluates = {
+    expr = licenseEvaluates "BSD-3-Clause AND MIT AND ISC";
+    expected = true;
+  };
+  # ...while a license that really is unfree is refused, so the checks above
+  # go through check-meta rather than passing vacuously.
+  testLicenseUnfreeIsRefused = {
+    expr = licenseEvaluates "CC-BY-NC-4.0";
+    expected = false;
+  };
+  # `NONE` (no license declared) is named, not `null`, so a refusal reports
+  # it as such rather than as "unfree license ('unknown')".
+  testLicenseNoneIsNamed = {
+    expr = map (l: l.shortName) (haskellLib.cabalToNixpkgsLicense "NONE");
+    expected = [ "NONE" ];
+  };
+
   # `shadowedNonReinstallablePkgs` flags names in `nonReinstallablePkgs` that the
   # project pins to a version different from the compiler-shipped one (#1657).
 
@@ -337,36 +370,23 @@ lib.runTests {
       expected = sourceRepos lf;
     };
 
-  # The `package *` baseline is in every v2 slice's cabal.project, so a
-  # local package configured differently (here `coverage: True`) must not
-  # change it, nor add blocks for the other packages.
-  testV2ProjectGlobalsOutlierStaysLocal =
+  # A v2 slice's config fields come from its own plan unit's
+  # configure-args only (no project-wide baseline), sorted so the fragment
+  # text is canonical.
+  testV2PragmasOfOwnUnit =
     let
-      unit = name: args: {
-        type = "configured";
-        pkg-name = name;
-        configure-args = [ "--prefix=./dist-newstyle/store/host/x86_64-unknown-linux"
-                           "--disable-shared" "--enable-optimization" ] ++ args;
+      globals = import ../builder/v2-project-globals.nix { inherit lib; } {
+        planJson = [];
       };
-      deps = [ (unit "primitive" [ "--disable-coverage" ])
-               (unit "deepseq-extra" [ "--disable-coverage" ]) ];
-      globals = planJson: import ../builder/v2-project-globals.nix { inherit lib; } {
-        inherit planJson;
-        inherit (haskellLib) planUnitStage;
-      };
-      plain = globals (deps ++ [ (unit "local-a" [ "--disable-coverage" ]) ]);
-      cov   = globals (deps ++ [ (unit "local-b" [ "--enable-coverage" ]) ]);
     in {
-      expr = {
-        sameBaseline = plain.projectConfigPragmas == cov.projectConfigPragmas;
-        plainBlocks = plain.perPkgConfigBlocks;
-        covBlocks = cov.perPkgConfigBlocks;
-      };
-      expected = {
-        sameBaseline = true;
-        plainBlocks = {};
-        covBlocks = { local-b = "package local-b\n  coverage: True\n"; };
-      };
+      expr = globals.pragmasOf [
+        "--prefix=./dist-newstyle/store/host/x86_64-unknown-linux"
+        "--enable-coverage" "--disable-shared" "--enable-optimization"
+        "--disable-debug-info" "--ghc-option=-O2" "--disable-shared"
+      ];
+      expected = [
+        "coverage: True" "debug-info: 0" "optimization: True" "shared: False"
+      ];
     };
 
   testParseRepositoryBlock =

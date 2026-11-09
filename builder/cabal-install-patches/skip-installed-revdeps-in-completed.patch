@@ -23,10 +23,11 @@ to build inside the shim) has a `revDirectDep` of an already-
 Filtering `newlyReady` to `Configured{}` entries only keeps
 `asReadyPackage`'s precondition honest without changing the build
 semantics — the `Installed` entries were already in `completedSet`.
-
+diff --git a/src/Distribution/Client/InstallPlan.hs b/src/Distribution/Client/InstallPlan.hs
+index a598f44e2..f8c7470d8 100644
 --- a/src/Distribution/Client/InstallPlan.hs
 +++ b/src/Distribution/Client/InstallPlan.hs
-@@ -776,10 +776,21 @@
+@@ -761,10 +761,21 @@ completed plan (Processing processingSet completedSet failedSet) pkgid =
    where
      completedSet' = Set.insert pkgid completedSet
  

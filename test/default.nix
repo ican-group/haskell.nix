@@ -276,6 +276,7 @@ let
     ghc-options-cabal = callTest ./ghc-options/cabal.nix {};
     ghc-options-stack = callTest ./ghc-options/stack.nix {};
     exe-only = callTest ./exe-only { inherit util; };
+    foreign-lib = callTest ./foreign-lib {};
     stack-source-repo = callTest ./stack-source-repo {};
     stack-inputMap = callTest ./stack-inputMap { inherit testSrcRoot; };
     ghc-lib-reinstallable-cabal = callTest ./ghc-lib-reinstallable/cabal.nix {};

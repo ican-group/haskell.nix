@@ -130,6 +130,20 @@ pkgs.haskell-nix.project' {
 }
 ```
 
+**The `shell` argument**: `project'`, `cabalProject'` and `stackProject'`
+(and their unprimed versions) all accept a `shell` argument.  It takes
+the same options as [`shellFor`](#shellfor) (they are checked by
+`modules/shell.nix`), and the resulting shell is the project's `shell`
+attribute.  It is also the default `devShell` of the project's `flake`
+output.
+
+```nix
+(pkgs.haskell-nix.project' {
+  src = ./.;
+  shell.tools.cabal = {};
+}).shell
+```
+
 ## stackProject'
 
 A function calling [callStackToNix](#callstacktonix) with all arguments.
@@ -144,6 +158,7 @@ Then feeding its result into [mkStackPkgSet](#mkstackpkgset) passing also
 | `hsPkgs`          | Attrset of [Haskell Packages](#haskell-package)  | Buildable packages, created from `packages`                                |
 | `stack-nix`       |                                                  | `projectNix` attribute of [`callStackToNix`](#callstacktonix) return value |
 | `shellFor`        | Function                                         | [`shellFor`](#shellfor)                                                    |
+| `shell`           | Derivation                                       | Shell made with the project `shell` argument (see [`shellFor`](#shellfor)) |
 | `ghcWithHoogle`   | Function                                         | [`ghcWithHoogle`](#ghcwithhoogle)                                          |
 | `ghcWithPackages` | Function                                         | [`ghcWithPackages`](#ghcwithpackages)                                      |
 
@@ -163,6 +178,7 @@ Then feeding its result into [mkCabalProjectPkgSet](#mkcabalprojectpkgset) passi
 | `plan-nix`        |                                                  | `projectNix` attribute of [`callCabalProjectToNix`](#callcabalprojecttonix) return value  |
 | `index-state`     |                                                  | `index-state` attribute of [`callCabalProjectToNix`](#callcabalprojecttonix) return value |
 | `shellFor`        | Function                                         | [`shellFor`](#shellfor)                                                     |
+| `shell`           | Derivation                                       | Shell made with the project `shell` argument (see [`shellFor`](#shellfor))  |
 | `ghcWithHoogle`   | Function                                         | [`ghcWithHoogle`](#ghcwithhoogle)                                           |
 | `ghcWithPackages` | Function                                         | [`ghcWithPackages`](#ghcwithpackages)                                       |
 | `projectCross`    | Attrset                                          | Like `pkgs.pkgsCross.<system>` from nixpkgs `p.projectCross.<system>` returns the project results for cross compilation (where system is a member of nixpkgs lib.systems.examples).  So `p.projectCross.ghcjs.hsPkgs` is the same as `hsPkgs` but compiled with ghcjs |
@@ -466,24 +482,55 @@ or
 ```
 
 The `shellFor` arguments can also be passed to the project `shell`
-argument.  For instance:
+argument and the resulting shell used via the project's `shell`
+attribute.  For instance:
 
 ```
 (pkgs.haskell-nix.project {
   ...
-  shell.tools.cabal = {}
-).shellFor {}
+  shell.tools.cabal = {};
+}).shell
 ```
 
-Is the same as:
+Gives the same shell as:
 
 ```
 (pkgs.haskell-nix.project {
   ...
-).shellFor {
-  tools.cabal = {}
+}).shellFor {
+  tools.cabal = {};
 }
 ```
+
+The arguments passed to `shellFor` are merged with the project's
+`shell` argument rather than replacing it.  For instance, a
+project-level `shell.tools.cabal = {};` still applies when calling
+`shellFor { withHoogle = false; }`.
+
+> **Note:** Prefer the `shell` argument and `.shell` attribute.
+>
+> `shellFor` makes a new project (using [`appendModule`](#cabalproject'))
+> with the arguments added to `shell`, and returns that project's
+> `shell`.  The new project shares nothing with the original one, so
+> its package set, plan and components are all evaluated again.  Nix
+> does not memoize function calls either, so each `shellFor` call
+> repeats this work, even with identical arguments.  By contrast,
+> `project.shell` is an attribute of the project: it is evaluated
+> at most once and reuses the project's own evaluation.
+>
+> This only costs extra when the original project is evaluated too.
+> A `shell.nix` that does nothing but call `project.shellFor {...}`
+> evaluates about one project either way.  The cost shows up when the
+> same evaluation also uses other outputs of the project (for instance
+> a flake that exposes `hsPkgs` packages or checks and also builds its
+> dev shell with `shellFor`, or CI jobs that include both), or when
+> `shellFor` is called more than once on the same project.  For large
+> projects this can add significantly to evaluation time and memory
+> use.
+>
+> `crossPlatforms` has a similar cost even when using `.shell`: the
+> shell for each selected platform is made by calling `shellFor` on the
+> corresponding `projectCross` project.
 
 **Return value**: a derivation
 
