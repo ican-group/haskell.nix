@@ -124,12 +124,61 @@ in let
   subDir' = evalSrc.origSubDir or "";
   subDir = pkgs.lib.strings.removePrefix "/" subDir';
 
+  cabalFilesOrigSrc = evalSrc.origSrc or evalSrc;
+  parentFilter = path: type: !(evalSrc ? filter) || evalSrc.filter path type;
+  isCabalFile = path: pkgs.lib.any (i: (pkgs.lib.hasSuffix i path)) [ ".cabal" "package.yaml" ];
+
+  # Directories (as the absolute path strings `builtins.path` passes to its
+  # filter) that contain a `.cabal` or `package.yaml` file somewhere below them.
+  # Keeping only these (rather than every directory) means adding an unrelated
+  # directory to the project does not change `cleanedSource` and so does not
+  # invalidate the plan-nix IFD (#2582).  The walk respects `parentFilter`, so
+  # it never descends into directories the source filter excludes (`.git`,
+  # untracked dirs with `cleanGit`, ...).  It is only forced when `builtins.path`
+  # calls the filter below.
+  #
+  # Below a `package.yaml` every directory is kept (as before), because hpack
+  # checks that its `source-dirs` exist.
+  dirsWithCabalFiles =
+    let
+      walk = inHpack: dir: dirStr:
+        let
+          entries = builtins.readDir dir;
+          inHpack' = inHpack || (entries."package.yaml" or null) == "regular"
+            && parentFilter "${dirStr}/package.yaml" "regular";
+          results = pkgs.lib.mapAttrsToList (entryName: type:
+            let
+              path = dir + "/${entryName}";
+              pathStr = "${dirStr}/${entryName}";
+            in
+              if !(parentFilter pathStr type)
+                then { hasFile = false; dirs = []; }
+              else if type == "directory"
+                then { hasFile = false; dirs = walk inHpack' path pathStr; }
+              else { hasFile = isCabalFile pathStr; dirs = []; }
+            ) entries;
+          subDirs = pkgs.lib.concatMap (r: r.dirs) results;
+        in
+          if inHpack || pkgs.lib.any (r: r.hasFile) results || subDirs != []
+            then [ dirStr ] ++ subDirs
+            else [];
+      root = if builtins.isPath cabalFilesOrigSrc
+        then cabalFilesOrigSrc
+        else toString cabalFilesOrigSrc;
+    in pkgs.lib.genAttrs (walk false root (toString cabalFilesOrigSrc)) (_: true);
+
+  # The project's `subDir` (and its parents) must exist even when it holds no
+  # `.cabal` files, because the plan-nix build `cd`s into it.
+  origSrcSubDir = toString cabalFilesOrigSrc + subDir';
+
   cleanedSource = haskellLib.cleanSourceWith {
     name = if name != null then "${name}-root-cabal-files" else "source-root-cabal-files";
-    src = evalSrc.origSrc or evalSrc;
-    filter = path: type: (!(evalSrc ? filter) || evalSrc.filter path type) && (
-      type == "directory" ||
-      pkgs.lib.any (i: (pkgs.lib.hasSuffix i path)) [ ".cabal" "package.yaml" ]); };
+    src = cabalFilesOrigSrc;
+    filter = path: type: parentFilter path type && (
+      if type == "directory"
+        then dirsWithCabalFiles ? ${path}
+          || pkgs.lib.hasPrefix (path + "/") (origSrcSubDir + "/")
+        else isCabalFile path); };
 
   # When there is no `cabal.project` file `cabal-install` behaves as if there was
   # one containing `packages: ./*.cabal`.  Even if there is a `cabal.project.local`
