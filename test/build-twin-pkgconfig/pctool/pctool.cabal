@@ -1,0 +1,15 @@
+cabal-version: 2.4
+name:          pctool
+version:       0.1.0.0
+build-type:    Simple
+
+-- A GHC preprocessor (`-F -pgmF pctool`) that needs zlib on the machine it
+-- runs on, but not on targets with no native C zlib.  In a two-stage cross
+-- plan its build-machine unit must see the build platform's answer.
+executable pctool
+  main-is:          Main.hs
+  build-depends:    base
+  default-language: Haskell2010
+  if !arch(wasm32) && !arch(javascript) && !os(windows)
+    pkgconfig-depends: zlib
+    cpp-options:       -DHAVE_ZLIB

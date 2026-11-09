@@ -324,7 +324,14 @@ let
        (lib.optional (v2Fragment != null) v2Fragment
         ++ buildToolSourceFrags ++ metadataSourceFrags)
      ++ lib.concatMap (d: d.pkgconfNames) depSlices));
-  pkgConfigWrapper = buildPackages.cabalPkgConfigWrapperFor pkgconfNames;
+  # A build-machine slice (`buildPlatformCompiler`) asks pkg-config about the
+  # BUILD platform's libraries (its `extraBuildInputs` come from
+  # `pkgsBuildBuild`, see lib/load-cabal-plan.nix `buildMachineArgs`), so it
+  # gets the native, unprefixed wrapper alongside its native C toolchain
+  # (`buildMachineInputs` below).
+  pkgConfigWrapper =
+    (if buildPlatformCompiler then pkgsBuildBuild else buildPackages)
+      .cabalPkgConfigWrapperFor pkgconfNames;
   # On cross, `pkgConfigWrapper` is named
   # `${targetPrefix}pkg-config` (e.g. `x86_64-w64-mingw32-pkg-config`).
   # Cabal calls plain `pkg-config` by default, so for cross we have
@@ -660,6 +667,13 @@ let
     ++ lib.optional buildPlatformCompiler pkgsBuildBuild.stdenv.cc.bintools;
   buildCcInDepsBuildBuild =
     stdenv.hostPlatform != stdenv.buildPlatform && !stdenv.hostPlatform.isGhcjs;
+  # A build-machine slice's system libraries and pkg-config are the build
+  # platform's (#2628).  Give them the same role as the build C compiler that
+  # links against them: as `buildInputs` of a cross stdenv the cc-wrapper and
+  # pkg-config setup hooks would file them under the TARGET role, where the
+  # native compiler and pkg-config never look.
+  buildMachineInputs = lib.optionals buildPlatformCompiler
+    ([ pkgConfigWrapper ] ++ extraBuildInputs);
 in
 
 stdenv.mkDerivation ({
@@ -700,8 +714,10 @@ stdenv.mkDerivation ({
   # `pkgConfigWrapper` is always present: without a pkg-config cabal rejects
   # every `pkgconfig-depends:` of a source goal (see `pkgConfigWithFlag`).
   nativeBuildInputs = [ ghc cabal-install
-                        (pkgsBuildBuild.lndir or pkgsBuildBuild.xorg.lndir)
-                        pkgConfigWrapper
+                        (pkgsBuildBuild.lndir or pkgsBuildBuild.xorg.lndir) ]
+    # (a build-machine slice's wrapper is in `buildMachineInputs`)
+    ++ lib.optional (!buildPlatformCompiler) pkgConfigWrapper
+    ++ [
                         # `jq` is used by the unit-id mismatch diagnostic
                         # to extract / pretty-print plan.json entries for
                         # the diff between plan-nix and the slice's
@@ -752,6 +768,7 @@ stdenv.mkDerivation ({
     # native input puts `-L<libiconv>/lib` into the build wrapper's search.
     ++ lib.optionals (needsBuildStageCc && !buildCcInDepsBuildBuild)
          buildStageToolchain
+    ++ lib.optionals (!buildCcInDepsBuildBuild) buildMachineInputs
     ++ extraNativeBuildInputs;
   # ...but on a C-capable cross target the build compiler must go in
   # `depsBuildBuild`, not `nativeBuildInputs`.  In `nativeBuildInputs` the
@@ -764,7 +781,8 @@ stdenv.mkDerivation ({
   # old placement (build == host, so no difference and no rebuild), and so
   # does ghcjs, which has no target C libraries to leak.
   depsBuildBuild = lib.optionals (needsBuildStageCc && buildCcInDepsBuildBuild)
-    buildStageToolchain;
+    buildStageToolchain
+    ++ lib.optionals buildCcInDepsBuildBuild buildMachineInputs;
   # `depSlices` go in `propagatedBuildInputs` so stdenv chains each
   # slice's `nix-support/propagated-build-inputs` transitively.
   # Concretely: `cardano-lmdb:lib:ffi` declares `pkgconfig = [lmdb]`
@@ -785,7 +803,7 @@ stdenv.mkDerivation ({
   # at $out so stdenv's NIX_LDFLAGS / NIX_CFLAGS injection finds
   # nothing to add — propagation is for iteration + transitive
   # sysLib chaining only.
-  buildInputs = extraBuildInputs;
+  buildInputs = lib.optionals (!buildPlatformCompiler) extraBuildInputs;
   propagatedBuildInputs = propagated ++ depSlices;
   # `fixupPhase` is what stdenv uses to write
   # `nix-support/propagated-build-inputs` from `propagatedBuildInputs`.

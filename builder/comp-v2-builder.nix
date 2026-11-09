@@ -1027,7 +1027,10 @@ let
   # "no C compiler provided for this platform".  Empty them for ghcjs at the
   # source, so every downstream use (extraBuildInputs, the propagatedBuildInputs
   # `propagated`, the cabal.project extra-lib-dirs emission) is native-free.
-  isJsTarget = stdenv.hostPlatform.isGhcjs;
+  # A build-machine unit of a two-stage plan (`isBuildStageUnit`) is built
+  # natively, and its component config is the build platform's
+  # (lib/load-cabal-plan.nix `buildMachineArgs`, #2628), so it keeps its libs.
+  isJsTarget = stdenv.hostPlatform.isGhcjs && !isBuildStageUnit;
   libs       = lib.optionals (!isJsTarget) (lib.flatten (component.libs or []));
   frameworks = lib.optionals (!isJsTarget) (component.frameworks or []);
   pkgconfig  = lib.optionals (!isJsTarget) (map pkgs.lib.getDev (builtins.concatLists (component.pkgconfig or [])));
@@ -1043,7 +1046,7 @@ let
   # `build-cabal-slice.nix:confLibraryDirs` for the rewrite.
   confLibraryDirs =
     map (p: "${lib.getLib p}/lib") libs
-    ++ lib.optionals stdenv.hostPlatform.isWindows
+    ++ lib.optionals (stdenv.hostPlatform.isWindows && !isBuildStageUnit)
          # Windows ships DLLs / import libs under `bin/` rather
          # than `lib/`.  Mirrors v1's runtime `[ -d $bin ]` check
          # in `make-config-files.nix:81-90`.
@@ -1099,7 +1102,7 @@ let
     # for ghcjs; the `depSlices` propagatedBuildInputs chain still covers the
     # native platforms.  (`stdenv` here is the component's *target* stdenv —
     # `pkgs.stdenv` would be the darwin build host and never match.)
-    if stdenv.hostPlatform.isGhcjs then [] else
+    if isJsTarget then [] else
     let
       go = acc: deps:
         lib.foldl' (acc: d:
@@ -1236,7 +1239,7 @@ let
   # pkg-set can't realize a darwin framework (e.g. hfsevents' Cocoa), and a JS
   # build emits no `extra-framework-dirs:` anyway.
   pkgcfglessSysLibs = c:
-    lib.optionals (!stdenv.hostPlatform.isGhcjs) (c.frameworks or []);
+    lib.optionals (!isJsTarget) (c.frameworks or []);
   perPkgForeignLibs =
     let
       go = acc: deps:
@@ -2487,7 +2490,7 @@ let
       "${ghc.targetPrefix}${pkgName}-${pkgVersion}-${componentKindLabel}-${componentName} propagatedBuildInputs" (
            haskellLib.uniqueWithName frameworks
         ++ haskellLib.uniqueWithName pkgconfig
-        ++ lib.optionals stdenv.hostPlatform.isWindows
+        ++ lib.optionals (stdenv.hostPlatform.isWindows && !isBuildStageUnit)
           (haskellLib.uniqueWithName libs));
     # The slice's `cabal v2-build` should only ever build the
     # target package (any number of components — lib + sublibs +
