@@ -27,6 +27,24 @@ let
     package.buildable = true;
   };
 
+  # `cabalProjectLocal` contributed by `modules/hackage-quirks.nix` for a
+  # hackage-project with the given `name` and `version`.
+  hackageQuirksCabalProjectLocal = { name, version }:
+    (lib.evalModules {
+      specialArgs = { inherit pkgs; };
+      modules = import ../modules/hackage-quirks.nix ++ [{
+        options = {
+          name = lib.mkOption { type = lib.types.str; };
+          version = lib.mkOption { type = lib.types.str; };
+          cabalProjectLocal = lib.mkOption { type = lib.types.lines; default = ""; };
+          cabalProject = lib.mkOption { type = lib.types.lines; default = ""; };
+          sha256map = lib.mkOption { type = lib.types.anything; default = {}; };
+          modules = lib.mkOption { type = lib.types.listOf lib.types.anything; default = []; };
+        };
+        config = { inherit name version; };
+      }];
+    }).config.cabalProjectLocal;
+
   testRepoData = {
     url = "https://github.com/input-output-hk/haskell.nix.git";
     rev = "487eea1c249537d34c27f6143dff2b9d5586c657";
@@ -65,6 +83,19 @@ lib.runTests {
   testLicenseNoneIsNamed = {
     expr = map (l: l.shortName) (haskellLib.cabalToNixpkgsLicense "NONE");
     expected = [ "NONE" ];
+  };
+
+  # The stack quirk's old-version constraints (`pantry <0.9`, ...) must not
+  # apply to `version = "latest"`: `compareVersions "latest" "2.11.1"` is -1,
+  # and with them no recent stack solves, so the solver fell back to a
+  # placeholder release instead of the newest stack (#1748).
+  testStackQuirkSkipsLatest = {
+    expr = hackageQuirksCabalProjectLocal { name = "stack"; version = "latest"; };
+    expected = "";
+  };
+  testStackQuirkKeepsPinnedOldVersion = {
+    expr = hackageQuirksCabalProjectLocal { name = "stack"; version = "2.9.3"; };
+    expected = "constraints: pantry <0.9, optparse-applicative <0.18, http-download <0.2.1\n";
   };
 
   # `shadowedNonReinstallablePkgs` flags names in `nonReinstallablePkgs` that the
