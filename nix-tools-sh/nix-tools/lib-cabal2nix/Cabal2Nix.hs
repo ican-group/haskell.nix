@@ -50,7 +50,7 @@ import Data.Fix(Fix(..))
 import Data.Text (Text)
 import qualified Data.Text as T
 
-import Cabal2Nix.Util (quoted, selectOr)
+import Cabal2Nix.Util (attrName, quoted, selectOr)
 
 data Src
   = Path FilePath
@@ -388,7 +388,7 @@ instance ToNixExpr HaskellLibDependency where
              mkSelector (quoted pkg)
           <> mkSelector "components"
           <> mkSelector "sublibs"
-          <> mkSelector lName)
+          <> mkSelector (attrName $ lName))
       (mkSym errorHandler @. buildDepError @@ mkStr (pkg <> ":" <> lName))
     where
       pkg = fromString . show $ pretty p
@@ -405,7 +405,7 @@ instance ToNixExpr PkgconfigDependency where
       pkg = fromString . unPkgconfigName $ name
 
 instance ToNixExpr ExeDependency where
-  toNix (ExeDependency pkgName' _unqualCompName _versionRange) = selectOr (mkSym "exes") (mkSelector $ pkg) (mkSym errorHandler @. exeDepError @@ mkStr pkg)
+  toNix (ExeDependency pkgName' _unqualCompName _versionRange) = selectOr (mkSym "exes") (mkSelector . attrName $ pkg) (mkSym errorHandler @. exeDepError @@ mkStr pkg)
     where
       pkg = fromString . show . pretty $ pkgName'
 
@@ -418,13 +418,13 @@ instance ToNixExpr SetupDependency where
         (selectOr (mkSym pkgs) buildPackagesDotName (mkSym errorHandler @. setupDepError @@ mkStr pkg))
     where
       pkg = fromString . show . pretty $ pkgName'
-      buildPackagesDotName = mkSelector "pkgsBuildBuild" <> mkSelector pkg
+      buildPackagesDotName = mkSelector "pkgsBuildBuild" <> mkSelector (attrName $ pkg)
   toNix (SetupDependency pkgName' (LSubLibName l)) = selectOr (mkSym hsPkgs) (
              mkSelector "pkgsBuildBuild"
           <> mkSelector (quoted pkg)
           <> mkSelector "components"
           <> mkSelector "sublibs"
-          <> mkSelector lName)
+          <> mkSelector (attrName $ lName))
       (mkSym errorHandler @. setupDepError @@ mkStr (pkg <> ":" <> lName))
     where
       pkg = fromString . show $ pretty pkgName'
@@ -434,11 +434,11 @@ instance ToNixExpr BuildToolDependency where
   toNix (BuildToolDependency pkgName' componentName') =
       selectOr (mkSym hsPkgs) (
              mkSelector "pkgsBuildBuild"
-          <> mkSelector pkg
+          <> mkSelector (attrName $ pkg)
           <> mkSelector "components"
           <> mkSelector "exes"
-          <> mkSelector componentName)
-        (selectOr (mkSym pkgs) (mkSelector "pkgsBuildBuild" <> mkSelector componentName)
+          <> mkSelector (attrName $ componentName))
+        (selectOr (mkSym pkgs) (mkSelector "pkgsBuildBuild" <> mkSelector (attrName $ componentName))
           (mkSym errorHandler @. buildToolDepError @@ mkStr (pkg <> ":" <> componentName)))
     where
       pkg = fromString . show . pretty $ pkgName'
@@ -482,7 +482,7 @@ fixSystem s = s
 instance ToNixExpr ConfVar where
   toNix (OS os) = mkSym "system" @. (fromString . fixSystem . ("is" ++) . capitalize . show . pretty $ os)
   toNix (Arch arch) = mkSym "system" @. (fromString . fixSystem . ("is" ++) . capitalize . show . pretty $ arch)
-  toNix (PackageFlag flag) = mkSym flags @. (fromString . show . pretty $ flag)
+  toNix (PackageFlag flag) = mkSym flags @. (attrName . fromString . show . pretty $ flag)
   toNix (Impl flavour range) = toNix flavour $&& toNix (projectVersionRange range)
 
 instance ToNixExpr CompilerFlavor where
@@ -532,4 +532,4 @@ boolTreeToNix (CondNode True bs) =
     bs' -> foldl1 ($&&) bs'
 
 instance ToNixBinding PackageFlag where
-  toNixBinding (MkPackageFlag name _desc def _manual) = (fromString . show . pretty $ name) $= mkBool def
+  toNixBinding (MkPackageFlag name _desc def _manual) = (attrName . fromString . show . pretty $ name) $= mkBool def

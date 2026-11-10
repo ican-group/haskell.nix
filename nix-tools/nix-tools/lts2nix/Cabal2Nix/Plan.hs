@@ -4,13 +4,15 @@
 module Cabal2Nix.Plan
 where
 
-import           Cabal2Nix.Util                           ( quoted
+import           Cabal2Nix.Util                           ( attrName
+                                                          , quoted
                                                           , bindPath
                                                           , hackageVersion
                                                           , hackageVersionHelper
                                                           )
 import           Data.HashMap.Strict                      ( HashMap )
 import qualified Data.HashMap.Strict           as Map
+import           Data.Coerce                              ( coerce )
 import           Data.List.NonEmpty                       ( NonEmpty (..) )
 import           Data.Text                                ( Text )
 import qualified Data.Text                     as Text
@@ -52,7 +54,7 @@ plan2nix (Plan { packages, compilerVersion, compilerPackages }) =
     let revExpr      = hackageVersion (Text.dropAround (== '"') pkg) packageVersion
                                       (maybe "default" id packageRevision)
         flagBindings = Map.foldrWithKey
-          (\fname val acc -> bindPath (VarName pkg :| ["flags", fname]) (mkBool val) : acc)
+          (\fname val acc -> bindPath (VarName pkg :| ["flags", VarName (attrName (coerce fname))]) (mkBool val) : acc)
           []
           packageFlags
     in  revBinding pkg revExpr : flagBindings
