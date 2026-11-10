@@ -165,7 +165,11 @@ in let
       root = if builtins.isPath cabalFilesOrigSrc
         then cabalFilesOrigSrc
         else toString cabalFilesOrigSrc;
-    in pkgs.lib.genAttrs (walk false root (toString cabalFilesOrigSrc)) (_: true);
+      # Attribute names cannot carry string context, and `builtins.path` passes
+      # its filter context-free paths anyway, so key the set on the plain string.
+      # `root` (what `readDir` reads) keeps its context.
+      rootStr = builtins.unsafeDiscardStringContext (toString cabalFilesOrigSrc);
+    in pkgs.lib.genAttrs (walk false root rootStr) (_: true);
 
   # The project's `subDir` (and its parents) must exist even when it holds no
   # `.cabal` files, because the plan-nix build `cd`s into it.
