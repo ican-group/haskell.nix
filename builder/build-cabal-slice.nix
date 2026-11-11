@@ -799,6 +799,16 @@ stdenv.mkDerivation ({
   # strip that the dep slices haven't already stripped themselves.
   dontStrip = true;
   passthru = passthru // { inherit pkgconfNames; };
+} // lib.optionalAttrs (buildPlatformCompiler && stdenv.hostPlatform.isWindows) {
+  # A build-machine slice of a windows plan holds native tools (`hsc2hs`, not
+  # `hsc2hs.exe`).  The cross stdenv's win-dll-link fixup hook still runs, and
+  # with no `.exe`/`.dll` in `$out/bin` it reads its empty associative array
+  # under `set -u` and dies ("filesToChecks: unbound variable").  It has
+  # nothing to link here, so drop it.
+  preFixup = ''
+    fixupOutputHooks=(''${fixupOutputHooks[@]/_linkDLLs})
+  '';
+} // {
 
   # Store layout: the stable-haskell cabal (3.19 `merge`) keys its store by
   # machine and platform, `store/{host,build}/<platform>/`.  There is no
