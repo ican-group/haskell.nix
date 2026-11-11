@@ -805,8 +805,14 @@ stdenv.mkDerivation ({
   # with no `.exe`/`.dll` in `$out/bin` it reads its empty associative array
   # under `set -u` and dies ("filesToChecks: unbound variable").  It has
   # nothing to link here, so drop it.
+  # (Filter element by element: other hooks are whole `if ...; fi`
+  # snippets, which an unquoted expansion would split into words.)
   preFixup = ''
-    fixupOutputHooks=(''${fixupOutputHooks[@]/_linkDLLs})
+    _keptFixupOutputHooks=()
+    for _hook in "''${fixupOutputHooks[@]}"; do
+      if [ "$_hook" != _linkDLLs ]; then _keptFixupOutputHooks+=("$_hook"); fi
+    done
+    fixupOutputHooks=("''${_keptFixupOutputHooks[@]}")
   '';
 } // {
 
