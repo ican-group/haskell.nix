@@ -1129,8 +1129,14 @@ let
   # there, the libs that linked it (mingw_w64_pthreads, gmp, ...)
   # must appear in our slice's buildInputs.  `templateHaskell.iservRuntimeLibs`
   # carries that list.
+  #
+  # Not for a build-machine unit of a two-stage plan (`isBuildStageUnit`): it
+  # runs TH natively, and its `extraBuildInputs` are the build machine's
+  # (they go in `depsBuildBuild`, see build-cabal-slice.nix
+  # `buildMachineInputs`), so the target's mingw pthreads headers would
+  # shadow glibc's for its native cc ("process.h: No such file").
   iservRuntimeLibs =
-    if templateHaskell != null && templateHaskell.iservRuntimeLibs or null != null
+    if !isBuildStageUnit && templateHaskell != null && templateHaskell.iservRuntimeLibs or null != null
     then templateHaskell.iservRuntimeLibs
     else [];
   # Direct sysLibs plus the transitive closure walked above.  The
