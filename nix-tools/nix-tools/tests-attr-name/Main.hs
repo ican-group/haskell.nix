@@ -10,6 +10,12 @@ module Main (main) where
 import           Cabal2Nix                    (CabalDetailLevel (..), CabalFile (..), cabal2nix)
 import           Cabal2Nix.Util               (attrName)
 import           Control.Monad                (unless)
+import qualified Data.HashMap.Strict          as HM
+import qualified Data.HashSet                 as HS
+import           Nix.Expr                     (VarName (..))
+import           Plan2Nix                     (plan2nix)
+import           Plan2Nix.CLI                 (Args (..), HpackUse (..))
+import           Plan2Nix.Plan                (Package (..), Plan (..))
 import qualified Data.ByteString.Char8        as BS
 import           Data.Text                    (Text)
 import qualified Data.Text                    as T
@@ -54,6 +60,31 @@ main = do
   unless (null missing) $ die' ("missing " ++ show missing) rendered
   case parseNixText rendered of
     Left err -> die' ("generated Nix does not parse: " ++ show err) rendered
+    Right _  -> pure ()
+
+  -- plan-to-nix: plan.json flag and package names go through the same
+  -- quoting (`hgg.flags."3d"`, `"3d-graphics".revision`).
+  let pkg flags = Just Package
+        { packageVersion = "0.1", packageFlags = HM.fromList flags
+        , packageSrc = Nothing, packageHasDescriptionOverride = False
+        , packagePreExisting = False }
+      plan = Plan
+        { packages = HM.fromList
+            [ ("hgg", pkg [(VarName "3d", False), (VarName "png", True)])
+            , ("3d-graphics", pkg []) ]
+        , extras = HM.empty, components = HS.empty
+        , compilerVersion = "9.6.7", compilerPackages = HM.empty }
+      args = Args { argOutputDir = ".", argPlanJSON = "plan.json"
+                  , argCabalProject = "cabal.project", argCacheFile = ".nix-tools.cache"
+                  , argDetailLevel = MinimalDetails, argHpackUse = IgnorePackageYaml }
+  planExpr <- plan2nix args plan
+  let planRendered = renderStrict (layoutPretty defaultLayoutOptions (prettyNix planExpr))
+      planNeedles = [ "hgg.flags.\"3d\" = false", "hgg.flags.png = true"
+                    , "\"3d-graphics\".revision", "hackage.\"3d-graphics\"" ]
+      planMissing = filter (not . (`T.isInfixOf` planRendered)) planNeedles
+  unless (null planMissing) $ die' ("plan-to-nix: missing " ++ show planMissing) planRendered
+  case parseNixText planRendered of
+    Left err -> die' ("plan-to-nix output does not parse: " ++ show err) planRendered
     Right _  -> pure ()
   putStrLn "non-identifier cabal names are quoted in generated Nix (OK)"
  where
