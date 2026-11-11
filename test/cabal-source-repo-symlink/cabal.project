@@ -1,0 +1,11 @@
+packages:
+  ./
+
+-- The repository is supplied with `inputMap` (see `default.nix`), it is
+-- `./repo` in this directory.  `symlink-pkg` lives in the `pkg` subdir and
+-- has symlinks that point outside of it (#1134).
+source-repository-package
+  type: git
+  location: https://example.invalid/symlink-repo.git
+  tag: main
+  subdir: pkg

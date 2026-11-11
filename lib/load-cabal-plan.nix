@@ -385,8 +385,32 @@ in {
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "source-repo") {
                 # Replace the source repository packages with versions created when
                 # parsing the `cabal.project` file.
-                src = pkgs.lib.lists.elemAt callProjectResults.sourceRepos (pkgs.lib.strings.toInt p.pkg-src.source-repo.location)
-                  + pkgs.lib.optionalString (p.pkg-src.source-repo.subdir != ".") "/${p.pkg-src.source-repo.subdir}";
+                #
+                # The package is built inside the whole repository (`origSrc`)
+                # rather than from its `subdir` alone, so relative references
+                # out of the subdir (e.g. co-log's `co-log-polysemy/LICENSE ->
+                # ../LICENSE`, #1134) still resolve.  `filterPath` is the
+                # identity because the repository is already in the store:
+                # filtering it would read the whole tree at eval time, and
+                # component cleaning would drop the targets of such symlinks.
+                src =
+                  let
+                    inherit (p.pkg-src.source-repo) location subdir;
+                    repo' = pkgs.lib.lists.elemAt callProjectResults.sourceRepos (pkgs.lib.strings.toInt location);
+                    # `src` is no longer a string, so the `apply` of the `src`
+                    # option (modules/package.nix) cannot add the store path
+                    # context the component derivations need.  Add it here.
+                    storeDirMatch = builtins.match "(${builtins.storeDir}/[^/]+).*" repo';
+                    repo =
+                      if builtins.isString repo' && builtins.getContext repo' == { } && storeDirMatch != null
+                        then builtins.appendContext repo' { ${builtins.head storeDirMatch} = { path = true; }; }
+                        else repo';
+                    subDir = pkgs.lib.removeSuffix "/" (haskellLib.normalizeRelativePath subdir);
+                  in haskellLib.appendSubDir {
+                    src = { outPath = repo; filterPath = { path, ... }: path; };
+                    inherit subDir;
+                    includeSiblings = true;
+                  };
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "repo-tar") {
                 src = pkgs.lib.mkDefault (pkgs.fetchurl {
                    # repo.uri might look like file:/nix/store/xxx; using addContext, we let nix know about the dependency on
