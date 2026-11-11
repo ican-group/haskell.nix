@@ -1,6 +1,6 @@
 { stdenv, lib, haskellLib, ghc, nonReinstallablePkgs, runCommand, writeText, writeScript }@defaults:
 
-{ identifier, component, fullName, flags ? {}, needsProfiling ? false, enableDWARF ? false, chooseDrv ? drv: drv, nonReinstallablePkgs ? defaults.nonReinstallablePkgs, prebuilt-depends ? [], instantiations ? {} }:
+{ identifier, component, fullName, flags ? {}, needsProfiling ? false, enableDWARF ? false, chooseDrv ? drv: drv, nonReinstallablePkgs ? defaults.nonReinstallablePkgs, prebuilt-depends ? [], instantiations ? {}, extraScript ? "" }:
 
 let
   # Sort and remove duplicates from nonReinstallablePkgs.
@@ -254,7 +254,10 @@ let
       echo >> $f
       sed -i -E "/^ ./{H;$!d} ; x ; s,^dynamic-library-dirs:.*,dynamic-library-dirs: $dynamicLinksDir," $f
     done
-  '' + ''
+  ''
+  # Further edits to the package DB (e.g. the haddock builder linking
+  # dependencies' docs), done before the one recache below.
+  + extraScript + ''
     ${target-pkg} -v0 --package-db $configFiles/${packageCfgDir} recache
   '';  
   drv = runCommand "${ghc.targetPrefix}${fullName}-config" {
