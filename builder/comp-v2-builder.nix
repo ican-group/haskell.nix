@@ -1707,10 +1707,15 @@ let
   # `bin/<cname>` — there is no `.jsexe/` directory in the slice's
   # output.  Use the bundled-file path here so v2's exePath /
   # `find` lookups land on the file cabal actually produced.
+  #
+  # A build-machine unit of a two-stage plan (`isBuildStageUnit`) is compiled
+  # natively, so its exe carries the BUILD platform's extension (none on
+  # linux/darwin): `hsc2hs`, not `hsc2hs.exe`, in a mingwW64 plan.
+  exePlatform = if isBuildStageUnit then stdenv.buildPlatform else stdenv.hostPlatform;
   exeExt =
-    if stdenv.hostPlatform.isWasm
+    if exePlatform.isWasm
       then ".wasm"
-    else stdenv.hostPlatform.extensions.executable;
+    else exePlatform.extensions.executable;
   exeName = cname + exeExt;
 
   # ---- per-kind shape ------------------------------------------
