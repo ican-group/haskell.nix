@@ -12,7 +12,11 @@ let readIfExists = src: fileName:
           else null;
 in {
   _file = "haskell.nix/modules/cabal-project.nix";
-  imports = [ ./replace-hackage-tarball-urls.nix ./stable-haskell-rts-comdat.nix ];
+  imports = [
+    ./replace-hackage-tarball-urls.nix
+    ./stable-haskell-rts-comdat.nix
+    ./stable-haskell-rts-macho-signed-addends.nix
+  ];
   options = {
     # Used by callCabalProjectToNix
     compiler-nix-name = mkOption {
