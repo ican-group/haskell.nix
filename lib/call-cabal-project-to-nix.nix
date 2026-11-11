@@ -137,15 +137,25 @@ in let
   # untracked dirs with `cleanGit`, ...).  It is only forced when `builtins.path`
   # calls the filter below.
   #
-  # Below a `package.yaml` every directory is kept (as before), because hpack
-  # checks that its `source-dirs` exist.
+  # Below a `package.yaml` that hpack will actually run on (`supportHpack` is
+  # set and there is no `.cabal` file beside it, matching the plan-nix build
+  # script) every directory is kept (as before), because hpack checks that its
+  # `source-dirs` exist.  Otherwise the `package.yaml` is just copied and its
+  # subdirectories are treated like any others.
   dirsWithCabalFiles =
     let
       walk = inHpack: dir: dirStr:
         let
           entries = builtins.readDir dir;
-          inHpack' = inHpack || (entries."package.yaml" or null) == "regular"
-            && parentFilter "${dirStr}/package.yaml" "regular";
+          hasCabalFile = pkgs.lib.any (entryName:
+              pkgs.lib.hasSuffix ".cabal" entryName
+              && entries.${entryName} != "directory"
+              && parentFilter "${dirStr}/${entryName}" entries.${entryName}
+            ) (builtins.attrNames entries);
+          inHpack' = inHpack || supportHpack
+            && (entries."package.yaml" or null) == "regular"
+            && parentFilter "${dirStr}/package.yaml" "regular"
+            && !hasCabalFile;
           results = pkgs.lib.mapAttrsToList (entryName: type:
             let
               path = dir + "/${entryName}";

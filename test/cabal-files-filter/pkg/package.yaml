@@ -1,0 +1,8 @@
+# `cabal-files-filter.cabal` sits beside this file, so hpack never runs on it
+# and `docs/` must not end up in the plan-nix source.
+name: cabal-files-filter
+version: 0.1.0.0
+executables:
+  cabal-files-filter:
+    main: Main.hs
+    dependencies: base
