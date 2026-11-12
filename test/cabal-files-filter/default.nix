@@ -1,0 +1,41 @@
+# Directories that contain no `.cabal` (or `package.yaml`) files must not be
+# part of the source used for the plan-nix IFD, otherwise creating an unrelated
+# directory in a project invalidates its plan (#2582).
+#
+# `unrelated/` holds only a README.  `pkg/docs/` also holds only a README, and
+# `pkg/` has a `package.yaml` beside its `.cabal` file (so hpack never runs and
+# its subdirectories need not be kept).  The plan for the project with and
+# without those directories must be the same derivation.  This is an eval-only
+# check.
+{ lib, project', testSrc, compiler-nix-name, evalPackages, evalSystem, testInputMap, testCabalProjectLocal, runCommand, haskellLib }:
+
+let
+  mkProject = src: project' {
+    inherit compiler-nix-name evalSystem src;
+    name = "cabal-files-filter";
+    inputMap = testInputMap;
+    cabalProjectLocal = testCabalProjectLocal;
+  };
+
+  withUnrelated = mkProject (testSrc "cabal-files-filter");
+  withoutUnrelated = mkProject (haskellLib.cleanSourceWith {
+    name = "cabal-files-filter";
+    src = testSrc "cabal-files-filter";
+    filter = path: _type:
+      !(lib.hasInfix "/cabal-files-filter/unrelated" path)
+      && !(lib.hasInfix "/cabal-files-filter/pkg/docs" path);
+  });
+
+  same = withUnrelated.plan-nix.drvPath == withoutUnrelated.plan-nix.drvPath;
+
+in lib.recurseIntoAttrs {
+  ifdInputs = {
+    inherit (withUnrelated) plan-nix;
+  };
+
+  run = assert lib.assertMsg same
+    "cabal-files-filter: plan-nix changed when directories without .cabal files were removed (${withUnrelated.plan-nix.drvPath} vs ${withoutUnrelated.plan-nix.drvPath})";
+    runCommand "cabal-files-filter-test" {} ''
+      touch $out
+    '';
+}
