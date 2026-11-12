@@ -67,6 +67,19 @@ final: prev: prev.lib.optionalAttrs prev.stdenv.hostPlatform.isMusl ({
   nix = prev.nix.overrideAttrs (_: { doInstallCheck = false; });
   # Cross-compiled test binaries can't run on the build host
   libffi = prev.libffi.overrideAttrs (_: prev.lib.optionalAttrs (prev.stdenv.hostPlatform != prev.stdenv.buildPlatform) { doCheck = false; });
+
+  # Arch-optimized SIMD memcmp for musl (replaces the generic byte loop).
+  # The per-arch sources live next to this overlay and are copied into the
+  # musl tree before build, where the Makefile ARCH_GLOBS pick them up and
+  # the arch object replaces the generic one. Gated to the architectures
+  # we ship sources for.
+  musl = prev.musl.overrideAttrs (old: prev.lib.optionalAttrs (prev.stdenv.hostPlatform.isx86_64 || (prev.stdenv.hostPlatform.isAarch64 && prev.stdenv.hostPlatform.isLittleEndian)) {
+    postPatch = (old.postPatch or "") + prev.lib.optionalString prev.stdenv.hostPlatform.isx86_64 ''
+      cp ${./patches/musl/memcmp-x86_64.s} src/string/x86_64/memcmp.s
+    '' + prev.lib.optionalString (prev.stdenv.hostPlatform.isAarch64 && prev.stdenv.hostPlatform.isLittleEndian) ''
+      cp ${./patches/musl/memcmp-aarch64.S} src/string/aarch64/memcmp.S
+    '';
+  });
 } // prev.lib.optionalAttrs (prev.lib.versionAtLeast prev.lib.trivial.release "20.03") {
   # Fix infinite recursion between openssh and fetchcvs
   openssh = prev.openssh.override { withFIDO = false; };
