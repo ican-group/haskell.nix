@@ -271,6 +271,7 @@ let
     callCabalProjectToNix = callTest ./call-cabal-project-to-nix { inherit evalPackages; };
     cabal-source-repo = callTest ./cabal-source-repo {};
     cabal-source-repo-comments = callTest ./cabal-source-repo-comments {};
+    cabal-source-repo-symlink = callTest ./cabal-source-repo-symlink {};
     buildable = callTest ./buildable {};
     project-flags-cabal = callTest ./project-flags/cabal.nix {};
     project-flags-stack = callTest ./project-flags/stack.nix {};

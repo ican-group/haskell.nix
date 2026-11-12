@@ -1,35 +1,11 @@
 # Use cleanSourceWith to filter just the files needed for a particular
 # component of the package
-{ lib, cleanSourceWith }: package: component: componentName: src:
+{ lib, cleanSourceWith, normalizeRelativePath }: package: component: componentName: src:
 let
   srcStr' = src.origSrc or null;
   subDir = if src.origSubDir or "" == ""
     then ""
     else lib.removePrefix "/" src.origSubDir + "/";
-  # Remove a directory for each .. part of a path.
-  removeDotDots = parts: lib.reverseList (
-    builtins.foldl' (a: b:
-      if b == ".."
-        then builtins.tail a
-        else builtins.concatLists [ [b] a ]) [] parts);
-  # Transform
-  #  "."            -> ""
-  #  "./."          -> ""
-  #  "./xyz"        -> "xyz"
-  #  "../abc"       -> ERROR
-  #  "abc/.."       -> ""
-  #  "abc/../xyz"   -> "xyz"
-  #  "abc/./xyz"    -> "abc/xyz"
-  #  "abc/./../xyz" -> "xyz"
-  #  "abc/.././xyz" -> "xyz"
-  #  "abc/"         -> "abc/"
-  normalizeRelativePath = path:
-    let
-      # Split the path into component parts and remove the empty ones and single dots.
-      nonEmptyParts = lib.filter (x: x != "" && x != ".") (lib.splitString "/" path);
-    in lib.concatStringsSep "/" (removeDotDots nonEmptyParts)
-      # Keep the trailing slash if there was one.
-      + (if lib.hasSuffix "/" path then "/" else "");
   isAbsolutePath = path: lib.hasPrefix "/" path;
   normalizePath = path:
     (if isAbsolutePath path

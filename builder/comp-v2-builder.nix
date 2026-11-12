@@ -152,13 +152,30 @@ let
   # package emits its OWN block into its fragment; the build-time
   # composer collects them across the closure (and skips them from
   # `extra-packages:`).
-  minimalSourceRepo = pkgs.runCommand "v2-source-repo-${pkgName}-${pkgVersion}"
+  #
+  # The repo holds the whole `source-repository-package` repository and
+  # the block names the package's `subdir:` (as plan-nix does), so
+  # relative symlinks out of the subdir still resolve (#1134).  The
+  # derivation depends only on the repository, so packages from the same
+  # repository share one (its name comes from the repository's store path).
+  # A top-level `.git` (e.g. an `inputMap` entry that is a git checkout) is
+  # left out, otherwise `git init` would reuse it and `minimal` would not
+  # be created.
+  srcRootAndSubDir = haskellLib.rootAndSubDir src;
+  sourceRepoSubDir = lib.removePrefix "/" srcRootAndSubDir.subDir;
+  sourceRepoName =
+    let b = builtins.unsafeDiscardStringContext (baseNameOf (toString srcRootAndSubDir.root));
+    in lib.strings.sanitizeDerivationName (
+      if builtins.match "[0-9a-df-np-sv-z]{32}-.*" b != null
+        then builtins.substring 33 (-1) b
+        else b);
+  minimalSourceRepo = pkgs.runCommand "v2-source-repo-${sourceRepoName}"
     { nativeBuildInputs = [ pkgs.rsync pkgs.gitMinimal ];
       preferLocalBuild = true;
     }
     ''
       mkdir $out
-      rsync -a --prune-empty-dirs --chmod=u+w "${src}/" "$out/"
+      rsync -a --prune-empty-dirs --chmod=u+w --exclude=/.git "${srcRootAndSubDir.root}/" "$out/"
       cd $out
       git init -b minimal
       git add --force .
@@ -173,7 +190,7 @@ let
     source-repository-package
       type: git
       location: file://${minimalSourceRepo}
-      subdir: .
+      subdir: ${if sourceRepoSubDir == "" then "." else sourceRepoSubDir}
       tag: minimal
   '';
 

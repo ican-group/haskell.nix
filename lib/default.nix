@@ -232,9 +232,34 @@ in {
   # Replacement for lib.cleanSourceWith that has a subDir argument.
   inherit (import ./clean-source-with.nix { inherit lib; }) cleanSourceWith;
 
+  # Normalize a relative path:
+  #  "."            -> ""
+  #  "./."          -> ""
+  #  "./xyz"        -> "xyz"
+  #  "../abc"       -> ERROR
+  #  "abc/.."       -> ""
+  #  "abc/../xyz"   -> "xyz"
+  #  "abc/./xyz"    -> "abc/xyz"
+  #  "abc/./../xyz" -> "xyz"
+  #  "abc/.././xyz" -> "xyz"
+  #  "abc/"         -> "abc/"
+  normalizeRelativePath = path:
+    let
+      # Remove a directory for each .. part of a path.
+      removeDotDots = parts: lib.reverseList (
+        builtins.foldl' (a: b:
+          if b == ".."
+            then builtins.tail a
+            else builtins.concatLists [ [b] a ]) [] parts);
+      # Split the path into component parts and remove the empty ones and single dots.
+      nonEmptyParts = lib.filter (x: x != "" && x != ".") (lib.splitString "/" path);
+    in lib.concatStringsSep "/" (removeDotDots nonEmptyParts)
+      # Keep the trailing slash if there was one.
+      + (if lib.hasSuffix "/" path then "/" else "");
+
   # Use cleanSourceWith to filter just the files needed for a particular
   # component of a package
-  cleanCabalComponent = import ./clean-cabal-component.nix { inherit lib cleanSourceWith; };
+  cleanCabalComponent = import ./clean-cabal-component.nix { inherit lib cleanSourceWith normalizeRelativePath; };
 
   # Clean git directory based on `git ls-files --recurse-submodules`
   cleanGit = import ./clean-git.nix {
