@@ -1,0 +1,1673 @@
+diff --git a/compiler/GHC/CmmToAsm/AArch64/CodeGen.hs b/compiler/GHC/CmmToAsm/AArch64/CodeGen.hs
+index ea96f25c62..e1c65f6334 100644
+--- a/compiler/GHC/CmmToAsm/AArch64/CodeGen.hs
++++ b/compiler/GHC/CmmToAsm/AArch64/CodeGen.hs
+@@ -24,10 +24,12 @@ import GHC.CmmToAsm.AArch64.Cond
+ import GHC.CmmToAsm.CPrim
+ import GHC.Cmm.DebugBlock
+ import GHC.CmmToAsm.Monad
+-   ( NatM, getNewRegNat
++   ( NatM, getNewRegNat, getBlockIdNat
+    , getPicBaseMaybeNat, getPlatform, getConfig
+    , getDebugBlock, getFileId
++   , addImmediateSuccessorNat, updateCfgNat
+    )
++import GHC.CmmToAsm.CFG
+ -- import GHC.CmmToAsm.Instr
+ import GHC.CmmToAsm.PIC
+ import GHC.CmmToAsm.Format
+@@ -1584,7 +1586,192 @@ genCCall target dest_regs arg_regs bid = do
+         MO_Memcpy  _align   -> mkCCall "memcpy"
+         MO_Memset  _align   -> mkCCall "memset"
+         MO_Memmove _align   -> mkCCall "memmove"
+-        MO_Memcmp  _align   -> mkCCall "memcmp"
++        MO_Memcmp  _align
++          | [dst_a, src_a, CmmLit (CmmInt n _)] <- arg_regs
++          , [res_reg] <- dest_regs
++          , n >= 0 -> do
++            config <- getConfig
++            plat2 <- getPlatform
++            let threshold = ncgInlineThresholdMemcpy config
++                res_r = getRegisterReg plat2 (CmmLocal res_reg)
++                resW = typeWidth (localRegType res_reg)
++                isLE = platformByteOrder plat2 == LittleEndian
++                fallback = mkCCall "hs_memcmp"
++            if n == 0
++              then do
++                let insns = 1 :: Word
++                if insns <= threshold
++                  then return (unitOL (MOV (OpReg W32 res_r) (OpImm (ImmInt 0))), Nothing)
++                  else fallback
++              else if n == 1
++                then do
++                  let insns = 3 :: Word
++                  if insns > threshold
++                    then fallback
++                    else do
++                      (p1, _, code_p1) <- getSomeReg dst_a
++                      p1_r <- getNewRegNat II64
++                      (p2, _, code_p2) <- getSomeReg src_a
++                      p2_r <- getNewRegNat II64
++                      t1 <- getNewRegNat II32
++                      t2 <- getNewRegNat II32
++                      hi_r <- getNewRegNat (if resW == W64 then II64 else II32)
++                      lo_r <- getNewRegNat (if resW == W64 then II64 else II32)
++                      let resOpW = if resW == W64 then W64 else W32
++                          addr1 = OpAddr (AddrRegImm p1_r (ImmInt 0))
++                          addr2 = OpAddr (AddrRegImm p2_r (ImmInt 0))
++                          code = code_p1 `appOL` code_p2 `appOL` toOL
++                            [ MOV (OpReg W64 p1_r) (OpReg W64 p1)
++                            , MOV (OpReg W64 p2_r) (OpReg W64 p2)
++                            , LDR II8 (OpReg W8 t1) addr1
++                            , LDR II8 (OpReg W8 t2) addr2
++                            , CMP (OpReg W32 t1) (OpReg W32 t2)
++                            , CSET (OpReg resOpW hi_r) UGT
++                            , CSET (OpReg resOpW lo_r) ULT
++                            , SUB (OpReg resOpW res_r) (OpReg resOpW hi_r) (OpReg resOpW lo_r)
++                            ]
++                      return (code, Nothing)
++                else if n == 2 || n == 4 || n == 8
++                  then do
++                    let insns = 8 :: Integer
++                    if insns > toInteger threshold
++                      then fallback
++                      else do
++                        (p1, _, code_p1) <- getSomeReg dst_a
++                        p1_r <- getNewRegNat II64
++                        (p2, _, code_p2) <- getSomeReg src_a
++                        p2_r <- getNewRegNat II64
++                        let chunkBytes = n
++                            (ldFmt, ldW, cmpW) = case n of
++                              2 -> (II16, W16, W32)
++                              4 -> (II32, W32, W32)
++                              _ -> (II64, W64, W64)
++                        t1 <- getNewRegNat (if cmpW == W64 then II64 else II32)
++                        t2 <- getNewRegNat (if cmpW == W64 then II64 else II32)
++                        hi_r <- getNewRegNat (if resW == W64 then II64 else II32)
++                        lo_r <- getNewRegNat (if resW == W64 then II64 else II32)
++                        let resOpW = if resW == W64 then W64 else W32
++                            revW = cmpW
++                            addr1 = OpAddr (AddrRegImm p1_r (ImmInt 0))
++                            addr2 = OpAddr (AddrRegImm p2_r (ImmInt 0))
++                            revCode = if isLE && chunkBytes > 1
++                              then [ REV (OpReg revW t1) (OpReg revW t1)
++                                   , REV (OpReg revW t2) (OpReg revW t2) ]
++                              else []
++                            code = code_p1 `appOL` code_p2 `appOL` toOL
++                              [ MOV (OpReg W64 p1_r) (OpReg W64 p1)
++                              , MOV (OpReg W64 p2_r) (OpReg W64 p2)
++                              ] `appOL` toOL
++                              [ LDR ldFmt (OpReg ldW t1) addr1
++                              , LDR ldFmt (OpReg ldW t2) addr2
++                              ] `appOL` toOL revCode `appOL` toOL
++                              [ CMP (OpReg cmpW t1) (OpReg cmpW t2)
++                              , CSET (OpReg resOpW hi_r) UGT
++                              , CSET (OpReg resOpW lo_r) ULT
++                              , SUB (OpReg resOpW res_r) (OpReg resOpW hi_r) (OpReg resOpW lo_r)
++                              ]
++                        return (code, Nothing)
++                  else do
++                    let numChunks :: Integer
++                        numChunks
++                          | n == 3           = 2
++                          | n >= 5 && n <= 7 = 2
++                          | otherwise        = (n + 7) `div` 8
++                        insns :: Integer
++                        insns = 4 * numChunks
++                    -- Compute chunk count in O(1) Integer arithmetic before
++                    -- building offsets, and cap n <= 32768 so every aligned
++                    -- chunk offset fits AArch64's 12-bit scaled unsigned LDR immediate.
++                    if insns > toInteger threshold || n > 32768
++                      then fallback
++                      else do
++                        let (chunkBytes, cmpW, ldFmt, ldW) = case n of
++                              3 -> (2 :: Integer, W32, II16, W16)
++                              _ | n >= 5 && n <= 7 -> (4, W32, II32, W32)
++                              _ -> (8, W64, II64, W64)
++                            offsets = case n of
++                              3 -> [0, 1]
++                              _ | n >= 5 && n <= 7 -> [0, n - 4]
++                              _ -> let k = n `div` 8
++                                       base = [0, 8 .. (k - 1) * 8]
++                                       tailOff = if n `mod` 8 /= 0 then [n - 8] else []
++                                   in base ++ tailOff
++                            m = length offsets
++                            canUseImm off = off `mod` chunkBytes == 0 && 0 <= off && off < 4096 * chunkBytes
++                        (p1, _, code_p1) <- getSomeReg dst_a
++                        p1_r <- getNewRegNat II64
++                        (p2, _, code_p2) <- getSomeReg src_a
++                        p2_r <- getNewRegNat II64
++                        t1 <- getNewRegNat (if cmpW == W64 then II64 else II32)
++                        t2 <- getNewRegNat (if cmpW == W64 then II64 else II32)
++                        hi_r <- getNewRegNat (if resW == W64 then II64 else II32)
++                        lo_r <- getNewRegNat (if resW == W64 then II64 else II32)
++                        lblEq <- getBlockIdNat
++                        lblDiff <- getBlockIdNat
++                        lblDone <- getBlockIdNat
++                        nextBlks <- mapM (const getBlockIdNat) [1 .. m - 1]
++                        let resOpW = if resW == W64 then W64 else W32
++                            nextIds = nextBlks ++ [lblEq]
++                            blkIds = bid : nextBlks
++                            lastOff = last offsets
++                        (offCode, addr1, addr2) <-
++                          if not (canUseImm lastOff)
++                            then do
++                              (off_r, _, c) <- getSomeReg (CmmLit (CmmInt lastOff W64))
++                              let mkA base off
++                                    | canUseImm off = OpAddr (AddrRegImm base (ImmInt (fromInteger off)))
++                                    | otherwise     = OpAddr (AddrRegReg base off_r)
++                              return (c, mkA p1_r, mkA p2_r)
++                            else do
++                              let mkA base off = OpAddr (AddrRegImm base (ImmInt (fromInteger off)))
++                              return (nilOL, mkA p1_r, mkA p2_r)
++                        let -- Note: the last chunk emits NEWBLOCK lblEq, so eqCode
++                            -- starts directly with lblEq's instructions!
++                            mkChunk :: (Integer, BlockId) -> InstrBlock
++                            mkChunk (off, nextId) =
++                              toOL
++                                [ LDR ldFmt (OpReg ldW t1) (addr1 off)
++                                , LDR ldFmt (OpReg ldW t2) (addr2 off)
++                                , CMP (OpReg cmpW t1) (OpReg cmpW t2)
++                                , BCOND NE (TBlock lblDiff)
++                                , B (TBlock nextId)
++                                , NEWBLOCK nextId
++                                ]
++                            fastCode = concatOL (map mkChunk (zip offsets nextIds))
++                            eqCode = toOL
++                              [ MOV (OpReg W32 res_r) (OpImm (ImmInt 0))
++                              , B (TBlock lblDone)
++                              ]
++                            revCode = if isLE && chunkBytes > 1
++                              then [ REV (OpReg cmpW t1) (OpReg cmpW t1)
++                                   , REV (OpReg cmpW t2) (OpReg cmpW t2) ]
++                              else []
++                            diffCode = toOL
++                              ([ NEWBLOCK lblDiff ] ++ revCode ++
++                              [ CMP (OpReg cmpW t1) (OpReg cmpW t2)
++                              , CSET (OpReg resOpW hi_r) UGT
++                              , CSET (OpReg resOpW lo_r) ULT
++                              , SUB (OpReg resOpW res_r) (OpReg resOpW hi_r) (OpReg resOpW lo_r)
++                              , B (TBlock lblDone)
++                              , NEWBLOCK lblDone
++                              ])
++                            code = code_p1 `appOL` code_p2 `appOL` offCode `appOL` toOL
++                              [ MOV (OpReg W64 p1_r) (OpReg W64 p1)
++                              , MOV (OpReg W64 p2_r) (OpReg W64 p2)
++                              ] `appOL` fastCode `appOL` eqCode `appOL` diffCode
++                        -- Keep the NCG CFG consistent when returning Just lblDone
++                        -- (mirrors X86 genMemCmpInline so liveness/CFG passes stay in sync).
++                        addImmediateSuccessorNat bid lblDone
++                        updateCfgNat $ \cfg ->
++                          let cfg1 = delEdge bid lblDone cfg
++                              addChunkEdges c (blk, nxt) =
++                                addWeightEdge blk nxt 80 . addWeightEdge blk lblDiff 20 $ c
++                              cfg2 = foldl addChunkEdges cfg1 (zip blkIds nextIds)
++                              cfg3 = addWeightEdge lblEq lblDone 100 cfg2
++                              cfg4 = addWeightEdge lblDiff lblDone 100 cfg3
++                          in cfg4
++                        return (code, Just lblDone)
++          | otherwise -> mkCCall "hs_memcmp"
+ 
+         MO_SuspendThread    -> mkCCall "suspendThread"
+         MO_ResumeThread     -> mkCCall "resumeThread"
+diff --git a/compiler/GHC/CmmToAsm/AArch64/Instr.hs b/compiler/GHC/CmmToAsm/AArch64/Instr.hs
+index 01b49ea8db..85626a536f 100644
+--- a/compiler/GHC/CmmToAsm/AArch64/Instr.hs
++++ b/compiler/GHC/CmmToAsm/AArch64/Instr.hs
+@@ -114,6 +114,7 @@ regUsageOfInstr platform instr = case instr of
+   MVN dst src              -> usage (regOp src, regOp dst)
+   ORR dst src1 src2        -> usage (regOp src1 ++ regOp src2, regOp dst)
+   ROR dst src1 src2        -> usage (regOp src1 ++ regOp src2, regOp dst)
++  REV dst src              -> usage (regOp src, regOp dst)
+   TST src1 src2            -> usage (regOp src1 ++ regOp src2, [])
+   -- 4. Branch Instructions ----------------------------------------------------
+   J t                      -> usage (regTarget t, [])
+@@ -256,6 +257,7 @@ patchRegsOfInstr instr env = case instr of
+     MVN o1 o2      -> MVN  (patchOp o1) (patchOp o2)
+     ORR o1 o2 o3   -> ORR  (patchOp o1) (patchOp o2) (patchOp o3)
+     ROR o1 o2 o3   -> ROR  (patchOp o1) (patchOp o2) (patchOp o3)
++    REV o1 o2      -> REV  (patchOp o1) (patchOp o2)
+     TST o1 o2      -> TST  (patchOp o1) (patchOp o2)
+ 
+     -- 4. Branch Instructions --------------------------------------------------
+@@ -628,6 +630,7 @@ data Instr
+     | ORN Operand Operand Operand -- rd = rn | ~op2
+     | ORR Operand Operand Operand -- rd = rn | op2
+     | ROR Operand Operand Operand -- rd = rn ≫ rm  or  rd = rn ≫ #i, i is 6 bits
++    | REV Operand Operand -- rd = reverse bytes of rn
+     | TST Operand Operand -- rn & op2
+     -- Load and stores.
+     -- TODO STR/LDR might want to change to STP/LDP with XZR for the second register.
+@@ -707,6 +710,7 @@ instrCon i =
+       ORN{} -> "ORN"
+       ORR{} -> "ORR"
+       ROR{} -> "ROR"
++      REV{} -> "REV"
+       TST{} -> "TST"
+       STR{} -> "STR"
+       STLR{} -> "STLR"
+diff --git a/compiler/GHC/CmmToAsm/AArch64/Ppr.hs b/compiler/GHC/CmmToAsm/AArch64/Ppr.hs
+index be68f0f88e..7454002e12 100644
+--- a/compiler/GHC/CmmToAsm/AArch64/Ppr.hs
++++ b/compiler/GHC/CmmToAsm/AArch64/Ppr.hs
+@@ -436,6 +436,7 @@ pprInstr platform instr = case instr of
+   ORN o1 o2 o3  -> op3 (text "\torn") o1 o2 o3
+   ORR o1 o2 o3  -> op3 (text "\torr") o1 o2 o3
+   ROR o1 o2 o3  -> op3 (text "\tror") o1 o2 o3
++  REV o1 o2     -> op2 (text "\trev") o1 o2
+   TST o1 o2     -> op2 (text "\ttst") o1 o2
+ 
+   -- 4. Branch Instructions ----------------------------------------------------
+diff --git a/compiler/GHC/CmmToAsm/PPC/CodeGen.hs b/compiler/GHC/CmmToAsm/PPC/CodeGen.hs
+index 0584afefa2..ed40e2da89 100644
+--- a/compiler/GHC/CmmToAsm/PPC/CodeGen.hs
++++ b/compiler/GHC/CmmToAsm/PPC/CodeGen.hs
+@@ -2052,7 +2052,7 @@ genCCall' config gcp target dest_regs args
+                     MO_Memcpy _  -> (fsLit "memcpy", False)
+                     MO_Memset _  -> (fsLit "memset", False)
+                     MO_Memmove _ -> (fsLit "memmove", False)
+-                    MO_Memcmp _  -> (fsLit "memcmp", False)
++                    MO_Memcmp _  -> (fsLit "hs_memcmp", False)
+ 
+                     MO_SuspendThread -> (fsLit "suspendThread", False)
+                     MO_ResumeThread  -> (fsLit "resumeThread", False)
+diff --git a/compiler/GHC/CmmToAsm/X86/CodeGen.hs b/compiler/GHC/CmmToAsm/X86/CodeGen.hs
+index 061a1838ee..64e2669ea9 100644
+--- a/compiler/GHC/CmmToAsm/X86/CodeGen.hs
++++ b/compiler/GHC/CmmToAsm/X86/CodeGen.hs
+@@ -2163,6 +2163,8 @@ genPrim bid (MO_AtomicRMW width amop) [dst] [addr, n]
+   = genAtomicRMW bid width amop dst addr n
+ genPrim bid (MO_Ctz width) [dst] [src]
+   = genCtz bid width dst src
++genPrim bid (MO_Memcmp align) [res] [dst, src, n]
++  = genMemCmp bid align res dst src n
+ 
+ -- Then we deal with cases which not introducing new blocks in the stream.
+ genPrim bid prim dst args
+@@ -2176,7 +2178,6 @@ genSimplePrim
+     -> NatM InstrBlock
+ genSimplePrim bid (MO_Memcpy align)    []      [dst,src,n]    = genMemCpy  bid align dst src n
+ genSimplePrim bid (MO_Memmove align)   []      [dst,src,n]    = genMemMove bid align dst src n
+-genSimplePrim bid (MO_Memcmp align)    [res]   [dst,src,n]    = genMemCmp  bid align res dst src n
+ genSimplePrim bid (MO_Memset align)    []      [dst,c,n]      = genMemSet  bid align dst c n
+ genSimplePrim _   MO_ReadBarrier       []      []             = return nilOL -- barriers compile to no code on x86/x86-64;
+ genSimplePrim _   MO_WriteBarrier      []      []             = return nilOL -- we keep it this long in order to prevent earlier optimisations.
+@@ -3755,11 +3756,184 @@ genMemMove bid _align dst src n = do
+   -- memcpy and memset)
+   genLibCCall bid (fsLit "memmove") [] [dst,src,n]
+ 
+-genMemCmp :: BlockId -> p -> CmmFormal -> CmmActual -> CmmActual -> CmmActual -> NatM InstrBlock
+-genMemCmp bid _align res dst src n = do
+-  -- TODO: generate inline assembly when under a given treshold (similarly to
+-  -- memcpy and memset)
+-  genLibCCall bid (fsLit "memcmp") [res] [dst,src,n]
++genMemCmp :: BlockId -> p -> CmmFormal -> CmmActual -> CmmActual -> CmmActual -> NatM (InstrBlock, Maybe BlockId)
++genMemCmp bid _align res dst src n_arg = do
++  is32Bit <- is32BitPlatform
++  case n_arg of
++    CmmLit (CmmInt n _) | not is32Bit, n >= 0 -> genMemCmpInline n
++    _ -> fallback
++  where
++    fallback = (,Nothing) <$> genLibCCall bid (fsLit "hs_memcmp") [res] [dst,src,n_arg]
++    genMemCmpInline :: Integer -> NatM (InstrBlock, Maybe BlockId)
++    genMemCmpInline n = do
++      config <- getConfig
++      let threshold = ncgInlineThresholdMemcpy config
++          res_r = getLocalRegReg res
++          resW = typeWidth (localRegType res)
++          moveRes32 :: Reg -> InstrBlock
++          moveRes32 r32 = case resW of
++            W32 -> unitOL (MOV II32 (OpReg r32) (OpReg res_r))
++            W64 -> unitOL (MOVSxL II32 (OpReg r32) (OpReg res_r))
++            _   -> unitOL (MOV II32 (OpReg r32) (OpReg res_r))
++      if n == 0
++        then do
++          let insns = 1 :: Word
++          if insns <= threshold
++            then return (unitOL (XOR II32 (OpReg res_r) (OpReg res_r)), Nothing)
++            else fallback
++        else if n == 1
++          then do
++            let insns = 3 :: Word
++            if insns > threshold
++              then fallback
++              else do
++                code_dst <- getAnyReg dst
++                p1_r <- getNewRegNat II64
++                code_src <- getAnyReg src
++                p2_r <- getNewRegNat II64
++                t1 <- getNewRegNat II32
++                t2 <- getNewRegNat II32
++                let addr1 = OpAddr (AddrBaseIndex (EABaseReg p1_r) EAIndexNone (ImmInt 0))
++                    addr2 = OpAddr (AddrBaseIndex (EABaseReg p2_r) EAIndexNone (ImmInt 0))
++                    code = code_dst p1_r `appOL` code_src p2_r `appOL` toOL
++                      [ MOVZxL II8 addr1 (OpReg t1)
++                      , MOVZxL II8 addr2 (OpReg t2)
++                      , SUB II32 (OpReg t2) (OpReg t1)
++                      ]
++                let fini = case resW of
++                      W32 | t1 == res_r -> nilOL
++                      _ -> moveRes32 t1
++                -- When res is W32 and t1 happens to be res_r, no move needed.
++                -- getNewRegNat always returns a fresh reg, so t1 /= res_r;
++                -- keep the general move.
++                return (code `appOL` fini, Nothing)
++          else if n == 2 || n == 4 || n == 8
++            then do
++              let insns = 8 :: Integer
++              if insns > toInteger threshold
++                then fallback
++                else do
++                  code_dst <- getAnyReg dst
++                  p1_r <- getNewRegNat II64
++                  code_src <- getAnyReg src
++                  p2_r <- getNewRegNat II64
++                  let (ldFmt1, ldFmt2, bswapFmt, cmpFmt, tFmt) = case n of
++                        2 -> (II16, II16, II32, II32, II32)
++                        4 -> (II32, II32, II32, II32, II32)
++                        _ -> (II64, II64, II64, II64, II64)
++                  t1 <- getNewRegNat tFmt
++                  t2 <- getNewRegNat tFmt
++                  hi8 <- getNewRegNat II8
++                  lo8 <- getNewRegNat II8
++                  r32 <- getNewRegNat II32
++                  lo32 <- getNewRegNat II32
++                  let addr1 = OpAddr (AddrBaseIndex (EABaseReg p1_r) EAIndexNone (ImmInt 0))
++                      addr2 = OpAddr (AddrBaseIndex (EABaseReg p2_r) EAIndexNone (ImmInt 0))
++                      ld1 = case n of
++                        2 -> MOVZxL ldFmt1 addr1 (OpReg t1)
++                        _ -> MOV ldFmt1 addr1 (OpReg t1)
++                      ld2 = case n of
++                        2 -> MOVZxL ldFmt2 addr2 (OpReg t2)
++                        _ -> MOV ldFmt2 addr2 (OpReg t2)
++                      code = code_dst p1_r `appOL` code_src p2_r `appOL` toOL
++                        [ ld1
++                        , ld2
++                        , BSWAP bswapFmt t1
++                        , BSWAP bswapFmt t2
++                        , CMP cmpFmt (OpReg t2) (OpReg t1)
++                        , SETCC GU (OpReg hi8)
++                        , SETCC LU (OpReg lo8)
++                        , MOVZxL II8 (OpReg hi8) (OpReg r32)
++                        , MOVZxL II8 (OpReg lo8) (OpReg lo32)
++                        , SUB II32 (OpReg lo32) (OpReg r32)
++                        ]
++                      fini = case resW of
++                        W32 | r32 == res_r -> nilOL
++                        _ -> moveRes32 r32
++                  return (code `appOL` fini, Nothing)
++            else do
++              let numChunks :: Integer
++                  numChunks
++                    | n == 3           = 2
++                    | n >= 5 && n <= 7 = 2
++                    | otherwise        = (n + 7) `div` 8
++                  insns :: Integer
++                  insns = 4 * numChunks
++              if insns > toInteger threshold || n > 0x7fffffff
++                then fallback
++                else do
++                  let (chunkBytes, cmpFmt, tFmt, offsets) = case n of
++                        3 -> (2 :: Integer, II32, II32, [0, 1])
++                        _ | n >= 5 && n <= 7 -> (4, II32, II32, [0, n - 4])
++                        _ -> let k = n `div` 8
++                                 base = [0, 8 .. (k - 1) * 8]
++                                 tailOff = if n `mod` 8 /= 0 then [n - 8] else []
++                             in (8, II64, II64, base ++ tailOff)
++                      m = length offsets
++                  code_dst <- getAnyReg dst
++                  p1_r <- getNewRegNat II64
++                  code_src <- getAnyReg src
++                  p2_r <- getNewRegNat II64
++                  t1 <- getNewRegNat tFmt
++                  t2 <- getNewRegNat tFmt
++                  r32 <- getNewRegNat II32
++                  one32 <- getNewRegNat II32
++                  lblEq <- getBlockIdNat
++                  lblDiff <- getBlockIdNat
++                  lblDone <- getBlockIdNat
++                  nextBlks <- mapM (const getBlockIdNat) [1 .. m - 1]
++                  let blkIds = bid : nextBlks
++                      nextIds = nextBlks ++ [lblEq]
++                      mkAddr :: Reg -> Integer -> Operand
++                      mkAddr base off = OpAddr (AddrBaseIndex (EABaseReg base) EAIndexNone (ImmInt (fromInteger off)))
++                      mkLoad :: Operand -> Reg -> Instr
++                      mkLoad addr tmp = case chunkBytes of
++                        2 -> MOVZxL II16 addr (OpReg tmp)
++                        4 -> MOV II32 addr (OpReg tmp)
++                        _ -> MOV II64 addr (OpReg tmp)
++                      -- Fast-path chunks, each in its own block.
++                      -- Note: the last chunk emits NEWBLOCK lblEq, so eqCode
++                      -- starts directly with lblEq's instructions!
++                      mkChunk :: (Integer, BlockId) -> InstrBlock
++                      mkChunk (off, nextId) =
++                        toOL
++                          [ mkLoad (mkAddr p1_r off) t1
++                          , mkLoad (mkAddr p2_r off) t2
++                          , CMP cmpFmt (OpReg t2) (OpReg t1)
++                          , JXX NE lblDiff
++                          , JXX ALWAYS nextId
++                          , NEWBLOCK nextId
++                          ]
++                      fastCode = concatOL (map mkChunk (zip offsets nextIds))
++                      eqCode = toOL
++                        [ XOR II32 (OpReg res_r) (OpReg res_r)
++                        , JXX ALWAYS lblDone
++                        ]
++                      -- Cold out-of-line diff: bswap to big-endian order,
++                      -- then unsigned compare to produce -1 / 1.
++                      diffCode = toOL
++                        [ NEWBLOCK lblDiff
++                        , BSWAP cmpFmt t1
++                        , BSWAP cmpFmt t2
++                        , CMP cmpFmt (OpReg t2) (OpReg t1)
++                        , MOV II32 (OpImm (ImmInt (-1))) (OpReg r32)
++                        , MOV II32 (OpImm (ImmInt 1)) (OpReg one32)
++                        , CMOV GU II32 (OpReg one32) r32
++                        ] `appOL` moveRes32 r32 `appOL` toOL
++                        [ JXX ALWAYS lblDone
++                        , NEWBLOCK lblDone
++                        ]
++                      code = code_dst p1_r `appOL` code_src p2_r `appOL` fastCode `appOL` eqCode `appOL` diffCode
++                  -- CFG update: successive statements now live in lblDone.
++                  addImmediateSuccessorNat bid lblDone
++                  updateCfgNat $ \cfg ->
++                    let cfg1 = delEdge bid lblDone cfg
++                        addChunkEdges c (blk, nxt) = addWeightEdge blk nxt 80 . addWeightEdge blk lblDiff 20 $ c
++                        cfg2 = foldl addChunkEdges cfg1 (zip blkIds nextIds)
++                        cfg3 = addWeightEdge lblEq lblDone 100 cfg2
++                        cfg4 = addWeightEdge lblDiff lblDone 100 cfg3
++                    in cfg4
++                  return (code, Just lblDone)
+ 
+ genPrefetchData :: Int -> CmmExpr -> NatM (OrdList Instr)
+ genPrefetchData n src = do
+diff --git a/compiler/GHC/CmmToLlvm/Base.hs b/compiler/GHC/CmmToLlvm/Base.hs
+index 52ddf501b1..afe800551b 100644
+--- a/compiler/GHC/CmmToLlvm/Base.hs
++++ b/compiler/GHC/CmmToLlvm/Base.hs
+@@ -419,6 +419,7 @@ ghcInternalFunctions = do
+     let w = llvmWord platform
+         cint = LMInt $ widthInBits $ cIntWidth platform
+     mk "memcmp" cint [i8Ptr, i8Ptr, w]
++    mk "hs_memcmp" cint [i8Ptr, i8Ptr, w]
+     mk "memcpy" i8Ptr [i8Ptr, i8Ptr, w]
+     mk "memmove" i8Ptr [i8Ptr, i8Ptr, w]
+     mk "memset" i8Ptr [i8Ptr, w, w]
+@@ -458,7 +459,7 @@ getGlobalPtr llvmLbl = do
+   case m_ty of
+     -- Directly reference if we have seen it already
+     Just ty -> do
+-      if llvmLbl `elem` (map fsLit ["newSpark", "memmove", "memcpy", "memcmp", "memset"])
++      if llvmLbl `elem` (map fsLit ["newSpark", "memmove", "memcpy", "memcmp", "hs_memcmp", "memset"])
+         then return $ mkGlbVar (llvmLbl) ty Global
+         else return $ mkGlbVar (llvmDefLabel llvmLbl) ty Global
+     -- Otherwise use a forward alias of it
+diff --git a/compiler/GHC/CmmToLlvm/CodeGen.hs b/compiler/GHC/CmmToLlvm/CodeGen.hs
+index dbe623f85e..2788f6d5f5 100644
+--- a/compiler/GHC/CmmToLlvm/CodeGen.hs
++++ b/compiler/GHC/CmmToLlvm/CodeGen.hs
+@@ -327,6 +327,61 @@ genCall t@(PrimTarget op) [] args
+         arguments = argVars' ++ (alignVal:isVolVal)
+     statement $ Expr $ Call StdCall fptr arguments []
+ 
++genCall (PrimTarget (MO_Memcmp _)) [dst] [s1, s2, n] = do
++  platform <- getPlatform
++  case n of
++    CmmLit (CmmInt 0 _) -> runStmtsDecls $ do
++      dstV <- getCmmRegW (CmmLocal dst)
++      let dstTy = cmmToLlvmType (localRegType dst)
++      statement $ Store (mkIntLit dstTy 0) dstV Nothing
++    _ -> do
++      let useMemcmp = platformOS platform /= OSLinux ||
++                      case n of
++                        CmmLit (CmmInt k _) | k >= 1 && k <= 32 -> True
++                        _ -> False
++          fname = if useMemcmp then fsLit "memcmp" else fsLit "hs_memcmp"
++      platform' <- getPlatform
++      runStmtsDecls $ do
++        let target = PrimTarget (MO_Memcmp 0)
++            lmconv = CC_Ccc
++            arg_type (_, AddrHint) = (i8Ptr, [])
++            arg_type (expr, hint) =
++              case cmmToLlvmType $ cmmExprType platform' expr of
++                ty@(LMInt m) | m < 64 && lmconv == CC_Ccc && platformCConvNeedsExtension platform'
++                  -> (ty, if hint == SignedHint then [SignExt] else [ZeroExt])
++                ty -> (ty, [])
++            ret_type [] = LMVoid
++            ret_type [(_, AddrHint)] = i8Ptr
++            ret_type [(reg, _)] = cmmToLlvmType $ localRegType reg
++            ret_type t = panic $ "genCall MO_Memcmp: Too many return values! Can only handle"
++                            ++ " 0 or 1, given " ++ show (length t) ++ "."
++            fnAttrs = llvmStdFunAttrs
++            (res_hints, arg_hints) = foreignTargetHints target
++            args = [s1, s2, n]
++            res = [dst]
++            args_hints = zip args arg_hints
++            ress_hints = zip res res_hints
++            ccTy = StdCall
++            retTy = ret_type ress_hints
++            argTy = map arg_type args_hints
++            funTy = \name -> LMFunction $ LlvmFunctionDecl name ExternallyVisible
++                                 lmconv retTy FixedArgs argTy (llvmFunAlign platform')
++        argVars <- arg_varsW args_hints ([], nilOL, [])
++        fptr <- liftExprData $ getInstrinct2 fname (funTy fname)
++        v1 <- doExprW retTy $ Call ccTy fptr argVars fnAttrs
++        vreg <- getCmmRegW (CmmLocal dst)
++        if retTy == pLower (getVarType vreg)
++          then statement $ Store v1 vreg Nothing
++          else do
++            let ty = pLower $ getVarType vreg
++                op = case ty of
++                       vt | isPointer vt -> LM_Bitcast
++                          | isInt vt -> LM_Ptrtoint
++                          | otherwise ->
++                              panic $ "genCall MO_Memcmp: CmmReg bad match for returned type!"
++            v2 <- doExprW ty $ Cast op v1 ty
++            statement $ Store v2 vreg Nothing
++
+ -- We handle MO_U_Mul2 by simply using a 'mul' instruction, but with operands
+ -- twice the width (we first zero-extend them), e.g., on 64-bit arch we will
+ -- generate 'mul' on 128-bit operands. Then we only need some plumbing to
+@@ -877,7 +932,7 @@ cmmPrimOpFunctions mop = do
+     MO_Memset _
+        | is32bit   -> fsLit "llvm.memset.p0i8.i32"
+        | otherwise -> fsLit "llvm.memset.p0i8.i64"
+-    MO_Memcmp _   -> fsLit "memcmp"
++    MO_Memcmp _   -> fsLit "hs_memcmp"
+ 
+     MO_SuspendThread -> fsLit "suspendThread"
+     MO_ResumeThread  -> fsLit "resumeThread"
+diff --git a/compiler/GHC/StgToCmm/Prim.hs b/compiler/GHC/StgToCmm/Prim.hs
+index 65964d9852..57a64472b2 100644
+--- a/compiler/GHC/StgToCmm/Prim.hs
++++ b/compiler/GHC/StgToCmm/Prim.hs
+@@ -3145,8 +3145,9 @@ emitMemsetCall dst c n align =
+ 
+ emitMemcmpCall :: LocalReg -> CmmExpr -> CmmExpr -> CmmExpr -> Int -> FCode ()
+ emitMemcmpCall res ptr1 ptr2 n align = do
+-    -- 'MO_Memcmp' is assumed to return an 32bit 'CInt' because all
+-    -- code-gens currently call out to the @memcmp(3)@ C function.
++    -- 'MO_Memcmp' is assumed to return an 32bit 'CInt' because NCG and LLVM
++    -- code-gens call the RTS @hs_memcmp@ function (while C and Wasm code-gens
++    -- call @__builtin_memcmp@ / @memcmp@), all with memcmp(3) return semantics.
+     -- This was easier than moving the sign-extensions into
+     -- all the code-gens.
+     platform <- getPlatform
+diff --git a/hadrian/src/Settings/Packages.hs b/hadrian/src/Settings/Packages.hs
+index a864e3bbd8..8a0a54547a 100644
+--- a/hadrian/src/Settings/Packages.hs
++++ b/hadrian/src/Settings/Packages.hs
+@@ -211,6 +211,17 @@ packageArgs = do
+         , package hpcBin
+           ? builder (Cabal Flags) ? arg "-build-tool-depends"
+ 
++        ------------------------------- bytestring -------------------------------
++        -- In Stage1+ the RTS provides hs_memcmp (rts/HsMemcmp.c), so build
++        -- bytestring against it across all GHC preprocessing/compilation modes
++        -- and Haddock. Stage0 keeps using the C library memcmp so an unpatched
++        -- bootstrap GHC links cleanly.
++        , package bytestring ? notStage0 ? mconcat
++          [ (builder (Ghc CompileHs) ||^ builder (Ghc FindHsDependencies) ||^ builder (Ghc ToolArgs))
++              ? arg "-DHS_MEMCMP_IN_RTS"
++          , builder (Haddock BuildPackage) ? arg "--optghc=-DHS_MEMCMP_IN_RTS"
++          ]
++
+         ]
+ 
+ ghcBignumArgs :: Args
+diff --git a/rts/HsMemcmp.c b/rts/HsMemcmp.c
+new file mode 100644
+index 0000000000..58e377276c
+--- /dev/null
++++ b/rts/HsMemcmp.c
+@@ -0,0 +1,114 @@
++/* -----------------------------------------------------------------------------
++ *
++ * (c) 2026 Moritz Angermann <moritz.angermann@iohk.io>, Input Output Group
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ *
++ * Fast memcmp for the GHC RTS.
++ *
++ * 'hs_memcmp' has memcmp(3) semantics: it compares the first 'n' bytes of
++ * the areas starting at 's1' and 's2' as unsigned bytes and returns the
++ * difference of the first differing pair, or 0 if the areas compare equal.
++ * Unlike ISO C memcmp, 'hs_memcmp(s1, s2, 0)' is well-defined for any
++ * pointers (including NULL or dangling ones from empty 'ByteArray#'
++ * slices) and returns 0 without dereferencing either pointer.
++ *
++ * Dispatch:
++ *   - On non-glibc Linux on x86_64 or little-endian AArch64, the
++ *     hand-written SIMD implementation 'hs_memcmp_simd' (rts/memcmp/) is
++ *     used. Its reads are strictly bounded to [0, n), so no read ever
++ *     crosses the object bounds.
++ *   - On other non-glibc Linux architectures a portable 64-bit
++ *     word-at-a-time loop with byte tail is used. Words are loaded with
++ *     memcpy so there are no alignment or aliasing issues; only word
++ *     equality is tested, so the result is endianness independent and
++ *     the exact unsigned byte difference is produced by the tail.
++ *   - Everywhere else (glibc, Darwin, Windows, BSD, wasm, ...) the
++ *     platform memcmp is used.
++ *
++ * --------------------------------------------------------------------------*/
++
++#include "rts/PosixSource.h"
++#include "Rts.h"
++
++#if defined(__has_include)
++#if __has_include(<features.h>)
++#include <features.h>
++#endif
++#endif
++
++#include <stddef.h>
++#include <stdint.h>
++#include <string.h>
++
++#if (defined(linux_HOST_OS) || defined(__linux__)) && !defined(__GLIBC__) && \
++    !defined(__BIONIC__) && !defined(__ANDROID__) && !defined(__UCLIBC__) && \
++    (defined(x86_64_HOST_ARCH) || \
++     (defined(aarch64_HOST_ARCH) && !defined(WORDS_BIGENDIAN)) || \
++     (defined(__ELF__) && \
++      (defined(__x86_64__) || (defined(__aarch64__) && !defined(__AARCH64EB__)))))
++#define HS_MEMCMP_HAVE_SIMD 1
++extern int hs_memcmp_simd(const void *s1, const void *s2, size_t n);
++#endif
++
++/* Prevent GCC from synthesising recursive memcmp calls out of the portable
++ * byte-comparison loop when MuslMemcmp.c forwards memcmp -> hs_memcmp. */
++#if defined(__GNUC__) && !defined(__clang__)
++#define HS_MEMCMP_NO_DISTRIBUTE \
++    __attribute__((optimize("no-tree-loop-distribute-patterns")))
++#else
++#define HS_MEMCMP_NO_DISTRIBUTE
++#endif
++
++HS_MEMCMP_NO_DISTRIBUTE
++int hs_memcmp(const void *s1, const void *s2, size_t n)
++{
++#if (defined(linux_HOST_OS) || defined(__linux__)) && !defined(__GLIBC__) && \
++    !defined(__BIONIC__) && !defined(__ANDROID__) && !defined(__UCLIBC__)
++#if defined(HS_MEMCMP_HAVE_SIMD)
++    return hs_memcmp_simd(s1, s2, n);
++#else
++    /* Portable strictly-bounded fallback for other non-glibc Linux targets
++     * (e.g. riscv64, i386, arm, big-endian aarch64). */
++    const unsigned char *a = (const unsigned char *)s1;
++    const unsigned char *b = (const unsigned char *)s2;
++
++    while (n >= 8)
++    {
++        uint64_t w1;
++        uint64_t w2;
++        memcpy(&w1, a, 8);
++        memcpy(&w2, b, 8);
++        if (w1 != w2)
++        {
++            break;
++        }
++        a += 8;
++        b += 8;
++        n -= 8;
++    }
++
++    while (n > 0)
++    {
++        if (*a != *b)
++        {
++            return (int)*a - (int)*b;
++        }
++        a++;
++        b++;
++        n--;
++    }
++
++    return 0;
++#endif
++#else
++    /* n == 0 must not dereference the pointers: empty ByteArray# slices may
++     * pass NULL or dangling pointers, for which ISO C memcmp is undefined
++     * behaviour (glibc marks its arguments nonnull). */
++    if (n == 0)
++    {
++        return 0;
++    }
++    return memcmp(s1, s2, n);
++#endif
++}
+diff --git a/rts/MuslMemcmp.c b/rts/MuslMemcmp.c
+new file mode 100644
+index 0000000000..1fb6641037
+--- /dev/null
++++ b/rts/MuslMemcmp.c
+@@ -0,0 +1,50 @@
++/* -----------------------------------------------------------------------------
++ *
++ * (c) 2026 Moritz Angermann <moritz.angermann@iohk.io>, Input Output Group
++ *
++ * SPDX-License-Identifier: BSD-3-Clause
++ *
++ * Static-archive memcmp interposer for non-glibc Linux.
++ *
++ * When the RTS is built for static ways (no -DDYNAMIC) on non-glibc Linux,
++ * libHSrts*.a includes this archive member defining a strong 'memcmp' that
++ * forwards to 'hs_memcmp'. Because GHC places -lHSrts after Haskell package
++ * archives and before -lc, any still-undefined 'memcmp' reference from
++ * third-party Haskell/C packages extracts this member before libc.a(memcmp.lo)
++ * is scanned. Dynamic RTS shared objects (-DDYNAMIC) compile an empty TU so
++ * they never interpose libc's dynamic 'memcmp'.
++ *
++ * Both 'hs_memcmp' (where the portable C fallback loop lives) and this
++ * forwarder carry no-tree-loop-distribute-patterns on GCC so loop distribution
++ * cannot turn the fallback back into a recursive memcmp call.
++ *
++ * --------------------------------------------------------------------------*/
++
++#include "rts/PosixSource.h"
++#include "Rts.h"
++
++#include <stddef.h>
++#include <string.h>
++
++#if defined(__linux__) && !defined(__GLIBC__) && !defined(__BIONIC__) && \
++    !defined(__ANDROID__) && !defined(__UCLIBC__) && !defined(DYNAMIC) && \
++    !defined(SHARED)
++
++#if defined(__GNUC__) && !defined(__clang__)
++#define HS_MEMCMP_NO_DISTRIBUTE \
++    __attribute__((optimize("no-tree-loop-distribute-patterns")))
++#else
++#define HS_MEMCMP_NO_DISTRIBUTE
++#endif
++
++HS_MEMCMP_NO_DISTRIBUTE
++int memcmp(const void *s1, const void *s2, size_t n)
++{
++    return hs_memcmp(s1, s2, n);
++}
++
++#else
++
++typedef int hs_musl_memcmp_unused_tu;
++
++#endif
+diff --git a/rts/RtsSymbols.c b/rts/RtsSymbols.c
+index 932a6a4955..1d1fbd6a14 100644
+--- a/rts/RtsSymbols.c
++++ b/rts/RtsSymbols.c
+@@ -574,6 +574,7 @@ extern char **environ;
+       SymI_HasProto(ghc_unique_counter64)                               \
+       SymI_HasProto(ghc_unique_inc)                                     \
+       SymI_HasProto(genericRaise)                                       \
++      SymI_HasProto(hs_memcmp)                                          \
+       SymI_HasProto(getProgArgv)                                        \
+       SymI_HasProto(getFullProgArgv)                                    \
+       SymI_HasProto(setFullProgArgv)                                    \
+diff --git a/rts/include/rts/Utils.h b/rts/include/rts/Utils.h
+index 4aee9c3a67..b0f8bd510f 100644
+--- a/rts/include/rts/Utils.h
++++ b/rts/include/rts/Utils.h
+@@ -12,5 +12,12 @@
+ 
+ #pragma once
+ 
++#include <stddef.h>
++
+ /* Alternate to raise(3) for threaded rts, for BSD-based OSes */
+ int genericRaise(int sig);
++
++/* Fast memcmp with memcmp(3) semantics, implemented by the RTS
++ * (rts/HsMemcmp.c). Unlike ISO C memcmp, hs_memcmp(s1, s2, 0) returns 0
++ * without dereferencing either pointer. */
++int hs_memcmp(const void *s1, const void *s2, size_t n);
+diff --git a/rts/memcmp/memcmp-aarch64.S b/rts/memcmp/memcmp-aarch64.S
+new file mode 100644
+index 0000000000..3e59924b6d
+--- /dev/null
++++ b/rts/memcmp/memcmp-aarch64.S
+@@ -0,0 +1,257 @@
++/* HS_MEMCMP_INTRO_BEGIN */
++/* */
++/* Copyright (c) 2026 Moritz Angermann <moritz.angermann@iohk.io>, Input Output Group */
++/* SPDX-License-Identifier: BSD-3-Clause */
++/* */
++/* AArch64 little-endian memcmp implementation for the GHC RTS */
++/* (hs_memcmp_simd). */
++/* */
++/* Adapted from a musl libc memcmp patch by the same author (original MIT */
++/* notice retained below); RTS renaming and guards under BSD-3-Clause. */
++/* NEON, ARMv8-A baseline, no IFUNC. All reads are strictly bounded to */
++/* [0, n); n == 0 returns 0 without dereferencing either pointer. Returns the */
++/* exact unsigned byte difference of the first differing bytes. */
++/* HS_MEMCMP_INTRO_END */
++
++#include "ghcconfig.h"
++
++#if (defined(linux_HOST_OS) && defined(aarch64_HOST_ARCH) && !defined(WORDS_BIGENDIAN)) || (defined(__ELF__) && defined(__aarch64__) && !defined(__AARCH64EB__))
++	.text
++/* MIT License */
++/* */
++/* Copyright (c) 2026 Moritz Angermann <moritz.angermann@iohk.io>, Input Output Group */
++/* */
++/* Permission is hereby granted, free of charge, to any person obtaining a copy */
++/* of this software and associated documentation files (the "Software"), to deal */
++/* in the Software without restriction, including without limitation the rights */
++/* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell */
++/* copies of the Software, and to permit persons to whom the Software is */
++/* furnished to do so, subject to the following conditions: */
++/* */
++/* The above copyright notice and this permission notice shall be included in all */
++/* copies or substantial portions of the Software. */
++/* */
++/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR */
++/* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, */
++/* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE */
++/* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER */
++/* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, */
++/* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE */
++/* SOFTWARE. */
++/* */
++/* memcmp for musl libc, AArch64 (NEON, ARMv8-A baseline). */
++/* */
++/* No IFUNC, no target_clones: one straight-line NEON implementation valid on */
++/* every ARMv8-A core. */
++/* */
++/* Safety invariants: */
++/* - n == 0 returns 0 without dereferencing either pointer. */
++/* - 1 <= n < 16 uses overlapping bounded scalar loads (64/32/16/8-bit pairs */
++/* at offsets 0 and n-width, rev for unsigned order, clz for the first */
++/* differing byte), so every load satisfies offset + width <= n. */
++/* - n >= 16 processes 64B blocks (ldp q pairs) and 16B blocks with */
++/* offset + width <= n plus one final overlapping 16B vector, so no read */
++/* ever crosses the object bounds (and therefore no page-crossing fault */
++/* is possible on mapped inputs). */
++/* The result is the exact unsigned lexicographic difference of the first */
++/* differing bytes (*s1 - *s2), matching the generic C memcmp. */
++/* */
++/* Calling convention (AAPCS64): X0 = s1, X1 = s2, X2 = n. */
++/* Returns W0 = sign-correct unsigned byte difference, or 0. */
++
++	.arch armv8-a
++	.text
++	.p2align 2
++	.globl hs_memcmp_simd
++	.hidden hs_memcmp_simd
++	.type hs_memcmp_simd, %function
++hs_memcmp_simd:
++	cbz x2, .Lret0
++	cmp x2, #16
++	b.lo .Lsmall
++	/* x0 = s1 cursor, x1 = s2 cursor, x2 = remaining */
++	b .Ltest64
++.Lloop64:	/* 64B per iteration via ldp q pairs */
++	ldp q0, q1, [x0, #0]
++	ldp q2, q3, [x0, #32]
++	ldp q4, q5, [x1, #0]
++	ldp q6, q7, [x1, #32]
++	cmeq v0.16b, v0.16b, v4.16b
++	shrn v0.8b, v0.8h, #4	/* nibble mask: 0xf per equal source byte */
++	fmov x4, d0
++	cmp x4, #-1
++	b.ne .Lres0
++	cmeq v1.16b, v1.16b, v5.16b
++	shrn v1.8b, v1.8h, #4
++	fmov x4, d1
++	cmp x4, #-1
++	b.ne .Lres16
++	cmeq v2.16b, v2.16b, v6.16b
++	shrn v2.8b, v2.8h, #4
++	fmov x4, d2
++	cmp x4, #-1
++	b.ne .Lres32
++	cmeq v3.16b, v3.16b, v7.16b
++	shrn v3.8b, v3.8h, #4
++	fmov x4, d3
++	cmp x4, #-1
++	b.ne .Lres48
++	add x0, x0, #64
++	add x1, x1, #64
++	sub x2, x2, #64
++.Ltest64:
++	cmp x2, #64
++	b.hs .Lloop64
++	b .Ltest16
++.Lloop16:
++	ldr q0, [x0]
++	ldr q1, [x1]
++	cmeq v0.16b, v0.16b, v1.16b
++	shrn v0.8b, v0.8h, #4
++	fmov x4, d0
++	cmp x4, #-1
++	b.ne .Lres0
++	add x0, x0, #16
++	add x1, x1, #16
++	sub x2, x2, #16
++.Ltest16:
++	cmp x2, #16
++	b.hs .Lloop16
++	cbz x2, .Lret0
++	/* Overlapping final 16B at (cursor + remaining - 16) covers the tail. */
++	sub x4, x2, #16
++	add x0, x0, x4
++	add x1, x1, x4
++	ldr q0, [x0]
++	ldr q1, [x1]
++	cmeq v0.16b, v0.16b, v1.16b
++	shrn v0.8b, v0.8h, #4
++	fmov x4, d0
++	cmp x4, #-1
++	b.ne .Lresolve
++.Lret0:
++	mov w0, #0
++	ret
++.Lres16:
++	add x0, x0, #16
++	add x1, x1, #16
++	b .Lresolve
++.Lres32:
++	add x0, x0, #32
++	add x1, x1, #32
++	b .Lresolve
++.Lres48:
++	add x0, x0, #48
++	add x1, x1, #48
++	b .Lresolve
++.Lres0:
++	b .Lresolve
++.Lresolve:	/* x0/x1 = 16B chunk base, x4 = nibble mask */
++	mvn x4, x4
++	rbit x4, x4
++	clz x4, x4
++	lsr x4, x4, #2	/* first differing byte index 0..15 */
++	ldrb w5, [x0, x4]
++	ldrb w6, [x1, x4]
++	sub w0, w5, w6
++	ret
++
++/* ---- Small sizes, 1 <= n < 16: overlapping bounded scalar loads ---- */
++.Lsmall:
++	cmp x2, #8
++	b.lo .Ls4
++	ldr x4, [x0]
++	ldr x5, [x1]
++	cmp x4, x5
++	b.ne .Ls8_d0
++	cmp x2, #8
++	b.eq .Lret0
++	sub x6, x2, #8	/* pair offset n-8 */
++	ldr x4, [x0, x6]
++	ldr x5, [x1, x6]
++	cmp x4, x5
++	b.eq .Lret0
++	b .Ls8_res
++.Ls8_d0:
++	mov x6, #0	/* pair offset 0 */
++.Ls8_res:	/* x4/x5 = u64 pair, x6 = pair offset */
++	rev x4, x4
++	rev x5, x5
++	eor x4, x4, x5
++	clz x4, x4
++	lsr x4, x4, #3	/* first differing byte index 0..7 */
++	add x4, x4, x6
++	ldrb w5, [x0, x4]
++	ldrb w6, [x1, x4]
++	sub w0, w5, w6
++	ret
++.Ls4:	/* 1 <= n <= 7 */
++	cmp x2, #4
++	b.lo .Ls2
++	ldr w4, [x0]
++	ldr w5, [x1]
++	cmp w4, w5
++	b.ne .Ls4_d0
++	cmp x2, #4
++	b.eq .Lret0
++	sub x6, x2, #4	/* pair offset n-4 */
++	ldr w4, [x0, x6]
++	ldr w5, [x1, x6]
++	cmp w4, w5
++	b.eq .Lret0
++	b .Ls4_res
++.Ls4_d0:
++	mov x6, #0
++.Ls4_res:	/* w4/w5 = u32 pair, x6 = pair offset */
++	rev w4, w4
++	rev w5, w5
++	eor w4, w4, w5
++	clz w4, w4
++	lsr w4, w4, #3	/* first differing byte index 0..3 */
++	add x4, x4, x6
++	ldrb w5, [x0, x4]
++	ldrb w6, [x1, x4]
++	sub w0, w5, w6
++	ret
++.Ls2:	/* 1 <= n <= 3 */
++	cmp x2, #2
++	b.lo .Ls1
++	ldrh w4, [x0]
++	ldrh w5, [x1]
++	cmp w4, w5
++	b.ne .Ls2_d0
++	cmp x2, #2
++	b.eq .Lret0
++	sub x6, x2, #2	/* pair offset n-2 */
++	ldrh w4, [x0, x6]
++	ldrh w5, [x1, x6]
++	cmp w4, w5
++	b.eq .Lret0
++	b .Ls2_res
++.Ls2_d0:
++	mov x6, #0
++.Ls2_res:	/* w4/w5 = u16 pair, x6 = pair offset */
++	rev16 w4, w4
++	rev16 w5, w5
++	eor w4, w4, w5
++	clz w4, w4
++	sub w4, w4, #16
++	lsr w4, w4, #3	/* first differing byte index 0..1 */
++	add x4, x4, x6
++	ldrb w5, [x0, x4]
++	ldrb w6, [x1, x4]
++	sub w0, w5, w6
++	ret
++.Ls1:	/* n == 1 */
++	ldrb w4, [x0]
++	ldrb w5, [x1]
++	sub w0, w4, w5
++	ret
++
++	.size hs_memcmp_simd,.-hs_memcmp_simd
++
++#endif /* aarch64-le ELF / Linux */
++
++#if defined(linux_HOST_OS) || defined(__ELF__)
++	.section .note.GNU-stack,"",%progbits
++#endif
+diff --git a/rts/memcmp/memcmp-x86_64.S b/rts/memcmp/memcmp-x86_64.S
+new file mode 100644
+index 0000000000..3a404fb14c
+--- /dev/null
++++ b/rts/memcmp/memcmp-x86_64.S
+@@ -0,0 +1,527 @@
++/* HS_MEMCMP_INTRO_BEGIN */
++/* */
++/* Copyright (c) 2026 Moritz Angermann <moritz.angermann@iohk.io>, Input Output Group */
++/* SPDX-License-Identifier: BSD-3-Clause */
++/* */
++/* x86_64 memcmp implementation for the GHC RTS (hs_memcmp_simd). */
++/* */
++/* Adapted from a musl libc memcmp patch by the same author (original MIT */
++/* notice retained below); RTS renaming and guards under BSD-3-Clause. */
++/* SSE2 baseline with a runtime-dispatched AVX2 fast path, no IFUNC, */
++/* thread-safe one-byte dispatch cache. All reads are strictly bounded to */
++/* [0, n); n == 0 returns 0 without dereferencing either pointer. Returns the */
++/* exact unsigned byte difference of the first differing bytes. */
++/* HS_MEMCMP_INTRO_END */
++
++#include "ghcconfig.h"
++
++#if (defined(linux_HOST_OS) && defined(x86_64_HOST_ARCH)) || (defined(__ELF__) && defined(__x86_64__))
++.text
++/* MIT License */
++/* */
++/* Copyright (c) 2026 Moritz Angermann <moritz.angermann@iohk.io>, Input Output Group */
++/* */
++/* Permission is hereby granted, free of charge, to any person obtaining a copy */
++/* of this software and associated documentation files (the "Software"), to deal */
++/* in the Software without restriction, including without limitation the rights */
++/* to use, copy, modify, merge, publish, distribute, sublicense, and/or sell */
++/* copies of the Software, and to permit persons to whom the Software is */
++/* furnished to do so, subject to the following conditions: */
++/* */
++/* The above copyright notice and this permission notice shall be included in all */
++/* copies or substantial portions of the Software. */
++/* */
++/* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR */
++/* IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, */
++/* FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE */
++/* AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER */
++/* LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, */
++/* OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE */
++/* SOFTWARE. */
++/* */
++/* memcmp for musl libc, x86_64. */
++/* */
++/* SSE2 baseline with an AVX2 fast path selected at run time. No IFUNC, no */
++/* target_clones: a single thread-safe .bss cache byte (0 = unknown, */
++/* 1 = SSE2 only, 2 = AVX2) records CPUID/XGETBV detection, so the common */
++/* case is one cached branch. Every AVX2-path return executes vzeroupper. */
++/* */
++/* Safety invariants: */
++/* - n == 0 returns 0 without dereferencing either pointer. */
++/* - 1 <= n < 16 uses overlapping bounded loads (8/4/2/1 byte pairs at */
++/* offsets 0 and n-width) with bswap + unsigned compare, so every load */
++/* satisfies offset + width <= n. */
++/* - n >= 16/32/128 processes full blocks with offset + width <= n plus one */
++/* final overlapping vector, so no read ever crosses the object bounds */
++/* (and therefore no page-crossing fault is possible on mapped inputs). */
++/* The result is the exact unsigned lexicographic difference of the first */
++/* differing bytes (*s1 - *s2), matching the generic C memcmp. */
++/* */
++/* Calling convention (System V AMD64): RDI = s1, RSI = s2, RDX = n. */
++/* Returns EAX = sign-correct unsigned byte difference, or 0. */
++
++.text
++.p2align 4
++.globl hs_memcmp_simd
++.hidden hs_memcmp_simd
++.type hs_memcmp_simd, @function
++hs_memcmp_simd:
++	test %rdx,%rdx
++	jz .Lret0
++	movzbl hs_memcmp_simd_avx2_cache(%rip),%eax
++	test %al,%al
++	jnz .Lchecked
++	/* Cold path: detect AVX2 support once. Byte-sized cache access is */
++	/* atomic; concurrent threads may repeat detection but always store a */
++	/* valid result, so no lock is needed. */
++	push %rbx
++	push %rdx	/* save n: cpuid writes ebx/ecx/edx, xgetbv writes edx:eax. */
++					/* rdi/s1, rsi/s2 survive (untouched); r8 is caller-saved scratch. */
++	xorl %eax,%eax
++	cpuid	/* leaf 0: eax = max basic leaf (CPUID(1).EAX is the */
++					/* processor signature, NOT the max leaf!) */
++	mov %eax,%r8d	/* save max basic leaf in caller-saved r8d */
++	mov $1,%eax
++	cpuid	/* ecx: bit 27 OSXSAVE, bit 28 AVX */
++	bt $27,%ecx
++	jnc .Lnoavx
++	bt $28,%ecx
++	jnc .Lnoavx
++	xor %ecx,%ecx
++	xgetbv	/* xcr0 -> edx:eax; need SSE+AVX state */
++	and $6,%eax
++	cmp $6,%eax
++	jne .Lnoavx
++	cmp $7,%r8d	/* leaf 7 (AVX2 bit) must exist */
++	jb .Lnoavx
++	mov $7,%eax
++	xor %ecx,%ecx
++	cpuid	/* ebx bit 5 = AVX2 */
++	bt $5,%ebx
++	jnc .Lnoavx
++	pop %rdx
++	pop %rbx
++	movb $2,hs_memcmp_simd_avx2_cache(%rip)
++	jmp .Lavx2
++.Lnoavx:
++	pop %rdx
++	pop %rbx
++	movb $1,hs_memcmp_simd_avx2_cache(%rip)
++	jmp .Lsse
++.Lchecked:
++	cmp $2,%al
++	je .Lavx2
++
++/* ---- SSE2 baseline (no tzcnt, no AVX) ---- */
++.Lsse:
++	cmp $16,%rdx
++	jb .Lsmall
++	xor %eax,%eax	/* i = block offset */
++	mov %rdx,%rcx
++	sub $16,%rcx	/* rcx = max full-block offset (n-16) */
++	jmp .Lsse_test
++.Lsse_loop:
++	movdqu (%rdi,%rax),%xmm0
++	movdqu (%rsi,%rax),%xmm1
++	pcmpeqb %xmm1,%xmm0
++	pmovmskb %xmm0,%r8d
++	xor $0xffff,%r8d	/* diff mask, bit set = differing byte */
++	jnz .Lsse_diff	/* (mask in r8d: rcx holds the n-16 bound) */
++	add $16,%rax
++.Lsse_test:
++	cmp %rcx,%rax
++	jbe .Lsse_loop
++	cmp %rdx,%rax
++	je .Lret0
++	/* Overlapping final 16B at offset n-16 covers the tail. */
++	mov %rcx,%rax
++	movdqu (%rdi,%rax),%xmm0
++	movdqu (%rsi,%rax),%xmm1
++	pcmpeqb %xmm1,%xmm0
++	pmovmskb %xmm0,%r8d
++	xor $0xffff,%r8d
++	jnz .Lsse_diff
++.Lret0:
++	xor %eax,%eax
++	ret
++.Lsse_diff:	/* r8d = diff mask (!=0), rax = block offset */
++	bsfl %r8d,%r8d	/* first differing byte index (no tzcnt) */
++	add %rax,%r8
++	movzbl (%rdi,%r8),%eax
++	movzbl (%rsi,%r8),%edx
++	sub %edx,%eax
++	ret
++
++/* ---- Small sizes, 1 <= n < 16: overlapping bounded loads + bswap ---- */
++.Lsmall:
++	cmp $8,%rdx
++	jae .Lsmall8
++	cmp $4,%rdx
++	jae .Lsmall4
++	cmp $2,%rdx
++	jae .Lsmall2
++	movzbl (%rdi),%eax
++	movzbl (%rsi),%edx
++	sub %edx,%eax
++	ret
++.Lsmall8:	/* 8 <= n <= 15 */
++	mov (%rdi),%rax
++	mov (%rsi),%rcx
++	cmp %rcx,%rax
++	jne .Lsmall8_d0
++	cmp $8,%rdx
++	je .Lret0
++	mov %rdx,%r8
++	sub $8,%r8	/* pair offset n-8 */
++	mov (%rdi,%r8),%rax
++	mov (%rsi,%r8),%rcx
++	cmp %rcx,%rax
++	je .Lret0
++	jmp .Lsmall8_res
++.Lsmall8_d0:
++	xor %r8d,%r8d	/* pair offset 0 */
++.Lsmall8_res:	/* rax/rcx = u64 pair, r8 = pair offset */
++	bswap %rax
++	bswap %rcx
++	xor %rcx,%rax
++	bsr %rax,%rax	/* top differing bit (pair differs) */
++	shr $3,%rax	/* byte position from top */
++	xor $7,%rax	/* byte index 0..7 */
++	add %r8,%rax
++	movzbl (%rdi,%rax),%ecx
++	movzbl (%rsi,%rax),%eax
++	sub %eax,%ecx
++	mov %ecx,%eax
++	ret
++.Lsmall4:	/* 4 <= n <= 7 */
++	mov (%rdi),%eax
++	mov (%rsi),%ecx
++	cmp %ecx,%eax
++	jne .Lsmall4_d0
++	cmp $4,%rdx
++	je .Lret0
++	mov %rdx,%r8
++	sub $4,%r8	/* pair offset n-4 */
++	mov (%rdi,%r8),%eax
++	mov (%rsi,%r8),%ecx
++	cmp %ecx,%eax
++	je .Lret0
++	jmp .Lsmall4_res
++.Lsmall4_d0:
++	xor %r8d,%r8d
++.Lsmall4_res:	/* eax/ecx = u32 pair, r8 = pair offset */
++	bswap %eax
++	bswap %ecx
++	xor %ecx,%eax
++	bsr %eax,%eax
++	shr $3,%eax
++	xor $3,%eax	/* byte index 0..3 */
++	add %r8,%rax
++	movzbl (%rdi,%rax),%ecx
++	movzbl (%rsi,%rax),%eax
++	sub %eax,%ecx
++	mov %ecx,%eax
++	ret
++.Lsmall2:	/* 2 <= n <= 3 */
++	movzwl (%rdi),%eax
++	movzwl (%rsi),%ecx
++	cmp %cx,%ax
++	jne .Lsmall2_d0
++	cmp $2,%rdx
++	je .Lret0
++	mov %rdx,%r8
++	sub $2,%r8	/* pair offset n-2 */
++	movzwl (%rdi,%r8),%eax
++	movzwl (%rsi,%r8),%ecx
++	cmp %cx,%ax
++	je .Lret0
++	jmp .Lsmall2_res
++.Lsmall2_d0:
++	xor %r8d,%r8d
++.Lsmall2_res:	/* ax/cx = u16 pair, r8 = pair offset */
++	xchg %al,%ah
++	xchg %cl,%ch
++	xor %ecx,%eax
++	test $0xff00,%eax	/* first byte differs? */
++	jnz .Lsmall2_first
++	add $1,%r8	/* else second byte differs */
++.Lsmall2_first:
++	movzbl (%rdi,%r8),%ecx
++	movzbl (%rsi,%r8),%eax
++	sub %eax,%ecx
++	mov %ecx,%eax
++	ret
++
++/* ---- AVX2 fast path ---- */
++.Lavx2:
++	cmp $32,%rdx
++	jb .Lavx_small
++	xor %eax,%eax	/* i = block offset */
++	mov %rdx,%rcx
++	sub $32,%rcx	/* rcx = max full-block offset (n-32) */
++	cmp $128,%rdx
++	jb .Lavx32_test
++.Lavx128_loop:	/* 4x32B per iteration */
++	vmovdqu (%rdi,%rax),%ymm0
++	vmovdqu (%rsi,%rax),%ymm1
++	vpcmpeqb %ymm1,%ymm0,%ymm0
++	vpmovmskb %ymm0,%r8d
++	xor $-1,%r8d
++	jnz .Lavx_diff0
++	vmovdqu 32(%rdi,%rax),%ymm0
++	vmovdqu 32(%rsi,%rax),%ymm1
++	vpcmpeqb %ymm1,%ymm0,%ymm0
++	vpmovmskb %ymm0,%r8d
++	xor $-1,%r8d
++	jnz .Lavx_diff32
++	vmovdqu 64(%rdi,%rax),%ymm0
++	vmovdqu 64(%rsi,%rax),%ymm1
++	vpcmpeqb %ymm1,%ymm0,%ymm0
++	vpmovmskb %ymm0,%r8d
++	xor $-1,%r8d
++	jnz .Lavx_diff64
++	vmovdqu 96(%rdi,%rax),%ymm0
++	vmovdqu 96(%rsi,%rax),%ymm1
++	vpcmpeqb %ymm1,%ymm0,%ymm0
++	vpmovmskb %ymm0,%r8d
++	xor $-1,%r8d
++	jnz .Lavx_diff96
++	add $128,%rax
++	mov %rdx,%r8
++	sub %rax,%r8
++	cmp $128,%r8
++	jae .Lavx128_loop
++	jmp .Lavx32_test
++.Lavx32_loop:
++	vmovdqu (%rdi,%rax),%ymm0
++	vmovdqu (%rsi,%rax),%ymm1
++	vpcmpeqb %ymm1,%ymm0,%ymm0
++	vpmovmskb %ymm0,%r8d
++	xor $-1,%r8d
++	jnz .Lavx32_diff
++	add $32,%rax
++.Lavx32_test:
++	cmp %rcx,%rax
++	jbe .Lavx32_loop
++	cmp %rdx,%rax
++	je .Lavx_ret0
++	/* Overlapping final 32B at offset n-32 covers the tail. */
++	vmovdqu (%rdi,%rcx),%ymm0
++	vmovdqu (%rsi,%rcx),%ymm1
++	vpcmpeqb %ymm1,%ymm0,%ymm0
++	vpmovmskb %ymm0,%r8d
++	xor $-1,%r8d
++	jnz .Lavx_final_diff
++.Lavx_ret0:
++	vzeroupper
++	xor %eax,%eax
++	ret
++.Lavx32_diff:	/* r8d = diff mask, rax = block offset */
++	bsfl %r8d,%r8d
++	add %rax,%r8
++	movzbl (%rdi,%r8),%eax
++	movzbl (%rsi,%r8),%edx
++	sub %edx,%eax
++	vzeroupper
++	ret
++.Lavx_final_diff:	/* r8d = diff mask, rcx = n-32 */
++	bsfl %r8d,%r8d
++	add %rcx,%r8
++	movzbl (%rdi,%r8),%eax
++	movzbl (%rsi,%r8),%edx
++	sub %edx,%eax
++	vzeroupper
++	ret
++.Lavx_diff0:	/* r8d = diff mask, rax = block offset */
++	bsfl %r8d,%r8d
++	add %rax,%r8
++	movzbl (%rdi,%r8),%eax
++	movzbl (%rsi,%r8),%edx
++	sub %edx,%eax
++	vzeroupper
++	ret
++.Lavx_diff32:
++	bsfl %r8d,%r8d
++	add %rax,%r8
++	add $32,%r8
++	movzbl (%rdi,%r8),%eax
++	movzbl (%rsi,%r8),%edx
++	sub %edx,%eax
++	vzeroupper
++	ret
++.Lavx_diff64:
++	bsfl %r8d,%r8d
++	add %rax,%r8
++	add $64,%r8
++	movzbl (%rdi,%r8),%eax
++	movzbl (%rsi,%r8),%edx
++	sub %edx,%eax
++	vzeroupper
++	ret
++.Lavx_diff96:
++	bsfl %r8d,%r8d
++	add %rax,%r8
++	add $96,%r8
++	movzbl (%rdi,%r8),%eax
++	movzbl (%rsi,%r8),%edx
++	sub %edx,%eax
++	vzeroupper
++	ret
++
++/* ---- Small sizes on the AVX2 path (SSE insns, vzeroupper on return) ---- */
++.Lavx_small:	/* 1 <= n < 32 */
++	cmp $16,%rdx
++	jae .Lavx_small16
++	cmp $8,%rdx
++	jae .Lavx_sm8
++	cmp $4,%rdx
++	jae .Lavx_sm4
++	cmp $2,%rdx
++	jae .Lavx_sm2
++	movzbl (%rdi),%eax
++	movzbl (%rsi),%edx
++	sub %edx,%eax
++	vzeroupper
++	ret
++.Lavx_small16:	/* 16 <= n <= 31 */
++	movdqu (%rdi),%xmm0
++	movdqu (%rsi),%xmm1
++	pcmpeqb %xmm1,%xmm0
++	pmovmskb %xmm0,%ecx
++	xor $0xffff,%ecx
++	jnz .Lavx_s16_diff0
++	mov %rdx,%rax
++	sub $16,%rax	/* rax = n-16, overlapping final block */
++	movdqu (%rdi,%rax),%xmm0
++	movdqu (%rsi,%rax),%xmm1
++	pcmpeqb %xmm1,%xmm0
++	pmovmskb %xmm0,%ecx
++	xor $0xffff,%ecx
++	jnz .Lavx_s16_difff
++	vzeroupper
++	xor %eax,%eax
++	ret
++.Lavx_s16_diff0:
++	bsfl %ecx,%ecx
++	movzbl (%rdi,%rcx),%eax
++	movzbl (%rsi,%rcx),%edx
++	sub %edx,%eax
++	vzeroupper
++	ret
++.Lavx_s16_difff:
++	bsfl %ecx,%ecx
++	add %rax,%rcx
++	movzbl (%rdi,%rcx),%eax
++	movzbl (%rsi,%rcx),%edx
++	sub %edx,%eax
++	vzeroupper
++	ret
++.Lavx_sm8:	/* 8 <= n <= 15 */
++	mov (%rdi),%rax
++	mov (%rsi),%rcx
++	cmp %rcx,%rax
++	jne .Lavx_sm8_d0
++	cmp $8,%rdx
++	je .Lavx_sm_ret0
++	mov %rdx,%r8
++	sub $8,%r8
++	mov (%rdi,%r8),%rax
++	mov (%rsi,%r8),%rcx
++	cmp %rcx,%rax
++	je .Lavx_sm_ret0
++	jmp .Lavx_sm8_res
++.Lavx_sm8_d0:
++	xor %r8d,%r8d
++.Lavx_sm8_res:
++	bswap %rax
++	bswap %rcx
++	xor %rcx,%rax
++	bsr %rax,%rax
++	shr $3,%rax
++	xor $7,%rax
++	add %r8,%rax
++	movzbl (%rdi,%rax),%ecx
++	movzbl (%rsi,%rax),%eax
++	sub %eax,%ecx
++	mov %ecx,%eax
++	vzeroupper
++	ret
++.Lavx_sm4:	/* 4 <= n <= 7 */
++	mov (%rdi),%eax
++	mov (%rsi),%ecx
++	cmp %ecx,%eax
++	jne .Lavx_sm4_d0
++	cmp $4,%rdx
++	je .Lavx_sm_ret0
++	mov %rdx,%r8
++	sub $4,%r8
++	mov (%rdi,%r8),%eax
++	mov (%rsi,%r8),%ecx
++	cmp %ecx,%eax
++	je .Lavx_sm_ret0
++	jmp .Lavx_sm4_res
++.Lavx_sm4_d0:
++	xor %r8d,%r8d
++.Lavx_sm4_res:
++	bswap %eax
++	bswap %ecx
++	xor %ecx,%eax
++	bsr %eax,%eax
++	shr $3,%eax
++	xor $3,%eax
++	add %r8,%rax
++	movzbl (%rdi,%rax),%ecx
++	movzbl (%rsi,%rax),%eax
++	sub %eax,%ecx
++	mov %ecx,%eax
++	vzeroupper
++	ret
++.Lavx_sm2:	/* 2 <= n <= 3 */
++	movzwl (%rdi),%eax
++	movzwl (%rsi),%ecx
++	cmp %cx,%ax
++	jne .Lavx_sm2_d0
++	cmp $2,%rdx
++	je .Lavx_sm_ret0
++	mov %rdx,%r8
++	sub $2,%r8
++	movzwl (%rdi,%r8),%eax
++	movzwl (%rsi,%r8),%ecx
++	cmp %cx,%ax
++	je .Lavx_sm_ret0
++	jmp .Lavx_sm2_res
++.Lavx_sm2_d0:
++	xor %r8d,%r8d
++.Lavx_sm2_res:
++	xchg %al,%ah
++	xchg %cl,%ch
++	xor %ecx,%eax
++	test $0xff00,%eax
++	jnz .Lavx_sm2_first
++	add $1,%r8
++.Lavx_sm2_first:
++	movzbl (%rdi,%r8),%ecx
++	movzbl (%rsi,%r8),%eax
++	sub %eax,%ecx
++	mov %ecx,%eax
++	vzeroupper
++	ret
++.Lavx_sm_ret0:
++	vzeroupper
++	xor %eax,%eax
++	ret
++
++.size hs_memcmp_simd,.-hs_memcmp_simd
++
++.section .bss
++hs_memcmp_simd_avx2_cache:
++	.zero 1
++	.type hs_memcmp_simd_avx2_cache,@object
++	.size hs_memcmp_simd_avx2_cache,1
++
++
++#endif /* x86_64 ELF / Linux */
++
++#if defined(linux_HOST_OS) || defined(__ELF__)
++.section .note.GNU-stack,"",@progbits
++#endif
+diff --git a/rts/rts.cabal.in b/rts/rts.cabal.in
+index d65662f897..1f3fb2be1d 100644
+--- a/rts/rts.cabal.in
++++ b/rts/rts.cabal.in
+@@ -517,6 +517,15 @@ library
+       if arch(ppc) || arch(ppc64) || arch(s390x) || arch(riscv64) || arch(loongarch64)
+         asm-sources: StgCRunAsm.S
+ 
++      -- Hand-written SIMD memcmp used by hs_memcmp (rts/HsMemcmp.c) on
++      -- non-glibc Linux; the .S files expose only the hidden symbol
++      -- hs_memcmp_simd.
++      if os(linux)
++        if arch(x86_64)
++          asm-sources: memcmp/memcmp-x86_64.S
++        if arch(aarch64)
++          asm-sources: memcmp/memcmp-aarch64.S
++
+       c-sources: Adjustor.c
+                  adjustor/AdjustorPool.c
+                  ExecPage.c
+@@ -535,6 +544,7 @@ library
+                  Heap.c
+                  Hpc.c
+                  HsFFI.c
++                 HsMemcmp.c
+                  Inlines.c
+                  Interpreter.c
+                  IOManager.c
+@@ -544,6 +554,7 @@ library
+                  Linker.c
+                  ReportMemoryMap.c
+                  Messages.c
++                 MuslMemcmp.c
+                  OldARMAtomic.c
+                  PathUtils.c
+                  Pool.c
+diff --git a/libraries/bytestring/Data/ByteString/Internal/Type.hs b/libraries/bytestring/Data/ByteString/Internal/Type.hs
+index 89bd97f..581f630 100644
+--- a/libraries/bytestring/Data/ByteString/Internal/Type.hs
++++ b/libraries/bytestring/Data/ByteString/Internal/Type.hs
+@@ -966,8 +966,13 @@ foreign import ccall unsafe "string.h memchr" c_memchr
+ memchr :: Ptr Word8 -> Word8 -> CSize -> IO (Ptr Word8)
+ memchr p w sz = c_memchr p (fromIntegral w) sz
+ 
++#if defined(HS_MEMCMP_IN_RTS) && !defined(javascript_HOST_ARCH)
++foreign import ccall unsafe "hs_memcmp" c_memcmp
++    :: Ptr Word8 -> Ptr Word8 -> CSize -> IO CInt
++#else
+ foreign import ccall unsafe "string.h memcmp" c_memcmp
+     :: Ptr Word8 -> Ptr Word8 -> CSize -> IO CInt
++#endif
+ 
+ memcmp :: Ptr Word8 -> Ptr Word8 -> Int -> IO CInt
+ memcmp p q s = c_memcmp p q (fromIntegral s)
