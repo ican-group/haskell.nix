@@ -46,7 +46,12 @@ let
         then a
       else a + "/" + b
     );
-  # Like normalizePath but with a trailing / when needed
+  # True if `path` is the directory `dir` or is inside it.  A bare
+  # `hasPrefix dir path` would also match siblings such as `src-gen` for
+  # `hs-source-dirs: src`.  (`dir == ""` is the root, which contains everything.)
+  isInDir = dir: path:
+    dir == "" || path == lib.removeSuffix "/" dir
+      || lib.hasPrefix (lib.removeSuffix "/" dir + "/") path;
 in
   if srcStr' == null || package.detailLevel != "FullDetails"
     then src
@@ -115,12 +120,11 @@ in
                 lib.any (d: lib.strings.hasPrefix (rPath + "/") d) dirsNeeded)
               || traceReason "cabal package definition" (lib.strings.hasPrefix subDir rPath
                 && lib.strings.hasSuffix ".cabal" rPath)
-              || traceReason "hpack package definition" (lib.strings.hasPrefix subDir rPath
-                && rPath == "package.yaml")
-              || traceReason "data file" (lib.strings.hasPrefix dataDir rPath
+              || traceReason "hpack package definition" (rPath == subDir + "package.yaml")
+              || traceReason "data file" (isInDir dataDir rPath
                 && dataFileMatch rPath)
-              || traceReason "haskell source dir" (lib.any (d: lib.strings.hasPrefix d rPath) hsSourceDirs)
-              || traceReason "include dir" (lib.any (d: lib.strings.hasPrefix d rPath) includeDirs)
+              || traceReason "haskell source dir" (lib.any (d: isInDir d rPath) hsSourceDirs)
+              || traceReason "include dir" (lib.any (d: isInDir d rPath) includeDirs)
               || traceReason "license file" (licenseMatch rPath)
               || traceReason "extra source file" (extraSrcMatch rPath)
               || traceReason "extra doc file" (extraDocMatch rPath)
