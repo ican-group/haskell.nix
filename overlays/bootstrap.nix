@@ -381,6 +381,11 @@ in {
 
                 # See https://gitlab.haskell.org/ghc/ghc/-/merge_requests/15096
                 ++ fromUntil "9.6" "9.12.4" ./patches/ghc/ghc-16bit-elf-section-header-overflow.patch
+                # 9.14.1 shipped without the fix (upstream has it only from 10.0).  Without it
+                # the RTS linker takes section names from whichever section is #0xffff and can
+                # run arbitrary data as a `.init` function when loading the >65280-section
+                # profiled ghc-internal object (TH segfault in aarch64-musl build-profiled).
+                ++ fromUntil "9.14" "9.15" ./patches/ghc/ghc-16bit-elf-section-header-overflow.patch
 
                 # TimerManager: registering threads publish only evaluated timeout queues.
                 # See https://gitlab.haskell.org/ghc/ghc/-/issues/9809 and
