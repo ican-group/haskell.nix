@@ -6,8 +6,9 @@
 # inside the whole repository.
 #
 # The repository is `./repo`, supplied through `inputMap` instead of being
-# fetched.  `builtins.path` makes it a store path string, like a `fetchgit`
-# result or a flake input.  Built with both the v1 and the v2 builder.
+# fetched, both as a store path string (`builtins.path`, like a `fetchgit`
+# result or a flake input) and as a plain Nix path (the `-path` jobs).
+# Built with both the v1 and the v2 builder.
 { stdenv, lib, cabalProject', haskellLib, testSrc, compiler-nix-name, evalPackages, evalSystem, buildPackages
 , testCabalProjectLocal, testInputMap }:
 
@@ -17,22 +18,26 @@ let
   # arm there.
   onlyV2 = buildPackages.haskell-nix.compiler.${compiler-nix-name}.isStableHaskell or false;
 
-  project = builderVersion: (cabalProject' {
+  # The repository as a store path string, and as a plain Nix path (which
+  # must still be copied to the store).
+  storeRepo = builtins.path { path = ./repo; name = "symlink-repo"; };
+  pathRepo = ./repo;
+
+  project = repo: builderVersion: (cabalProject' {
     inherit compiler-nix-name evalSystem;
     src = testSrc "cabal-source-repo-symlink";
     inputMap = testInputMap // {
-      "https://example.invalid/symlink-repo.git/main" =
-        builtins.path { path = ./repo; name = "symlink-repo"; };
+      "https://example.invalid/symlink-repo.git/main" = repo;
     };
     cabalProjectLocal = testCabalProjectLocal;
   }).appendModule { inherit builderVersion; };
 
-  run = builderVersion:
+  run = repo: suffix: builderVersion:
     let
-      packages = (project builderVersion).hsPkgs;
+      packages = (project repo builderVersion).hsPkgs;
       exe = packages.use-symlink-pkg.components.exes.use-symlink-pkg;
     in stdenv.mkDerivation {
-      name = "cabal-source-repo-symlink-v${toString builderVersion}-test";
+      name = "cabal-source-repo-symlink-v${toString builderVersion}${suffix}-test";
 
       buildCommand = ''
         printf "checking whether executable runs... " >& 2
@@ -55,9 +60,11 @@ let
     };
 in lib.recurseIntoAttrs ({
   ifdInputs = {
-    inherit (project (if onlyV2 then 2 else 1)) plan-nix;
+    inherit (project storeRepo (if onlyV2 then 2 else 1)) plan-nix;
   };
-  run-v2 = run 2;
+  run-v2 = run storeRepo "" 2;
+  run-v2-path = run pathRepo "-path" 2;
 } // lib.optionalAttrs (!onlyV2) {
-  run = run 1;
+  run = run storeRepo "" 1;
+  run-path = run pathRepo "-path" 1;
 })

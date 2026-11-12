@@ -165,9 +165,10 @@ let
   sourceRepoSubDir = lib.removePrefix "/" srcRootAndSubDir.subDir;
   sourceRepoName =
     let b = builtins.unsafeDiscardStringContext (baseNameOf (toString srcRootAndSubDir.root));
-    in if builtins.match "[0-9a-df-np-sv-z]{32}-.*" b != null
-      then builtins.substring 33 (-1) b
-      else b;
+    in lib.strings.sanitizeDerivationName (
+      if builtins.match "[0-9a-df-np-sv-z]{32}-.*" b != null
+        then builtins.substring 33 (-1) b
+        else b);
   minimalSourceRepo = pkgs.runCommand "v2-source-repo-${sourceRepoName}"
     { nativeBuildInputs = [ pkgs.rsync pkgs.gitMinimal ];
       preferLocalBuild = true;

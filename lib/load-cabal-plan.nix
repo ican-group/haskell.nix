@@ -396,7 +396,13 @@ in {
                 src =
                   let
                     inherit (p.pkg-src.source-repo) location subdir;
-                    repo' = pkgs.lib.lists.elemAt callProjectResults.sourceRepos (pkgs.lib.strings.toInt location);
+                    repo'' = pkgs.lib.lists.elemAt callProjectResults.sourceRepos (pkgs.lib.strings.toInt location);
+                    # An `inputMap` entry may be a plain Nix path.  The identity
+                    # `filterPath` below would leave it as a local path (not
+                    # copied to the store), so copy it here.
+                    repo' = if builtins.isPath repo''
+                      then builtins.path { path = repo''; name = "source"; }
+                      else repo'';
                     # `src` is no longer a string, so the `apply` of the `src`
                     # option (modules/package.nix) cannot add the store path
                     # context the component derivations need.  Add it here.
@@ -405,7 +411,18 @@ in {
                       if builtins.isString repo' && builtins.getContext repo' == { } && storeDirMatch != null
                         then builtins.appendContext repo' { ${builtins.head storeDirMatch} = { path = true; }; }
                         else repo';
-                    subDir = pkgs.lib.removeSuffix "/" (haskellLib.normalizeRelativePath subdir);
+                    # `normalizeRelativePath` cannot handle a path above the
+                    # repository root, so reject that with a clear message.
+                    escapesRepo = (builtins.foldl' (acc: x:
+                        if acc.escapes then acc
+                        else if x == ".." then { depth = acc.depth - 1; escapes = acc.depth == 0; }
+                        else { depth = acc.depth + 1; escapes = false; })
+                      { depth = 0; escapes = false; }
+                      (pkgs.lib.filter (x: x != "" && x != ".") (pkgs.lib.splitString "/" subdir))).escapes;
+                    subDir =
+                      if escapesRepo
+                        then throw "source-repository-package subdir `${subdir}` of package ${p.pkg-name} is outside the repository"
+                        else pkgs.lib.removeSuffix "/" (haskellLib.normalizeRelativePath subdir);
                   in haskellLib.appendSubDir {
                     src = { outPath = repo; filterPath = { path, ... }: path; };
                     inherit subDir;
