@@ -22,7 +22,7 @@ in addPackageKeys {
   packages.terminfo.components.library.libs = [ pkgs.ncurses ];
 
   # The `extra-libraries` field in `X11.cabal` does not include Xss and Xinerama
-  # see https://github.com/input-output-hk/haskell.nix/pull/988
+  # see https://github.com/ican-group/haskell.nix/pull/988
   packages.X11.components.library.libs = [
     (pkgs.libxscrnsaver or pkgs.xorg.libXScrnSaver)
     (pkgs.libxinerama or pkgs.xorg.libXinerama)
@@ -75,7 +75,7 @@ in addPackageKeys {
     (fromUntil "0.16.0" "0.16.0.1" ../patches/hnix.patch)
   ];
 
-  # See https://github.com/input-output-hk/haskell.nix/issues/1455
+  # See https://github.com/ican-group/haskell.nix/issues/1455
   # This is a work around to make `ghcide` and `haskell-language-server` build with the unboxed tuple patch.
   packages.ghcide = lib.mkIf (__elem config.compiler.nix-name [
         # Work out if we have applied the unboxed tupple patch in overlays/bootstrap.nix
@@ -98,7 +98,7 @@ in addPackageKeys {
       };
     };
 
-  # Fix for https://github.com/input-output-hk/haskell.nix/issues/1961
+  # Fix for https://github.com/ican-group/haskell.nix/issues/1961
   packages.haskell-language-server.components.exes.haskell-language-server = {
     keepGhc = pkgs.stdenv.hostPlatform.isDarwin;
     keepConfigFiles = pkgs.stdenv.hostPlatform.isDarwin;
@@ -155,7 +155,7 @@ in addPackageKeys {
 
   # Build ghci and ghc with internal interpreter support to make the
   # `reinstallableLibGhc` build more like the boot version.
-  # See https://github.com/input-output-hk/haskell.nix/issues/1512
+  # See https://github.com/ican-group/haskell.nix/issues/1512
   packages.ghc.flags.ghci = true;
   packages.ghc.flags.internal-interpreter = true;
   packages.ghci.flags.ghci = true;

@@ -30,7 +30,7 @@ ${
   # may not have an outputHash).
   pkgs.lib.optionalString (index ? outputHash) ''
     if [[ "$(${pkgs.pkgsBuildBuild.nix}/bin/nix-hash --type sha256 --to-base16 ${index.outputHash})" != "$index_sha256" ]]; then
-      echo "ERROR See https://github.com/input-output-hk/haskell.nix/issues/884"
+      echo "ERROR See https://github.com/ican-group/haskell.nix/issues/884"
       exit 1
     fi
 ''}

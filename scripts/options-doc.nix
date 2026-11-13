@@ -52,7 +52,7 @@ Haskell.nix modules options for packages and components.
 
 !!! note "Generated"
     This documentation is generated from Nix sources in the
-    [`modules`](https://github.com/input-output-hk/haskell.nix/tree/master/modules)
+    [`modules`](https://github.com/ican-group/haskell.nix/tree/master/modules)
     subdirectory using `scripts/update-docs.nix`
 
 # Configuration Options

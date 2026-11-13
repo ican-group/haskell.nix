@@ -105,13 +105,13 @@
       "locked": {
         "lastModified": 1794462916,
         "narHash": "sha256-nWIO5HR541xBset79DTiB7+giktmjXXSq+9hL4u/4IA=",
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "repo": "hackage.nix",
         "rev": "0956e911798312c4f49de98a29096f59787f11f9",
         "type": "github"
       },
       "original": {
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "repo": "hackage.nix",
         "type": "github"
       }
@@ -121,13 +121,13 @@
       "locked": {
         "lastModified": 1794462884,
         "narHash": "sha256-S9j4VjFz4CSQlHROEur6AqgHPEBRZsw6V5tTnziNs5c=",
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "repo": "hackage.nix",
         "rev": "635b8119ff39a0f7b7cb0ad45ba2ee6b1dfa360b",
         "type": "github"
       },
       "original": {
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "ref": "for-stackage",
         "repo": "hackage.nix",
         "type": "github"
@@ -138,13 +138,13 @@
       "locked": {
         "lastModified": 1750307553,
         "narHash": "sha256-iiafNoeLHwlSLQTyvy8nPe2t6g5AV4PPcpMeH/2/DLs=",
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "repo": "hackage.nix",
         "rev": "f7867baa8817fab296528f4a4ec39d1c7c4da4f3",
         "type": "github"
       },
       "original": {
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "repo": "hackage.nix",
         "type": "github"
       }
@@ -668,13 +668,13 @@
       "locked": {
         "lastModified": 1794460776,
         "narHash": "sha256-IlP6EtV9u+djqutjGKg2DxocUQCgwceziw+VGU/oygI=",
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "repo": "stackage.nix",
         "rev": "4808e1b6f4467563a0290ab8e7108d0e93c43ecc",
         "type": "github"
       },
       "original": {
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "repo": "stackage.nix",
         "type": "github"
       }

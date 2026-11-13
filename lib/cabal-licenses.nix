@@ -15,7 +15,7 @@ in licenses // {
       fullName = "Unidentified Other License";
       url = "https://spdx.github.io/spdx-spec/appendix-IV-SPDX-license-expressions/";
       # Not setting `free` here. The license may or may not be `free`.
-      # See https://github.com/input-output-hk/haskell.nix/pull/1006
+      # See https://github.com/ican-group/haskell.nix/pull/1006
     };
   # Some packages (e.g. data-sketches) use this non-standard SPDX identifier.
   LicenseRef-Apache = {

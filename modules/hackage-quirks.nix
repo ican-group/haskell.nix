@@ -85,7 +85,7 @@ in [
             = "0dxx8cp2xndpw3jwiawch2dkrkp15mil7pyx7dvd810pwc22pm2q"; };
     };
 
-    # See https://github.com/input-output-hk/haskell.nix/issues/948
+    # See https://github.com/ican-group/haskell.nix/issues/948
     postgrest = {
       # `cabalProjectLocal` (not `cabalProject`): replacing the generated
       # `cabal.project` would drop its `extra-packages:` line, leaving the
@@ -123,7 +123,7 @@ in [
   # release has compatible bounds yet, the solver can silently fall back to a
   # prehistoric version whose (usually unbounded) dependencies happen to solve
   # -- e.g. hoogle-3.1, whose CLI predates `hoogle generate` and so breaks
-  # `hoogle-with-packages` (see input-output-hk/haskell.nix#2477).  A
+  # `hoogle-with-packages` (see ican-group/haskell.nix#2477).  A
   # conservative lower bound excludes those ancient versions: each floor is low
   # enough to still solve on the oldest GHCs we support (it never rules out a
   # legitimate choice), while on a too-new GHC it turns the silent

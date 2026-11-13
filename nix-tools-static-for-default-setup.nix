@@ -1,4 +1,4 @@
-pkgs: let baseurl = "https://github.com/input-output-hk/haskell.nix/releases/download/nix-tools-0.3.8/"; in {
+pkgs: let baseurl = "https://github.com/ican-group/haskell.nix/releases/download/nix-tools-0.3.8/"; in {
   aarch64-darwin = pkgs.fetchurl { 
      name = "aarch64-darwin-nix-tools-static";
      url = "${baseurl}aarch64-darwin-nix-tools-static.zip";

@@ -31,7 +31,7 @@ output directory, it will create a basic one with a
 > generated, remove `.stack-to-nix.cache`
 > (The open issue is [#57][cache-issue]).
 
-[cache-issue]: https://github.com/input-output-hk/haskell.nix/issues/57
+[cache-issue]: https://github.com/ican-group/haskell.nix/issues/57
 
 ## plan-to-nix
 
@@ -83,4 +83,4 @@ cabal package.
 Normally, you do not need to run `cabal-to-nix` yourself. It is called
 by `stack-to-nix` and `plan-to-nix`.
 
-[haskell.nix]: https://github.com/input-output-hk/haskell.nix
+[haskell.nix]: https://github.com/ican-group/haskell.nix

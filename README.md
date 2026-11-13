@@ -69,9 +69,9 @@ Legend: ✅ built & cached · ⚠️ dependency failed · ❌ failed · ⚪ abor
 The `haskell.nix` repository contains the runtime system for building
 Haskell packages in Nix. It depends on other repos, which are:
 
-- [`hackage.nix`](https://github.com/input-output-hk/hackage.nix) — the latest contents of the [Hackage](https://hackage.haskell.org/) databases, converted to Nix expressions.
+- [`hackage.nix`](https://github.com/ican-group/hackage.nix) — the latest contents of the [Hackage](https://hackage.haskell.org/) databases, converted to Nix expressions.
 
-- [`stackage.nix`](https://github.com/input-output-hk/stackage.nix) — all of the [Stackage](https://www.stackage.org/) snapshots, converted to Nix expressions.
+- [`stackage.nix`](https://github.com/ican-group/stackage.nix) — all of the [Stackage](https://www.stackage.org/) snapshots, converted to Nix expressions.
 
 > [!NOTE]
 > For commercial support, please don't hesitate to reach out at devx@iohk.io

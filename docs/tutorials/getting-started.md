@@ -49,9 +49,9 @@ This can be tricky to get setup properly. If you're still having trouble getting
 This section assumes you choose to uses the experimental flakes features, and so that you have added `experimental-features = [ "nix-command" "flakes" ];` in your Nix configuration. You can look at [the Wiki](https://nixos.wiki/wiki/Flakes) for more instructions.
 
 The following `nix flake init` command creates a template `hello` package containing a `flake.nix` and `nix/hix.nix` file. The project can be used with
-regular `nix` tools. This template is defined in the [haskell.nix repository](https://github.com/input-output-hk/haskell.nix/tree/master/templates/haskell-nix), so it always matches the current `hix init` output and supported GHC versions.
+regular `nix` tools. This template is defined in the [haskell.nix repository](https://github.com/ican-group/haskell.nix/tree/master/templates/haskell-nix), so it always matches the current `hix init` output and supported GHC versions.
 ```bash
-nix flake init --template github:input-output-hk/haskell.nix
+nix flake init --template github:ican-group/haskell.nix
 nix develop
 cabal build
 ```
@@ -108,7 +108,7 @@ cabal repl your-package-name:lib:your-package-name
 cabal build your-package-name
 ```
 
-To open a shell for use with `stack` see [the following issue](https://github.com/input-output-hk/haskell.nix/issues/689#issuecomment-643832619).
+To open a shell for use with `stack` see [the following issue](https://github.com/ican-group/haskell.nix/issues/689#issuecomment-643832619).
 
 ## Getting started with Hix
 
@@ -120,7 +120,7 @@ For instance to run `cabal build` on the `hello` package from hackage:
 ```shell
 cabal unpack hello
 cd hello-1.0.0.2
-nix run "github:input-output-hk/haskell.nix#hix" -- init
+nix run "github:ican-group/haskell.nix#hix" -- init
 nix develop
 cabal build
 ```
@@ -144,7 +144,7 @@ nix run .#hello:exe:hello
 
 To use the other Hix features first install Hix with:
 ```shell
-nix-env -iA hix -f https://github.com/input-output-hk/haskell.nix/tarball/master
+nix-env -iA hix -f https://github.com/ican-group/haskell.nix/tarball/master
 ```
 
 To update run to the latest version run:
