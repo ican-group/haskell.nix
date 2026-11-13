@@ -287,6 +287,32 @@ let
       pkgs.lib.optionals (!isTwoStagePlan)
         (map (lookupExeDependency hsPkgs) exe-depends);
   };
+  # Build-machine units of a two-stage plan (#2628).  The package set's
+  # module args (`system`, `compiler`, `pkgs`, `pkgconfPkgs`) describe the
+  # HOST platform, so reading a build-machine unit's Cabal2Nix file with them
+  # answers its `os(..)`/`arch(..)` conditions for the target and resolves
+  # its system and pkg-config deps from the target's package set -- while the
+  # unit is compiled natively (comp-v2-builder's `isBuildStageUnit`) and
+  # cabal solves it for the build machine.  Swap in the build platform's
+  # answers instead, so its component config, its realized `libs` /
+  # `frameworks` / `pkgconfig`, and its `pkgconfNames` all agree with that
+  # solve.  Bound once per plan; a no-op for single-stage plans.
+  buildMachineArgs =
+    let
+      buildPkgs = pkgs.pkgsBuildBuild;
+      cabalBuild = import ./cabal-system-compiler.nix { inherit (pkgs) lib; } {
+        inherit (buildPkgs) stdenv;
+        compilerVersion = (selectedCompiler.buildGHC or selectedCompiler).version;
+      };
+    in {
+      inherit (cabalBuild) system compiler;
+      pkgs = import ./system-pkgs.nix buildPkgs;
+      pkgconfPkgs = import ./pkgconf-nixpkgs-map.nix buildPkgs;
+    };
+  argsFor = p: args:
+    if isTwoStagePlan && haskellLib.planUnitStage p == "build"
+      then args // buildMachineArgs
+      else args;
   # The pkg-config names a package's `.cabal` file declares under the plan's
   # flags: its Cabal2Nix term read with an empty map, so every name falls to
   # the handler, which returns it.
@@ -366,8 +392,9 @@ in {
       ++ map (p: {
           name = p.id;
           value.revision =
-            {hsPkgs, ...}@args:
+            {hsPkgs, ...}@args':
               let
+                args = argsFor p args';
                 # Read the output of `Cabal2Nix.hs`.  We need it for information not
                 # in the `plan.json` file.
                 file =
@@ -460,8 +487,9 @@ in {
       map (p: {
           name = p.id;
           value =
-            {hsPkgs, ...}@args:
-              let file = nixFilesDir + "/.plan.nix/${p.pkg-name}.nix";
+            {hsPkgs, ...}@args':
+              let args = argsFor p args';
+                  file = nixFilesDir + "/.plan.nix/${p.pkg-name}.nix";
                   cabal2nix = import file (args // { hsPkgs = {}; });
               in pkgs.lib.optionalAttrs (p ? pkg-src-sha256) {
                 sha256 = p.pkg-src-sha256;
