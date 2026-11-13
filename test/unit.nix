@@ -27,6 +27,24 @@ let
     package.buildable = true;
   };
 
+  # `cabalProjectLocal` contributed by `modules/hackage-quirks.nix` for a
+  # hackage-project with the given `name` and `version`.
+  hackageQuirksCabalProjectLocal = { name, version }:
+    (lib.evalModules {
+      specialArgs = { inherit pkgs; };
+      modules = import ../modules/hackage-quirks.nix ++ [{
+        options = {
+          name = lib.mkOption { type = lib.types.str; };
+          version = lib.mkOption { type = lib.types.str; };
+          cabalProjectLocal = lib.mkOption { type = lib.types.lines; default = ""; };
+          cabalProject = lib.mkOption { type = lib.types.lines; default = ""; };
+          sha256map = lib.mkOption { type = lib.types.anything; default = {}; };
+          modules = lib.mkOption { type = lib.types.listOf lib.types.anything; default = []; };
+        };
+        config = { inherit name version; };
+      }];
+    }).config.cabalProjectLocal;
+
   testRepoData = {
     url = "https://github.com/ican-group/haskell.nix.git";
     rev = "487eea1c249537d34c27f6143dff2b9d5586c657";
@@ -65,6 +83,19 @@ lib.runTests {
   testLicenseNoneIsNamed = {
     expr = map (l: l.shortName) (haskellLib.cabalToNixpkgsLicense "NONE");
     expected = [ "NONE" ];
+  };
+
+  # The stack quirk's old-version constraints (`pantry <0.9`, ...) must not
+  # apply to `version = "latest"`: `compareVersions "latest" "2.11.1"` is -1,
+  # and with them no recent stack solves, so the solver fell back to a
+  # placeholder release instead of the newest stack (#1748).
+  testStackQuirkSkipsLatest = {
+    expr = hackageQuirksCabalProjectLocal { name = "stack"; version = "latest"; };
+    expected = "";
+  };
+  testStackQuirkKeepsPinnedOldVersion = {
+    expr = hackageQuirksCabalProjectLocal { name = "stack"; version = "2.9.3"; };
+    expected = "constraints: pantry <0.9, optparse-applicative <0.18, http-download <0.2.1\n";
   };
 
   # `shadowedNonReinstallablePkgs` flags names in `nonReinstallablePkgs` that the
@@ -294,6 +325,28 @@ lib.runTests {
       followingText = "-- end of block\n";
       indentation = "";
       sourceRepo = testRepoData // { subdirs = ["dir1" "dir2"]; };
+    };
+  };
+
+  # A commented-out `-- --sha256:` line must be dropped (not appended to the
+  # previous field), and a `--` inside a value (no leading whitespace) is not
+  # a comment.
+  testParseBlockComments = {
+    expr = __toJSON (haskellLib.parseSourceRepositoryPackageBlock "cabal.project" {} {} "" ''
+        type: git
+        location: https://github.com/foo--bar/haskell.nix.git
+        tag: 487eea1c249537d34c27f6143dff2b9d5586c657 -- trailing comment
+        -- --sha256: 0000000000000000000000000000000000000000000000000000
+        --sha256: 077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123
+      -- end of block
+    '');
+    expected = __toJSON {
+      followingText = "-- end of block\n";
+      indentation = "";
+      sourceRepo = testRepoData // {
+        url = "https://github.com/foo--bar/haskell.nix.git";
+        subdirs = ["."];
+      };
     };
   };
 

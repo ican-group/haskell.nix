@@ -5,8 +5,10 @@ import System.Directory
 import System.FilePath
 
 import Control.Monad
+import Data.Char (isAsciiLower, isAsciiUpper, isDigit)
 import Data.String (IsString)
 import Data.Text (Text)
+import qualified Data.Text as T
 
 import Data.ByteString.Char8 (pack, unpack)
 import Crypto.Hash.SHA256 (hash)
@@ -23,6 +25,18 @@ listDirectories p =
 
 quoted :: (IsString a, Semigroup a) => a -> a
 quoted str = "\"" <> str <> "\""
+
+-- | An attribute name for generated Nix: left bare when it is a valid Nix
+-- identifier, double-quoted otherwise.  Cabal allows names that are not Nix
+-- identifiers, e.g. the flag @3d@ in hgg, which must be written @"3d"@ (#2572).
+-- Nix keywords are left bare too, hnix's pretty-printer quotes those itself.
+attrName :: Text -> Text
+attrName s = case T.uncons s of
+  Just (c, cs)
+    | (isAsciiLower c || isAsciiUpper c || c == '_')
+      && T.all (\x -> isAsciiLower x || isAsciiUpper x || isDigit x || x `elem` ("_'-" :: String)) cs
+    -> s
+  _ -> quoted s
 
 selectOr :: NExpr -> NAttrPath NExpr -> NExpr -> NExpr
 selectOr obj path alt = Fix (NSelect (Just $ alt) obj path)

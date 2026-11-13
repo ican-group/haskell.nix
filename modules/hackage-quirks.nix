@@ -9,9 +9,14 @@ in [
   # Avoid pantry 0.9 in versions without https://github.com/commercialhaskell/stack/pull/6187
   # Also avoid optparse-applicative 0.18
   # http-download 0.2.1 https://github.com/commercialhaskell/stack/issues/6210
+  # Only for explicitly pinned old versions: `builtins.compareVersions "latest"
+  # "2.11.1"` is -1, so without the guard `version = "latest"` (the default)
+  # got the old-stack constraints, no recent stack could solve, and the solver
+  # fell back to a placeholder release (stack-9.9.9 when #1748 was filed,
+  # stack-0.0.0 today) instead of the newest stack.
   ({config, lib, pkgs, ...}:
     { _file = "haskell.nix/overlays/hackage-quirks.nix#stack"; } //
-    lib.mkIf (config.name == "stack") {
+    lib.mkIf (config.name == "stack" && config.version != "latest") {
       cabalProjectLocal =
         if builtins.compareVersions config.version "2.11.1" <= 0 then ''
           constraints: pantry <0.9, optparse-applicative <0.18, http-download <0.2.1
@@ -63,8 +68,10 @@ in [
     lib.mkIf (n == config.name) v) {
 
     lsp-test = {
-      cabalProject = ''
-        packages: .
+      # `cabalProjectLocal` (not `cabalProject`): replacing the generated
+      # `cabal.project` would drop its `extra-packages:` line, leaving the
+      # package itself out of the plan.
+      cabalProjectLocal = ''
         package lsp
           flags: +demo
       '';
@@ -80,8 +87,10 @@ in [
 
     # See https://github.com/ican-group/haskell.nix/issues/948
     postgrest = {
-      cabalProject = ''
-        packages: .
+      # `cabalProjectLocal` (not `cabalProject`): replacing the generated
+      # `cabal.project` would drop its `extra-packages:` line, leaving the
+      # package itself out of the plan.
+      cabalProjectLocal = ''
         package postgresql-libpq
           flags: +use-pkg-config
       '';

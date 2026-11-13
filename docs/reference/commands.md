@@ -1,6 +1,6 @@
 # Command line tools
 
-To install the command line tools refer to the [Installing nix-tools](https://ican-group.github.io/haskell.nix/dev/manually-generating-nix-expressions/) section.
+To install the command line tools refer to the [Installing nix-tools](https://ican-group.github.io/haskell.nix/dev/installing-nix-tools.html) section.
 
 ## stack-to-nix
 

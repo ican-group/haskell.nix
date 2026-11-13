@@ -38,16 +38,19 @@ let
         }
     ) { matchString = "( *)(.*)"; out = []; } blockLines).out;
 
-  # Strip comments except `--sha256`
+  # Strip comments except `--sha256`.  A line whose first non-blank text is
+  # `--` is dropped entirely; otherwise only a `--` preceded by whitespace
+  # starts a trailing comment.  (A greedy `(.*)--` would cut at the *last*
+  # `--`, so `-- --sha256: ...` left `-- ` behind as a continuation line and
+  # a URL such as `https://github.com/foo--bar` was truncated.)
   stripComments = blockLines: pkgs.lib.filter (s: s != "") (
-    pkgs.lib.foldl' (out: s:
-      let
-        m = builtins.match "(.*)--.*" s;
-      in
-        if !(pkgs.lib.hasPrefix "--sha256" s) && m != null
-          then out ++ [(builtins.head m)]
-          else out ++ [s]
-      ) [] blockLines
+    map (s:
+      if pkgs.lib.hasPrefix "--sha256" s
+        then s
+      else if builtins.match "[ \t]*--.*" s != null
+        then ""
+      else builtins.head (builtins.split "[ \t]+--" s)
+      ) blockLines
     );
 
   # Parse lines of a source-repository-package block
