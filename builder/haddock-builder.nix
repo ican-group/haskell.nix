@@ -41,7 +41,128 @@ let
     inherit component fullName flags needsProfiling;
     chooseDrv = p: p.haddock;
     inherit (componentDrv) enableDWARF;
+    # Runs before the package DB is recached.
+    extraScript = linkDepDocs;
   };
+
+  # The package DB is populated from the dependencies' *library* derivations
+  # (`configFiles.libDeps`, propagated below), whose `haddock-interfaces` and
+  # `haddock-html` fields do not point at any docs.  Without the fix below
+  # haddock warns "The documentation for the following packages are not
+  # installed" and emits no links to non-GHC libraries (#2580).
+  #
+  # For each direct dependency that has docs we rewrite those two fields to
+  # point at its `.doc` output.  Transitive dependencies are covered by merging
+  # in the fields from each direct dependency's own docs package DB (its
+  # haddock derivation's `configFiles` output, which was fixed up the same way
+  # when its docs were built).  Two things are deliberately avoided (both
+  # happen if the dependencies' `.haddock` derivations are propagated instead):
+  #
+  #  * Docs are always taken from the dependency's plain build, even when this
+  #    component uses its `.profiled` (or `.dwarf`) variant.  The html is the
+  #    same, so there is no reason to run haddock again for every
+  #    `.profiled.haddock`.
+  #  * Dependencies with `doHaddock = false` (`haddockDir` returns `null`) are
+  #    skipped, and so is everything when this component does not run haddock,
+  #    so no extra haddock derivations are built.
+  #
+  # A consequence of the second point: a library reached only through a
+  # dependency without docs is not linked, because that dependency's docs
+  # package DB is never fixed up.  Linking it would mean building the haddock
+  # derivations of every `doHaddock = false` package in the closure.
+  depDocs = lib.optionals doHaddock' (lib.concatMap (plain:
+    let
+      # Must match how `make-config-files.nix` picks the library whose
+      # `.conf` files end up in the package DB.
+      prof = if needsProfiling then plain.profiled or plain else plain;
+      used = if componentDrv.enableDWARF or false then prof.dwarf or prof else prof;
+      html = if plain ? haddockDir then plain.haddockDir null else null;
+    in lib.optional (html != null && plain ? identifier.component-name) {
+      inherit used html;
+      cname = plain.identifier.component-name;
+      depsDb = "${plain.haddock.configFiles}/${packageCfgDir}";
+    })
+    # Deduplicated the same way `make-config-files.nix` does.
+    (haskellLib.uniqueWithName (map haskellLib.dependToLib component.depends)));
+
+  # Bash functions shared by `linkDepDocs` and the installPhase.
+  #
+  # `findHaddock HTML CNAME` sets `haddockHtml` and `haddockInterface` for the
+  # docs of component CNAME in html directory HTML.  Cabal puts a
+  # sub-library's docs in a subdirectory named after it
+  # (`html/<sublib>/<sublib>.haddock`), the main library's at the top
+  # (`html/<pkg>.haddock`).
+  #
+  # `setHaddock CONF` points the haddock fields of package DB entry CONF at
+  # `$haddockHtml` and `$haddockInterface`.  `.conf` fields may continue onto
+  # indented lines (`ghc-pkg register` wraps long values), so the same sed
+  # grouping as `make-config-files.nix` uses for `dynamic-library-dirs` drops
+  # the whole field before the new value is appended.
+  haddockFns = ''
+    findHaddock() {
+      if [ ! -f "$1/$2.haddock" ] && [ -f "$1/$2/$2.haddock" ]; then
+        haddockHtml="$1/$2"
+      else
+        haddockHtml="$1"
+      fi
+      haddockInterface="$haddockHtml/$2.haddock"
+    }
+    setHaddock() {
+      chmod +w "$1"
+      echo >> "$1"
+      sed -i -E -e '/^ ./{H;$!d}' -e 'x' -e '/^haddock-(interfaces|html):/d' "$1"
+      echo "haddock-interfaces: $haddockInterface" >> "$1"
+      echo "haddock-html: $haddockHtml" >> "$1"
+    }
+  '';
+
+  # `docsDbFields DB` prints `<conf file> <haddock-interfaces> <haddock-html>`
+  # for each entry of package DB directory DB, joining continuation lines.  One
+  # awk per DB rather than two seds per entry, as most entries of a dependency's
+  # DB are already linked (or never will be) by the time it is read.
+  #
+  # The direct dependencies are linked first and remembered in `$linkedDocs`;
+  # the transitive pass then only fills in entries not linked yet, and only
+  # from entries whose interface file exists.  The direct pass checks that too,
+  # since a library with no Haskell sources gets a `.doc` output but no
+  # interface (see the buildPhase).
+  linkDepDocs = lib.optionalString (depDocs != []) (haddockFns + ''
+    docsDbFields() {
+      set -- "$1"/*.conf
+      [ -e "$1" ] || return 0
+      awk '
+        function emit() { if (n != "" && iface != "" && html != "") print n, iface, html }
+        FNR == 1 { emit(); n = FILENAME; sub(/.*\//, "", n); iface = ""; html = ""; fld = "" }
+        /^haddock-interfaces:/ { fld = "i"; v = $0; sub(/^[^:]*:[ \t]*/, "", v); iface = v; next }
+        /^haddock-html:/ { fld = "h"; v = $0; sub(/^[^:]*:[ \t]*/, "", v); html = v; next }
+        /^[ \t]/ { v = $0; gsub(/^[ \t]+|[ \t]+$/, "", v); if (fld == "i") iface = iface v; else if (fld == "h") html = html v; next }
+        { fld = "" }
+        END { emit() }' "$@"
+    }
+    linkedDocs=$(mktemp -d)
+    for d in ${lib.concatMapStringsSep " " (d: "${d.used}:${d.html}:${d.cname}") depDocs}; do
+      IFS=: read -r used html cname <<< "$d"
+      findHaddock "$html" "$cname"
+      [ -f "$haddockInterface" ] || continue
+      for i in "$used"/package.conf.d/*.conf; do
+        n=$(basename "$i")
+        f="$configFiles/${packageCfgDir}/$n"
+        if [ -f "$f" ]; then
+          setHaddock "$f"
+          touch "$linkedDocs/$n"
+        fi
+      done
+    done
+    for db in ${lib.concatMapStringsSep " " (d: d.depsDb) depDocs}; do
+      while read -r n haddockInterface haddockHtml; do
+        f="$configFiles/${packageCfgDir}/$n"
+        if [ -f "$f" ] && [ ! -e "$linkedDocs/$n" ] && [ -f "$haddockInterface" ]; then
+          setHaddock "$f"
+          touch "$linkedDocs/$n"
+        fi
+      done < <(docsDbFields "$db")
+    done
+  '');
 
   finalConfigureFlags = lib.concatStringsSep " " (
     [ "--prefix=${componentDrv}"
@@ -173,16 +294,29 @@ let
         fi
 
         ${ghc.targetPrefix}ghc-pkg -v0 init $out/package.conf.d
-
+      ''
+      # Copy the .conf files from the build derivation, pointing the haddock
+      # fields at this derivation's docs (`shell-for` with `withHaddock` uses
+      # these entries).  They are left alone when no interface was produced.
+      # Without docs the fields are rewritten as before, so that those
+      # derivations do not change.
+      + (if doHaddock' then haddockFns + ''
+        findHaddock "$docdir/html" ${componentId.cname}
         for i in "${componentDrv}/package.conf.d"/*.conf; do
-          # Copy the .conf files from the build derivation, but replace the `haddock-intefaces:`
-          # field with correct location for haddocks (now it is known).  This will insure that
-          # the other haddock derivations build to reference this one will have the correct
-          # working hyper links.
+          pkg=$(basename "$i")
+          cp "$i" "$pkg"
+          if [ -f "$haddockInterface" ]; then
+            setHaddock "$pkg"
+          fi
+          ${ghc.targetPrefix}ghc-pkg -v0 --package-db $configFiles/${configFiles.packageCfgDir} -f $out/package.conf.d register "$pkg"
+        done
+      '' else ''
+        for i in "${componentDrv}/package.conf.d"/*.conf; do
           pkg=$(basename "$i")
           sed -e "s|haddock-interfaces:.*|haddock-interfaces: $docdir/html/${componentId.cname}.haddock|" -e "s|haddock-html:.*|haddock-html: $docdir/html/|" "$i" > "$pkg"
           ${ghc.targetPrefix}ghc-pkg -v0 --package-db $configFiles/${configFiles.packageCfgDir} -f $out/package.conf.d register "$pkg"
         done
+      '') + ''
 
         if [ -d ${componentDrv}/exactDep ]; then
           ln -s ${componentDrv}/exactDep $out/exactDep
