@@ -29,19 +29,19 @@
     "hls-2.12" = { url = "github:haskell/haskell-language-server/2.12.0.0"; flake = false; };
     "hls"     = { url = "github:haskell/haskell-language-server"; flake = false; };
     hackage = {
-      url = "github:input-output-hk/hackage.nix";
+      url = "github:ican-group/hackage.nix";
       flake = false;
     };
     hackage-for-stackage = {
-      url = "github:input-output-hk/hackage.nix/for-stackage";
+      url = "github:ican-group/hackage.nix/for-stackage";
       flake = false;
     };
     hackage-internal = {
-      url = "github:input-output-hk/hackage.nix";
+      url = "github:ican-group/hackage.nix";
       flake = false;
     };
     stackage = {
-      url = "github:input-output-hk/stackage.nix";
+      url = "github:ican-group/stackage.nix";
       flake = false;
     };
     cabal-34 = {
@@ -188,7 +188,7 @@
         overlay = self.overlays.combined;
         overlays = import ./overlays { sources = inputs; };
 
-        # `nix flake init --template github:input-output-hk/haskell.nix`
+        # `nix flake init --template github:ican-group/haskell.nix`
         # scaffolds a new haskell.nix project (flake.nix + nix/hix.nix + a
         # `hello` package).  Kept in-repo (rather than in NixOS/templates) so
         # it stays in sync with the current `hix init` output and supported
@@ -401,15 +401,11 @@
                 ];
               };
             shells = lib.genAttrs (
-              # Exclude old versions of GHC to speed up `nix flake check`
-              lib.attrNames (
-                lib.removeAttrs pkgs.haskell-nix.compiler
-                  ([ "ghc844" ] ++
-                    [ "ghc861" "ghc862" "ghc863" "ghc864" ] ++
-                    [ "ghc881" "ghc882" "ghc883" ] ++
-                    [ "ghc8101" "ghc8102" "ghc8103" "ghc8104" "ghc810420210212" "ghc8105" "ghc8106" ] ++
-                    [ "ghc901" ] ++ [ "ghc921" "ghc922" "ghc923" ])
-              ))
+              # Exclude compilers that are too old to be supported.  Those
+              # attributes throw (see `traceWarnOld` in overlays/bootstrap.nix),
+              # which would break `nix flake check`.
+              lib.filter (n: (builtins.tryEval pkgs.haskell-nix.compiler.${n}.version).success)
+                (lib.attrNames pkgs.haskell-nix.compiler))
               mkHaskellNixShell;
           in
           shells // { default = shells.${defaultCompiler}; });

@@ -247,6 +247,7 @@ let
   # All tests.
   allTests = {
     cabal-simple = callTest ./cabal-simple { inherit util; };
+    cabal-files-filter = callTest ./cabal-files-filter {};
     build-jobs = callTest ./build-jobs {};
     dummy-ghc-info = callTest ./dummy-ghc-info {};
     check-datadir = callTest ./check-datadir {};
@@ -270,6 +271,7 @@ let
     callCabalProjectToNix = callTest ./call-cabal-project-to-nix { inherit evalPackages; };
     cabal-source-repo = callTest ./cabal-source-repo {};
     cabal-source-repo-comments = callTest ./cabal-source-repo-comments {};
+    cabal-source-repo-symlink = callTest ./cabal-source-repo-symlink {};
     buildable = callTest ./buildable {};
     project-flags-cabal = callTest ./project-flags/cabal.nix {};
     project-flags-stack = callTest ./project-flags/stack.nix {};

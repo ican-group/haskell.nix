@@ -25,10 +25,6 @@ final: prev:
   ncurses = if !prev.stdenv.hostPlatform.isWindows then prev.ncurses else prev.ncurses.overrideAttrs (drv: {
     configureFlags = (drv.configureFlags or []) ++ [ "--disable-db-install" ];
   });
-} // prev.lib.optionalAttrs (prev ? mfpr) {
-   mfpr = if !prev.stdenv.hostPlatform.isWindows then prev.mpfr else prev.mfpr.overrideAttrs (drv: {
-     configureFlags = (drv.configureFlags or []) ++ [ "--enable-static --disable-shared" ];
-   });
 } // prev.lib.optionalAttrs (prev.stdenv.hostPlatform.isWindows && prev.stdenv.hostPlatform.libc == "ucrt") {
   windows = prev.windows // {
     # TODO update stdenv.cc so that the wrapper adds -D_UCRT for libc=="ucrt"

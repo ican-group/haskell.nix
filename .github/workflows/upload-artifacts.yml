@@ -241,7 +241,7 @@ jobs:
           git fetch origin "+refs/heads/$branch:refs/remotes/origin/$branch" || true
           git switch --force-create "$branch" origin/master
           (
-            echo "pkgs: let baseurl = \"https://github.com/input-output-hk/haskell.nix/releases/download/${GITHUB_REF_NAME}/\"; in {"
+            echo "pkgs: let baseurl = \"https://github.com/ican-group/haskell.nix/releases/download/${GITHUB_REF_NAME}/\"; in {"
             for arch in aarch64-darwin x86_64-darwin aarch64-linux x86_64-linux; do
               echo "  ${arch} = pkgs.fetchurl { "
               echo "     name = \"${arch}-nix-tools-static\";"

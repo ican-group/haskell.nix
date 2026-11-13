@@ -7,7 +7,7 @@ source-repository-package
   -- Test
   type: git
   -- Test
-  location: https://github.com/input-output-hk/haskell.nix.git
+  location: https://github.com/ican-group/haskell.nix.git
   -- Test
   tag: bc01ebc05a8105035c9449943046b46c8364b932
   -- Test

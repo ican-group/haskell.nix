@@ -1,0 +1,10 @@
+cabal-version: 2.2
+name:          use-symlink-pkg
+version:       0.1.0.0
+license:       MIT
+build-type:    Simple
+
+executable use-symlink-pkg
+  main-is:          Main.hs
+  build-depends:    base, symlink-pkg
+  default-language: Haskell2010

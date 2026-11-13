@@ -1,0 +1,15 @@
+cabal-version: 2.2
+name:          symlink-pkg
+version:       0.1.0.0
+license:       MIT
+-- `LICENSE` and `src/Shared.hs` are relative symlinks that point outside
+-- this package's directory (to `../LICENSE` and `../../shared/Shared.hs`).
+license-file:  LICENSE
+build-type:    Simple
+
+library
+  exposed-modules:  SymlinkPkg
+  other-modules:    Shared
+  hs-source-dirs:   src
+  build-depends:    base
+  default-language: Haskell2010

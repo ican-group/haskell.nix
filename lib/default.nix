@@ -232,9 +232,34 @@ in {
   # Replacement for lib.cleanSourceWith that has a subDir argument.
   inherit (import ./clean-source-with.nix { inherit lib; }) cleanSourceWith;
 
+  # Normalize a relative path:
+  #  "."            -> ""
+  #  "./."          -> ""
+  #  "./xyz"        -> "xyz"
+  #  "../abc"       -> ERROR
+  #  "abc/.."       -> ""
+  #  "abc/../xyz"   -> "xyz"
+  #  "abc/./xyz"    -> "abc/xyz"
+  #  "abc/./../xyz" -> "xyz"
+  #  "abc/.././xyz" -> "xyz"
+  #  "abc/"         -> "abc/"
+  normalizeRelativePath = path:
+    let
+      # Remove a directory for each .. part of a path.
+      removeDotDots = parts: lib.reverseList (
+        builtins.foldl' (a: b:
+          if b == ".."
+            then builtins.tail a
+            else builtins.concatLists [ [b] a ]) [] parts);
+      # Split the path into component parts and remove the empty ones and single dots.
+      nonEmptyParts = lib.filter (x: x != "" && x != ".") (lib.splitString "/" path);
+    in lib.concatStringsSep "/" (removeDotDots nonEmptyParts)
+      # Keep the trailing slash if there was one.
+      + (if lib.hasSuffix "/" path then "/" else "");
+
   # Use cleanSourceWith to filter just the files needed for a particular
   # component of a package
-  cleanCabalComponent = import ./clean-cabal-component.nix { inherit lib cleanSourceWith; };
+  cleanCabalComponent = import ./clean-cabal-component.nix { inherit lib cleanSourceWith normalizeRelativePath; };
 
   # Clean git directory based on `git ls-files --recurse-submodules`
   cleanGit = import ./clean-git.nix {
@@ -439,8 +464,8 @@ in {
   # the a projectType module (../modules/cabal-project.nix or ../modules/stack-project.nix).
   # The resulting config is then passed to the project function's implementation.
   evalProjectModule = projectType: m: f:
-    let project = f
-      (lib.evalModules {
+    let
+      evaluated = lib.evalModules {
         modules = (if builtins.isList m then m else [m]) ++ [
           # Include ../modules/cabal-project.nix or ../modules/stack-project.nix
           (import ../modules/project-common.nix)
@@ -455,8 +480,12 @@ in {
             inherit (project) hsPkgs;
           })
         ];
-      });
-    in project;
+      };
+      project = f evaluated;
+    in import ./check-org-move.nix { inherit lib; } {
+      inherit (evaluated.config) src;
+      silence = evaluated.config.silenceOrgMoveWarning;
+    } project;
 
   # Converts from a `compoent.depends` value to a library derivation.
   # In the case of sublibs the `depends` value should already be the derivation.
@@ -844,4 +873,15 @@ in {
   types = import ./types.nix { inherit lib; };
 
   addPackageKeys = x: x // { package-keys = builtins.attrNames x.packages; };
+
+  # `builtins.toFile` refuses text that references a derivation output
+  # (e.g. `configureOptions = [ "--with-foo=${pkgs.foo}" ]` or a darwin
+  # framework's `extra-lib-dirs:`).  Keep `toFile` for the usual
+  # context-free text (no extra drv, unchanged hashes) and fall back to
+  # `writeText` when the text carries derivation context.
+  textFile = name: text:
+    if lib.any (c: c ? outputs || (c.allOutputs or false))
+         (lib.attrValues (builtins.getContext text))
+    then pkgs.writeText name text
+    else builtins.toFile name text;
 }

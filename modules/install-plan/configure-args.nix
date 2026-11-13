@@ -55,21 +55,19 @@
       # configureOptions option.  These come from cabal.project's
       # `configure-options:` stanza and the v2 builder emits them
       # back into its own cabal.project so UnitIds stay consistent
-      # between a slice build and downstream consumers.  Per-program
-      # `--<prog>-option=` entries from `otherFlags` (e.g. derived
-      # from `c2hs-options:`, `hsc2hs-options:`, ...) are appended
-      # verbatim so v2 round-trips them through cabal.project too —
-      # cabal-install threads the field value through to Setup
-      # configure, which DOES recognise `--<prog>-option=` for any
-      # program in its ProgramDb.  Without this a project saying
-      # `package libsodium  c2hs-options: --cppopts=...` would reach
-      # v1 (via configureFlags) but be silently dropped on v2.
+      # between a slice build and downstream consumers.
+      #
+      # Per-program `--<prog>-option=` entries (`otherFlags`) must NOT
+      # be added here: cabal hashes `configure-options:` into
+      # `pkgHashConfigureScriptArgs` and passes them as
+      # `--configure-option=` (to ./configure only), so re-emitting
+      # them would fork the slice's UnitId from plan-nix's.  v2
+      # round-trips them via `programOptions` below instead.
       configureOptions =
         lib.concatMap (arg:
           let m = builtins.match "--configure-option=(.*)" arg;
           in lib.optional (m != null) (builtins.elemAt m 0)
-        ) args
-        ++ otherFlags;
+        ) args;
 
       # Translate `--enable-X` toggles cabal-install records in
       # plan.json's `configure-args` back into haskell.nix module

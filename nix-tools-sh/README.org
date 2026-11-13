@@ -2,8 +2,6 @@
 
 * ~nix-tools~
 
-[[https://buildkite.com/input-output-hk/nix-tools][https://badge.buildkite.com/8c5ed154c28db5d7184560c8000e57180b2b362b7a0431602e.svg]]
-
 ~nix-tools~ is a set of Haskell → Nix tools to integrate Haskell
 projects into Nix build environments.
 
@@ -26,7 +24,7 @@ into a ~nix~ expression and then doing the lifting in Nix.
 
 * QuickStart
 
-View the [[https://input-output-hk.github.io/haskell.nix/][haskell.nix documentation]] for instructions on how to get
+View the [[https://ican-group.github.io/haskell.nix/][haskell.nix documentation]] for instructions on how to get
 started with your own project.
 
 * Building
@@ -39,11 +37,11 @@ cabal new-build
 
 * Project Roadmap
 
-Under the [[https://github.com/input-output-hk/haskell.nix][haskell.nix]]
-umbrella there are a few [[https://github.com/input-output-hk/haskell.nix/projects][GitHub Projects]]
+Under the [[https://github.com/ican-group/haskell.nix][haskell.nix]]
+umbrella there are a few [[https://github.com/ican-group/haskell.nix/projects][GitHub Projects]]
 for tracking completion of the project goals. If you would like to
 follow or contribute to this effort then that would be a good place to
 start.
 
 Please open bug reports in the
-[[https://github.com/input-output-hk/haskell.nix/issues][Haskell.nix issue tracker]].
+[[https://github.com/ican-group/haskell.nix/issues][Haskell.nix issue tracker]].
