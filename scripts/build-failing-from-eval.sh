@@ -15,7 +15,7 @@
 # Examples:
 #   scripts/build-failing-from-eval.sh 1533
 #   scripts/build-failing-from-eval.sh 1533 . -L
-#   scripts/build-failing-from-eval.sh https://ci.zw3rk.com/eval/1533 github:input-output-hk/haskell.nix
+#   scripts/build-failing-from-eval.sh https://ci.zw3rk.com/eval/1533 github:ican-group/haskell.nix
 #
 # Implementation notes:
 #   * Failing-job extraction parses the Hydra `?full=1` HTML.  It

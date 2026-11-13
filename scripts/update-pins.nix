@@ -3,7 +3,7 @@
 with lib;
 
 let
-  repo = "git@github.com:input-output-hk/haskell.nix.git";
+  repo = "git@github.com:ican-group/haskell.nix.git";
   sshKey = "/run/keys/buildkite-haskell-dot-nix-ssh-private";
 in
   writeScript "update-pins.sh" ''

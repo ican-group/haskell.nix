@@ -305,6 +305,7 @@ test-suite hackage-lookup-tests
 -- quoted in the generated Nix.
 test-suite attr-name-tests
   import:              warnings
+                     , cabal-deps
   type:                exitcode-stdio-1.0
   main-is:             Main.hs
   build-depends:       base
@@ -313,7 +314,24 @@ test-suite attr-name-tests
                      , hnix              ^>=0.17
                      , prettyprinter
                      , nix-tools:cabal2nix
+                     -- Plan2Nix is compiled in from the plan-to-nix sources
+                     -- (it is not in a library), so its deps are needed here.
+                     , aeson
+                     , directory
+                     , extra
+                     , filepath
+                     , microlens
+                     , microlens-aeson
+                     , nix-tools
+                     , optparse-applicative
+                     , transformers
+                     , unordered-containers
+                     , vector
+  other-modules:       Plan2Nix
+                     , Plan2Nix.CLI
+                     , Plan2Nix.Plan
   hs-source-dirs:      tests-attr-name
+                     , plan2nix
   default-language:    Haskell2010
 
 -- Pure parser tests (no external programs / network), kept separate from the

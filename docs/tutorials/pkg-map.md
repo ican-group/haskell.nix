@@ -67,12 +67,12 @@ project = pkgs.haskell-nix.project' {
 Alternatively, if the name is commonly used, an alias can be added to
 the Haskell.nix sources, so that it's solved for all users.
 
-* [`lib/pkgconf-nixpkgs-map.nix`](https://github.com/input-output-hk/haskell.nix/blob/master/lib/pkgconf-nixpkgs-map.nix)
+* [`lib/pkgconf-nixpkgs-map.nix`](https://github.com/ican-group/haskell.nix/blob/master/lib/pkgconf-nixpkgs-map.nix)
   — for `pkgconfig-depends`.
 
   Each mapping entry is a list of packages.
 
-* [`lib/system-nixpkgs-map.nix`](https://github.com/input-output-hk/haskell.nix/blob/master/lib/system-nixpkgs-map.nix)
+* [`lib/system-nixpkgs-map.nix`](https://github.com/ican-group/haskell.nix/blob/master/lib/system-nixpkgs-map.nix)
   — for `build-tool-depends`, `frameworks`, `extra-libraries`, etc.
 
   Each name can be mapped to:
@@ -82,5 +82,5 @@ the Haskell.nix sources, so that it's solved for all users.
 
 > **Tip:** Open a PR
 >
-> Please go ahead and open a [pull request](https://github.com/input-output-hk/haskell.nix/pulls)
+> Please go ahead and open a [pull request](https://github.com/ican-group/haskell.nix/pulls)
 > to improve the package mappings.

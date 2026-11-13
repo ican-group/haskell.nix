@@ -2,7 +2,7 @@
   # This is a boilerplate `flake.nix` file used by
   # `hix develop`, `hix flake`, `hix build` and `hix run`.
   description = "Default hix flake";
-  inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
+  inputs.haskellNix.url = "github:ican-group/haskell.nix";
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
   # nixpkgs unstable (26.11) dropped x86_64-darwin, so importing it for that
   # system throws.  Keep the last pin that supports it and use it there only.

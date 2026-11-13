@@ -93,5 +93,5 @@ But `haskell.nix` is very picky about it.
 
 ### Why does my executable depend on GHC/GCC?
 
-You may want to set the `dontStrip` option to `false` (see https://github.com/input-output-hk/haskell.nix/issues/829).
+You may want to set the `dontStrip` option to `false` (see https://github.com/ican-group/haskell.nix/issues/829).
 This is not set by default because it can occasionally cause breakage.

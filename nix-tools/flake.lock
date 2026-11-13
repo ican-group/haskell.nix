@@ -175,13 +175,13 @@
       "locked": {
         "lastModified": 1775610235,
         "narHash": "sha256-Dq919QBSqkDXNz8NKJOdmwQ5zGyBYvLSyAJfBafZnJk=",
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "repo": "haskell.nix",
         "rev": "af3d4e711e49d2c3ef128ab86461b6ae10124b7b",
         "type": "github"
       },
       "original": {
-        "owner": "input-output-hk",
+        "owner": "ican-group",
         "repo": "haskell.nix",
         "type": "github"
       }

@@ -101,7 +101,7 @@ plan2nix args Plan { packages, extras, components, compilerVersion, compilerPack
                src = Just . C2N.Path $ relPath </> ".." </> shortRelativePath cwd folder
            in do createDirectoryIfMissing True (takeDirectory nixFile)
                  writeDoc nixFile . prettyNix =<< cabal2nix True (argDetailLevel args) src cabalFile
-                 return $ fromString pkg $= mkPath False nix
+                 return $ attrName (fromString pkg) $= mkPath False nix
     (_name, Just (Package v flags (Just (DVCS (Git url rev) subdirs)) False _)) ->
       fmap concat . forM subdirs $ \subdir ->
       do cacheHits <- liftIO $ cacheHits (argCacheFile args) url rev subdir
@@ -113,7 +113,7 @@ plan2nix args Plan { packages, extras, components, compilerVersion, compilerPack
                _ -> return []
            hits ->
              forM hits $ \( pkg, nix ) -> do
-               return $ fromString pkg $= mkPath False nix
+               return $ attrName (fromString pkg) $= mkPath False nix
     _ -> return []
   let flags = concatMap (\case
           (name, Just (Package _v f _hasDescriptionOverride _ _)) -> flags2nix name f
@@ -146,15 +146,15 @@ plan2nix args Plan { packages, extras, components, compilerVersion, compilerPack
  where
   bind :: Text -> Maybe Package -> [Binding NExpr]
   bind pkg (Just Package { packageFlags, packageHasDescriptionOverride = True }) =
-      bindPath (VarName pkg :| ["revision"])  (mkSym "import" @@ mkPath False ("." </> "cabal-files" </> Text.unpack pkg <.> "nix"))
+      bindPath (VarName (attrName pkg) :| ["revision"])  (mkSym "import" @@ mkPath False ("." </> "cabal-files" </> Text.unpack pkg <.> "nix"))
     : flagBindings pkg packageFlags
   bind pkg (Just Package { packageVersion, packageFlags, packageHasDescriptionOverride = False }) =
-    let verExpr      = (mkSym "hackage" @. pkg) @. quoted packageVersion
+    let verExpr      = (mkSym "hackage" @. attrName pkg) @. quoted packageVersion
         revExpr      = (verExpr @. "revisions") @. "default"
     in  revBinding pkg revExpr : flagBindings pkg packageFlags
   bind pkg Nothing = [revBinding pkg mkNull]
   revBinding :: Text -> NExpr -> Binding NExpr
-  revBinding pkg revExpr = bindPath (VarName pkg :| ["revision"]) revExpr
+  revBinding pkg revExpr = bindPath (VarName (attrName pkg) :| ["revision"]) revExpr
   bind' pkg ver = pkg $= maybe mkNull mkStr ver
   mapKeys f = Map.fromList . fmap (\(k, v) -> (f k, v)) . Map.toList
 
@@ -182,7 +182,7 @@ plan2nix args Plan { packages, extras, components, compilerVersion, compilerPack
             liftIO $ appendCache (argCacheFile args) url rev subdir sha256 pkg nix
             return $ fromString pkg $= mkPath False nix
   flagBindings pkg packageFlags = Map.foldrWithKey
-    (\fname val acc -> bindPath (VarName pkg :| ["flags", fname]) (mkBool val) : acc)
+    (\(VarName fname) val acc -> bindPath (VarName (attrName pkg) :| ["flags", VarName (attrName fname)]) (mkBool val) : acc)
     []
     packageFlags
 
@@ -319,7 +319,7 @@ value2plan plan = Plan { packages, components, extras, compilerVersion, compiler
 
 defaultNixContents :: String
 defaultNixContents = unlines
-  [ "{ haskellNixSrc ? builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz"
+  [ "{ haskellNixSrc ? builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz"
   , ", haskellNix ? import haskellNixSrc {}"
   , ", nixpkgs ? haskellNix.sources.nixpkgs }:"
   , ""
