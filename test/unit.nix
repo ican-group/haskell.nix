@@ -88,10 +88,11 @@ lib.runTests {
   # The stack quirk's old-version constraints (`pantry <0.9`, ...) must not
   # apply to `version = "latest"`: `compareVersions "latest" "2.11.1"` is -1,
   # and with them no recent stack solves, so the solver fell back to a
-  # placeholder release instead of the newest stack (#1748).
+  # placeholder release instead of the newest stack (#1748).  Only the
+  # bounds that keep the solver off the placeholder releases remain.
   testStackQuirkSkipsLatest = {
     expr = hackageQuirksCabalProjectLocal { name = "stack"; version = "latest"; };
-    expected = "";
+    expected = "constraints: stack >=2.1 && <9.9.9\n";
   };
   testStackQuirkKeepsPinnedOldVersion = {
     expr = hackageQuirksCabalProjectLocal { name = "stack"; version = "2.9.3"; };
