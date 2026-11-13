@@ -1,7 +1,7 @@
 # Updating Hackage and Stackage Nix expressions
 
-The [`hackage.nix`](https://github.com/input-output-hk/hackage.nix)
-and [`stackage.nix`](https://github.com/input-output-hk/stackage.nix)
+The [`hackage.nix`](https://github.com/ican-group/hackage.nix)
+and [`stackage.nix`](https://github.com/ican-group/stackage.nix)
 repos and corresponding files `hackage-src.json` and
 `stackage-src.json` will be regularly and automatically updated using
 scripts in this repo.

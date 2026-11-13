@@ -1,7 +1,7 @@
 # Bumping Hackage and Stackage snapshots
 
 `haskell.nix` relies on some generated data providing information about packages in Hackage and Stackage snapshots.
-These are kept in [`hackage.nix`](https://github.com/input-output-hk/hackage.nix) and [`stackage.nix`](https://github.com/input-output-hk/stackage.nix) respectively.
+These are kept in [`hackage.nix`](https://github.com/ican-group/hackage.nix) and [`stackage.nix`](https://github.com/ican-group/stackage.nix) respectively.
 If your project depends on a Hackage package, then the `hackage.nix` revision used must be new enough to contain that, and likewise for Stackage snaphots and `stackage.nix`.
 
 ## Updating and pinning `hackage.nix` and `stackage.nix`

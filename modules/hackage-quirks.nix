@@ -13,7 +13,7 @@ in [
   # "2.11.1"` is -1, so without the guard `version = "latest"` (the default)
   # got the old-stack constraints, no recent stack could solve, and the solver
   # fell back to a placeholder release (stack-9.9.9 when #1748 was filed,
-  # stack-0.0.0 today) instead of the newest stack.
+  # or stack-0.0.0) instead of the newest stack.
   ({config, lib, pkgs, ...}:
     { _file = "haskell.nix/overlays/hackage-quirks.nix#stack"; } //
     lib.mkIf (config.name == "stack" && config.version != "latest") {
@@ -25,6 +25,21 @@ in [
           constraints: http-download <0.2.1
         ''
         else "";
+    }
+  )
+
+  # Hackage has two stack releases that are not real stacks: the placeholder
+  # stack-0.0.0 and the deprecated stack-9.9.9.  Whenever no real stack solves
+  # (e.g. a GHC newer than the latest stack's bounds), the solver falls back to
+  # one of them and silently builds the wrong thing (#1748).  Bound both ends
+  # so that case is an honest solve failure instead.  2.1 is low enough for the
+  # oldest GHCs we support.  Only for "latest": a pinned version needs no help.
+  ({config, lib, ...}:
+    { _file = "haskell.nix/overlays/hackage-quirks.nix#stack-placeholders"; } //
+    lib.mkIf (config.name == "stack" && config.version == "latest") {
+      cabalProjectLocal = ''
+        constraints: stack >=2.1 && <9.9.9
+      '';
     }
   )
 
@@ -85,7 +100,7 @@ in [
             = "0dxx8cp2xndpw3jwiawch2dkrkp15mil7pyx7dvd810pwc22pm2q"; };
     };
 
-    # See https://github.com/input-output-hk/haskell.nix/issues/948
+    # See https://github.com/ican-group/haskell.nix/issues/948
     postgrest = {
       # `cabalProjectLocal` (not `cabalProject`): replacing the generated
       # `cabal.project` would drop its `extra-packages:` line, leaving the
@@ -123,7 +138,7 @@ in [
   # release has compatible bounds yet, the solver can silently fall back to a
   # prehistoric version whose (usually unbounded) dependencies happen to solve
   # -- e.g. hoogle-3.1, whose CLI predates `hoogle generate` and so breaks
-  # `hoogle-with-packages` (see input-output-hk/haskell.nix#2477).  A
+  # `hoogle-with-packages` (see ican-group/haskell.nix#2477).  A
   # conservative lower bound excludes those ancient versions: each floor is low
   # enough to still solve on the oldest GHCs we support (it never rules out a
   # legitimate choice), while on a too-new GHC it turns the silent

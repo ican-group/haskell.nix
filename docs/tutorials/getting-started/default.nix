@@ -3,12 +3,12 @@ let
   sources = import ./nix/sources.nix {};
   # If ./nix/sources.nix file is not found run:
   #   niv init
-  #   niv add input-output-hk/haskell.nix -n haskellNix
+  #   niv add ican-group/haskell.nix -n haskellNix
 
   # Fetch the haskell.nix commit we have pinned with Niv
   haskellNix = import sources.haskellNix {};
   # If haskellNix is not found run:
-  #   niv add input-output-hk/haskell.nix -n haskellNix
+  #   niv add ican-group/haskell.nix -n haskellNix
 
   # Import nixpkgs and pass the haskell.nix provided nixpkgsArgs
   pkgs = import

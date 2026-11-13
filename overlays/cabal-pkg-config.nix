@@ -172,7 +172,7 @@ in
   #     fail with `--static`.  Keep the historical workaround: make
   #     cabal lazy by returning a single (hopefully self-describing)
   #     fake option on failure.
-  #     See https://github.com/input-output-hk/haskell.nix/issues/1642
+  #     See https://github.com/ican-group/haskell.nix/issues/1642
   #
   # `cabalPkgConfigWrapperFor names` carries metadata for `names` alone, so a
   # slice's hash moves with those names' versions and with nothing else.

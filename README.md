@@ -45,23 +45,23 @@ Legend: ✅ built & cached · ⚠️ dependency failed · ❌ failed · ⚪ abor
 
 | Nixpkgs | Host → Target | ghc914-sh | ghc967 | ghc984 | ghc9103 | ghc9124 | ghc9141 | ghc9141llvm |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| unstable | `x86_64-linux` | · | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| unstable | `x86_64-linux` → static | · | ✅ | ✅ | ✅ | ✅ | ✅ | · |
-| unstable | `x86_64-linux` → musl64 | · | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| unstable | `x86_64-linux` → musl32 | · | ✅ | ✅ | ✅ | ✅ | ✅ | · |
-| unstable | `x86_64-linux` → aarch64 | · | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| unstable | `x86_64-linux` → aarch64-musl | · | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| unstable | `x86_64-linux` → android/aarch64 | · | · | · | · | ✅ | ✅ | ✅ |
-| unstable | `x86_64-linux` → android/armv7a | · | · | · | · | ✅ | ✅ | ✅ |
-| unstable | `x86_64-linux` → javascript | · | ✅ | ✅ | · | ✅ | ✅ | · |
-| unstable | `x86_64-linux` → wasm | · | · | · | · | ✅ | ✅ | · |
-| unstable | `x86_64-linux` → windows/mingwW64 | · | ✅ | ✅ | ✅ | ✅ | ✅ | · |
-| unstable | `x86_64-linux` → windows/ucrt64 | · | ✅ | ✅ | ✅ | ✅ | ✅ | · |
-| unstable | `aarch64-darwin` | · | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| unstable | `aarch64-darwin` → musl64 | · | · | · | · | · | ✅ | · |
-| unstable | `aarch64-darwin` → aarch64-musl | · | · | · | · | · | ✅ | · |
-| unstable | `aarch64-darwin` → javascript | · | ✅ | ✅ | · | ✅ | ✅ | · |
-| unstable | `aarch64-darwin` → wasm | · | · | · | · | ✅ | ✅ | · |
+| unstable | `x86_64-linux` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| unstable | `x86_64-linux` → static | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | · |
+| unstable | `x86_64-linux` → musl64 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| unstable | `x86_64-linux` → musl32 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | · |
+| unstable | `x86_64-linux` → aarch64 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| unstable | `x86_64-linux` → aarch64-musl | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| unstable | `x86_64-linux` → android/aarch64 | ✅ | · | · | · | ✅ | ✅ | ✅ |
+| unstable | `x86_64-linux` → android/armv7a | ✅ | · | · | · | ✅ | ✅ | ✅ |
+| unstable | `x86_64-linux` → javascript | ✅ | ✅ | ✅ | · | ✅ | ✅ | · |
+| unstable | `x86_64-linux` → wasm | ✅ | · | · | · | ✅ | ✅ | · |
+| unstable | `x86_64-linux` → windows/mingwW64 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | · |
+| unstable | `x86_64-linux` → windows/ucrt64 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | · |
+| unstable | `aarch64-darwin` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| unstable | `aarch64-darwin` → musl64 | ✅ | · | · | · | · | ✅ | · |
+| unstable | `aarch64-darwin` → aarch64-musl | ✅ | · | · | · | · | ✅ | · |
+| unstable | `aarch64-darwin` → javascript | ✅ | ✅ | ✅ | · | ✅ | ✅ | · |
+| unstable | `aarch64-darwin` → wasm | ✅ | · | · | · | ✅ | ✅ | · |
 <!-- CI-STATUS:END -->
 
 ## Related repos
@@ -69,9 +69,9 @@ Legend: ✅ built & cached · ⚠️ dependency failed · ❌ failed · ⚪ abor
 The `haskell.nix` repository contains the runtime system for building
 Haskell packages in Nix. It depends on other repos, which are:
 
-- [`hackage.nix`](https://github.com/input-output-hk/hackage.nix) — the latest contents of the [Hackage](https://hackage.haskell.org/) databases, converted to Nix expressions.
+- [`hackage.nix`](https://github.com/ican-group/hackage.nix) — the latest contents of the [Hackage](https://hackage.haskell.org/) databases, converted to Nix expressions.
 
-- [`stackage.nix`](https://github.com/input-output-hk/stackage.nix) — all of the [Stackage](https://www.stackage.org/) snapshots, converted to Nix expressions.
+- [`stackage.nix`](https://github.com/ican-group/stackage.nix) — all of the [Stackage](https://www.stackage.org/) snapshots, converted to Nix expressions.
 
 > [!NOTE]
 > For commercial support, please don't hesitate to reach out at devx@iohk.io

@@ -46,7 +46,7 @@ let
     }).config.cabalProjectLocal;
 
   testRepoData = {
-    url = "https://github.com/input-output-hk/haskell.nix.git";
+    url = "https://github.com/ican-group/haskell.nix.git";
     rev = "487eea1c249537d34c27f6143dff2b9d5586c657";
     sha256 = "077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123";
   };
@@ -88,10 +88,11 @@ lib.runTests {
   # The stack quirk's old-version constraints (`pantry <0.9`, ...) must not
   # apply to `version = "latest"`: `compareVersions "latest" "2.11.1"` is -1,
   # and with them no recent stack solves, so the solver fell back to a
-  # placeholder release instead of the newest stack (#1748).
+  # placeholder release instead of the newest stack (#1748).  Only the
+  # bounds that keep the solver off the placeholder releases remain.
   testStackQuirkSkipsLatest = {
     expr = hackageQuirksCabalProjectLocal { name = "stack"; version = "latest"; };
-    expected = "";
+    expected = "constraints: stack >=2.1 && <9.9.9\n";
   };
   testStackQuirkKeepsPinnedOldVersion = {
     expr = hackageQuirksCabalProjectLocal { name = "stack"; version = "2.9.3"; };
@@ -266,7 +267,7 @@ lib.runTests {
   testParseBlock1 = {
     expr = __toJSON (haskellLib.parseSourceRepositoryPackageBlock "cabal.project" {} {} "" ''
         type: git
-        location: https://github.com/input-output-hk/haskell.nix.git
+        location: https://github.com/ican-group/haskell.nix.git
         tag: 487eea1c249537d34c27f6143dff2b9d5586c657
         --sha256: 077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123
       -- end of block
@@ -281,7 +282,7 @@ lib.runTests {
   testParseBlock2 = {
     expr = __toJSON (haskellLib.parseSourceRepositoryPackageBlock "cabal.project" {} {} "" ''
         type: git
-        location: https://github.com/input-output-hk/haskell.nix.git
+        location: https://github.com/ican-group/haskell.nix.git
         tag: 487eea1c249537d34c27f6143dff2b9d5586c657
         --sha256: 077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123
         subdir: dir
@@ -297,7 +298,7 @@ lib.runTests {
   testParseBlock3 = {
     expr = __toJSON (haskellLib.parseSourceRepositoryPackageBlock "cabal.project" {} {} "" ''
         type: git
-        location: https://github.com/input-output-hk/haskell.nix.git
+        location: https://github.com/ican-group/haskell.nix.git
         tag: 487eea1c249537d34c27f6143dff2b9d5586c657
         --sha256: 077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123
         subdir: dir1 dir2
@@ -313,7 +314,7 @@ lib.runTests {
   testParseBlock4 = {
     expr = __toJSON (haskellLib.parseSourceRepositoryPackageBlock "cabal.project" {} {} "" ''
         type: git
-        location: https://github.com/input-output-hk/haskell.nix.git
+        location: https://github.com/ican-group/haskell.nix.git
         tag: 487eea1c249537d34c27f6143dff2b9d5586c657
         --sha256: 077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123
         subdir:
@@ -412,7 +413,7 @@ lib.runTests {
 
         source-repository-package
           type: git
-          location: https://github.com/input-output-hk/haskell.nix.git
+          location: https://github.com/ican-group/haskell.nix.git
           tag: 487eea1c249537d34c27f6143dff2b9d5586c657
           --sha256: 077j5j3j86qy1wnabjlrg4dmqy1fv037dyq3xb8ch4ickpxxs123
       '';

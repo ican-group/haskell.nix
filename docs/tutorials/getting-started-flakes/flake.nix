@@ -1,6 +1,6 @@
 {
   description = "A very basic flake";
-  inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
+  inputs.haskellNix.url = "github:ican-group/haskell.nix";
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
   # nixpkgs unstable (26.11) dropped x86_64-darwin, and `eachSystem` below
   # evaluates *every* listed system to collect its output names — so one

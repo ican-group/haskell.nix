@@ -167,6 +167,15 @@ in
         Only meaningful with `builderVersion = 2`.
       '';
     };
+    silenceOrgMoveWarning = mkOption {
+      type = bool;
+      default = false;
+      description = ''
+        Hide the warning shown when the project's flake.lock, niv or npins
+        pins still reference haskell.nix (or hackage.nix / stackage.nix)
+        under its old GitHub owner.
+      '';
+    };
     useLocalGhcLib = mkOption {
       type = bool;
       default = false;

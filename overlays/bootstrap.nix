@@ -106,7 +106,7 @@ in {
                 ++ onDarwin (fromUntil "9.2.0" "9.4"   ./patches/ghc/ghc-9.2-macOS-loadArchive-fix.patch)
                 ++ onDarwin (until             "9.0.2" ./patches/ghc/ghc-8.10-darwin-gcc-version-fix.patch)
 
-                # See https://github.com/input-output-hk/haskell.nix/issues/1027
+                # See https://github.com/ican-group/haskell.nix/issues/1027
                 ++ onAarch32 (until             "9.2" ./patches/ghc/ghc-8.10-3434-armv7a.patch)
                 ++ onAarch64 (until             "9.2" ./patches/ghc/ghc-8.10-3434.patch)
 
@@ -268,12 +268,14 @@ in {
                 # Hopefully this patch will not be needed for llvm 22.
                 ++ onAndroid (onAarch32 (from "9.12.3" ./patches/ghc-armv7a-android-llvm-fix.patch))
 
-                # Allow loading static external plugins into cross compilers
-                ++ onCross (fromUntil "9.6.1"  "9.11"   ./patches/ghc/5c80a27488acfe3610ddfcb99a1e961002e386d0.patch)
+                # Allow loading static external plugins into cross compilers.
+                # Not upstream in any released GHC (9.14.1 still panics in
+                # loadExternalPlugins without an internal interpreter).
+                ++ onCross (fromUntil "9.6.1"  "9.15"   ./patches/ghc/5c80a27488acfe3610ddfcb99a1e961002e386d0.patch)
                 ++ onCross (fromUntil "9.6.1"  "9.8.3"  ./patches/ghc/f8beb54a1d5725bd0d8a4b0a909d1b41d742b50b.patch)
                 ++ onCross (fromUntil "9.8.3"  "9.10"   ./patches/ghc/ghc-9.8.3-f8beb54a1d5725bd0d8a4b0a909d1b41d742b50b.patch)
                 ++ onCross (fromUntil "9.10"   "9.10.2" ./patches/ghc/f8beb54a1d5725bd0d8a4b0a909d1b41d742b50b.patch)
-                ++ onCross (fromUntil "9.10.2" "9.11"   ./patches/ghc/ghc-9.8.3-f8beb54a1d5725bd0d8a4b0a909d1b41d742b50b.patch)
+                ++ onCross (fromUntil "9.10.2" "9.15"   ./patches/ghc/ghc-9.8.3-f8beb54a1d5725bd0d8a4b0a909d1b41d742b50b.patch)
                 ++ final.lib.optionals (
                         final.stdenv.targetPlatform.isAndroid
                      && final.stdenv.targetPlatform.is32bit
@@ -383,6 +385,11 @@ in {
 
                 # See https://gitlab.haskell.org/ghc/ghc/-/merge_requests/15096
                 ++ fromUntil "9.6" "9.12.4" ./patches/ghc/ghc-16bit-elf-section-header-overflow.patch
+                # 9.14.1 shipped without the fix (upstream has it only from 10.0).  Without it
+                # the RTS linker takes section names from whichever section is #0xffff and can
+                # run arbitrary data as a `.init` function when loading the >65280-section
+                # profiled ghc-internal object (TH segfault in aarch64-musl build-profiled).
+                ++ fromUntil "9.14" "9.15" ./patches/ghc/ghc-16bit-elf-section-header-overflow.patch
 
                 # TimerManager: registering threads publish only evaluated timeout queues.
                 # See https://gitlab.haskell.org/ghc/ghc/-/issues/9809 and
