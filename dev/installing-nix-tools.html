@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -176,19 +176,19 @@
                     <main>
                         <h2 id="installing-nix-tools"><a class="header" href="#installing-nix-tools">Installing <code>nix-tools</code></a></h2>
 <p>To build the latest <code>nix-tools</code> and store the result at <code>./nt</code>, run:</p>
-<pre><code class="language-shell">nix build -f https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz pkgs.haskell-nix.nix-tools.ghc884 --out-link nt
+<pre><code class="language-shell">nix build -f https://github.com/ican-group/haskell.nix/archive/master.tar.gz pkgs.haskell-nix.nix-tools.ghc884 --out-link nt
 </code></pre>
 <p>If you would like to then install <code>nix-tools</code> into your profile, run an install
 command:</p>
 <pre><code class="language-shell">nix-env -i ./nt
 nix profile install ./nt
 </code></pre>
-<h2 id="optional-installing-via-haskellnix-source"><a class="header" href="#optional-installing-via-haskellnix-source">Optional: Installing via <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a> source</a></h2>
-<p>The <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a> and <code>nix-tools</code> source will be useful if you would
+<h2 id="optional-installing-via-haskellnix-source"><a class="header" href="#optional-installing-via-haskellnix-source">Optional: Installing via <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> source</a></h2>
+<p>The <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> and <code>nix-tools</code> source will be useful if you would
 like to contribute improvements, or read the source code to fully
 understand something that the documentation doesn’t cover.</p>
 <pre><code class="language-shell">git clone https://github.com/input-output-hk/nix-tools
-git clone https://github.com/input-output-hk/haskell.nix
+git clone https://github.com/ican-group/haskell.nix
 cd haskell.nix
 nix build -f . pkgs.haskell-nix.nix-tools.ghc884 --arg sourcesOverride '{ nix-tools = ../nix-tools; }' --out-link nt
 </code></pre>

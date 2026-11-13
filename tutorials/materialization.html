@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -384,7 +384,7 @@ a non-existing path is now an error:</p>
 in hlint
 </code></pre>
 <p>Running when no building is needed is still slow in restricted evaluation mode.</p>
-<pre><code class="language-shell">$ time nix-build --option restrict-eval true -I . --option allowed-uris "https://github.com/NixOS https://github.com/input-output-hk" hlint.nix -A components.exes.hlint --show-trace
+<pre><code class="language-shell">$ time nix-build --option restrict-eval true -I . --option allowed-uris "https://github.com/NixOS https://github.com/input-output-hk https://github.com/ican-group" hlint.nix -A components.exes.hlint --show-trace
 /nix/store/2ybrfmcp79gg75ad4pr1cbxjak70yg8b-hlint-exe-hlint-2.2.11
 
 real	0m4.463s

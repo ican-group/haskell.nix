@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -176,7 +176,7 @@
                     <main>
                         <h1 id="bumping-hackage-and-stackage-snapshots"><a class="header" href="#bumping-hackage-and-stackage-snapshots">Bumping Hackage and Stackage snapshots</a></h1>
 <p><code>haskell.nix</code> relies on some generated data providing information about packages in Hackage and Stackage snapshots.
-These are kept in <a href="https://github.com/input-output-hk/hackage.nix"><code>hackage.nix</code></a> and <a href="https://github.com/input-output-hk/stackage.nix"><code>stackage.nix</code></a> respectively.
+These are kept in <a href="https://github.com/ican-group/hackage.nix"><code>hackage.nix</code></a> and <a href="https://github.com/ican-group/stackage.nix"><code>stackage.nix</code></a> respectively.
 If your project depends on a Hackage package, then the <code>hackage.nix</code> revision used must be new enough to contain that, and likewise for Stackage snaphots and <code>stackage.nix</code>.</p>
 <h2 id="updating-and-pinning-hackagenix-and-stackagenix"><a class="header" href="#updating-and-pinning-hackagenix-and-stackagenix">Updating and pinning <code>hackage.nix</code> and <code>stackage.nix</code></a></h2>
 <p><code>haskell.nix</code> pins particular revisions of these repositories internally, both for our own usage in testing, and so that users have a sensible default when getting started.
@@ -185,9 +185,9 @@ These revisions are updated nightly, so you can get newer revisions of <code>hac
 Instead, you can pin <code>hackage.nix</code> and <code>stackage.nix</code> independently. For example:</p>
 <pre><code class="language-nix">let
   # You can use a tool like `niv` to manage this boilerplate
-  hackageSrc = builtins.fetchTarball "https://github.com/input-output-hk/hackage.nix/archive/master.tar.gz";
-  stackageSrc = builtins.fetchTarball "https://github.com/input-output-hk/stackage.nix/archive/master.tar.gz";
-  haskellSrc = builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz";
+  hackageSrc = builtins.fetchTarball "https://github.com/ican-group/hackage.nix/archive/master.tar.gz";
+  stackageSrc = builtins.fetchTarball "https://github.com/ican-group/stackage.nix/archive/master.tar.gz";
+  haskellSrc = builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz";
 
   haskellNix = import haskellSrc {
     # This allows you to override the pins used by `haskell.nix` internally

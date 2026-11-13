@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -272,7 +272,7 @@ operates on a Haskell.nix package set, and accepts an argument that
 selects packages from the larger package set.</p>
 <pre><code class="language-nix"># shell-package.nix
 let
-  haskellNix = import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {};
+  haskellNix = import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {};
   nixpkgs = import haskellNix.sources.nixpkgs haskellNix.nixpkgsArgs;
   haskell = nixpkgs.haskell-nix;
 in
@@ -288,7 +288,7 @@ of <code>ghcWithPackages</code>.</p>
 it to build packages from a given snapshot, without setting up a full
 project.</p>
 <pre><code class="language-nix">let
-  haskellNix = import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {};
+  haskellNix = import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {};
   nixpkgs = import haskellNix.sources.nixpkgs haskellNix.nixpkgsArgs;
   haskell = nixpkgs.haskell-nix;
 in
@@ -335,12 +335,12 @@ interactive Haskell, set <code>haskell‑process‑type</code> to
 </li>
 </ol>
 <h2 id="using-nix-repl"><a class="header" href="#using-nix-repl">Using <code>nix repl</code></a></h2>
-<p>It’s sometimes useful to load <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a> in the <a href="https://nixos.org/manual/nix/unstable/command-ref/new-cli/nix3-repl.html">REPL</a> to explore
+<p>It’s sometimes useful to load <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> in the <a href="https://nixos.org/manual/nix/unstable/command-ref/new-cli/nix3-repl.html">REPL</a> to explore
 attrsets and try examples.</p>
 <pre><code># example.nix
 { nixpkgs ? &lt;nixpkgs&gt; }:
 rec {
-  haskell = import nixpkgs (import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz) {}).nixpkgsArgs;
+  haskell = import nixpkgs (import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz) {}).nixpkgsArgs;
   pkgNames = haskell.pkgs.lib.attrNames haskell.haskell-nix.snapshots."lts-13.18";
 }
 </code></pre>
@@ -359,7 +359,7 @@ nix-repl&gt; lib.take 5 pkgNames
 
 nix-repl&gt; :q
 </code></pre>
-<p>Now that you have <code>nix-tools</code> and are able to import <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a>,
+<p>Now that you have <code>nix-tools</code> and are able to import <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a>,
 you can continue to the next chapter.</p>
 
                     </main>

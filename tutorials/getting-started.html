@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -208,8 +208,8 @@ nix.binaryCaches = [
 <h2 id="create-a-project-using-flakes"><a class="header" href="#create-a-project-using-flakes">Create a project using Flakes</a></h2>
 <p>This section assumes you choose to uses the experimental flakes features, and so that you have added <code>experimental-features = [ "nix-command" "flakes" ];</code> in your Nix configuration. You can look at <a href="https://nixos.wiki/wiki/Flakes">the Wiki</a> for more instructions.</p>
 <p>The following <code>nix flake init</code> command creates a template <code>hello</code> package containing a <code>flake.nix</code> and <code>nix/hix.nix</code> file. The project can be used with
-regular <code>nix</code> tools. This template is defined in the <a href="https://github.com/input-output-hk/haskell.nix/tree/master/templates/haskell-nix">haskell.nix repository</a>, so it always matches the current <code>hix init</code> output and supported GHC versions.</p>
-<pre><code class="language-bash">nix flake init --template github:input-output-hk/haskell.nix
+regular <code>nix</code> tools. This template is defined in the <a href="https://github.com/ican-group/haskell.nix/tree/master/templates/haskell-nix">haskell.nix repository</a>, so it always matches the current <code>hix init</code> output and supported GHC versions.</p>
+<pre><code class="language-bash">nix flake init --template github:ican-group/haskell.nix
 nix develop
 cabal build
 </code></pre>
@@ -227,7 +227,7 @@ cabal build
 <p>Edit your <code>flake.nix</code> as:</p>
 <pre><code class="language-nix">{
   description = "A very basic flake";
-  inputs.haskellNix.url = "github:input-output-hk/haskell.nix";
+  inputs.haskellNix.url = "github:ican-group/haskell.nix";
   inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
   # nixpkgs unstable (26.11) dropped x86_64-darwin, and `eachSystem` below
   # evaluates *every* listed system to collect its output names — so one
@@ -292,14 +292,14 @@ To build an executable:</p>
 cabal repl your-package-name:lib:your-package-name
 cabal build your-package-name
 </code></pre>
-<p>To open a shell for use with <code>stack</code> see <a href="https://github.com/input-output-hk/haskell.nix/issues/689#issuecomment-643832619">the following issue</a>.</p>
+<p>To open a shell for use with <code>stack</code> see <a href="https://github.com/ican-group/haskell.nix/issues/689#issuecomment-643832619">the following issue</a>.</p>
 <h2 id="getting-started-with-hix"><a class="header" href="#getting-started-with-hix">Getting started with Hix</a></h2>
 <p>Hix is a command line tool that provides an easy way to add <code>haskell.nix</code> support to existing haskell projects.</p>
 <p>The <code>hix init</code> command adds a <code>flake.nix</code> and <code>nix/hix.nix</code> file. After that the project can be used with regular <code>nix</code> tools.</p>
 <p>For instance to run <code>cabal build</code> on the <code>hello</code> package from hackage:</p>
 <pre><code class="language-shell">cabal unpack hello
 cd hello-1.0.0.2
-nix run "github:input-output-hk/haskell.nix#hix" -- init
+nix run "github:ican-group/haskell.nix#hix" -- init
 nix develop
 cabal build
 </code></pre>
@@ -314,7 +314,7 @@ cabal build
 </code></pre>
 <h3 id="installing-hix"><a class="header" href="#installing-hix">Installing Hix</a></h3>
 <p>To use the other Hix features first install Hix with:</p>
-<pre><code class="language-shell">nix-env -iA hix -f https://github.com/input-output-hk/haskell.nix/tarball/master
+<pre><code class="language-shell">nix-env -iA hix -f https://github.com/ican-group/haskell.nix/tarball/master
 </code></pre>
 <p>To update run to the latest version run:</p>
 <pre><code class="language-shell">hix update

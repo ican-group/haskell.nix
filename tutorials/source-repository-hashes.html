@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -184,10 +184,10 @@ it will need additional hashes for the referenced repositories.</p>
 <p>When using <code>project</code>, <code>cabalProject</code> or <code>stackProject</code> functions
 you can include the hash needed in a comment.</p>
 <p>To calculate the hash use <code>nix-prefetch-git</code>:</p>
-<pre><code>$ nix-prefetch-git https://github.com/input-output-hk/haskell.nix.git bc01ebc05a8105035c9449943046b46c8364b932
+<pre><code>$ nix-prefetch-git https://github.com/ican-group/haskell.nix.git bc01ebc05a8105035c9449943046b46c8364b932
 ...
 {
-  "url": "https://github.com/input-output-hk/haskell.nix.git",
+  "url": "https://github.com/ican-group/haskell.nix.git",
   "rev": "bc01ebc05a8105035c9449943046b46c8364b932",
   "date": "2019-05-30T13:13:18+08:00",
   "sha256": "003lm3pm024vhbfmii7xcdd9v2rczpflxf7gdl2pyxia7p014i8z",
@@ -198,7 +198,7 @@ you can include the hash needed in a comment.</p>
 <p>Add a <code>--sha256</code> comment to the <code>cabal.project</code> file:</p>
 <pre><code>source-repository-package
   type: git
-  location: https://github.com/input-output-hk/haskell.nix.git
+  location: https://github.com/ican-group/haskell.nix.git
   tag: bc01ebc05a8105035c9449943046b46c8364b932
   subdir: test/cabal-simple
   --sha256: 003lm3pm024vhbfmii7xcdd9v2rczpflxf7gdl2pyxia7p014i8z
@@ -206,7 +206,7 @@ you can include the hash needed in a comment.</p>
 <h2 id="stack"><a class="header" href="#stack">Stack</a></h2>
 <p>Add a <code># nix-sha256</code> comment to the <code>stack.yaml</code> file:</p>
 <pre><code>extra-deps:
-- git: https://github.com/input-output-hk/haskell.nix.git
+- git: https://github.com/ican-group/haskell.nix.git
   commit: bc01ebc05a8105035c9449943046b46c8364b932
   subdirs:
     - test/cabal-simple

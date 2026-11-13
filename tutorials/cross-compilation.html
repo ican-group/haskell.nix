@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -185,15 +185,15 @@ Nixpkgs</a> is a useful resource.</p>
 Pi:</p>
 <pre><code>nix build -f '&lt;nixpkgs&gt;' pkgsCross.raspberryPi.hello
 </code></pre>
-<p>We will use the same principle in <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a> — replacing the normal
+<p>We will use the same principle in <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> — replacing the normal
 package set <code>pkgs</code> with a cross-compiling package set
 <code>pkgsCross.raspberryPi</code>.</p>
 <h3 id="raspberry-pi-example"><a class="header" href="#raspberry-pi-example">Raspberry Pi example</a></h3>
-<p>This is an example of using <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a> to build the <a href="https://hackage.haskell.org/package/bench">Bench</a>
+<p>This is an example of using <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> to build the <a href="https://hackage.haskell.org/package/bench">Bench</a>
 command-line utility, which is a Haskell program.</p>
 <pre><code class="language-nix">{ pkgs ? import &lt;nixpkgs&gt; {} }:
 let
-  haskellNix = import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz);
+  haskellNix = import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz);
   native = haskellNix { inherit pkgs; };
 in
   native.haskellPackages.bench.components.exes.bench
@@ -201,7 +201,7 @@ in
 <p>Now switch the package set as in the previous example:</p>
 <pre><code class="language-nix">{ pkgs ? import &lt;nixpkgs&gt; {} }:
 let
-  haskellNix = import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz);
+  haskellNix = import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz);
   raspberryPi = haskellNix { pkgs = pkgs.pkgsCross.raspberryPi; };
 in
   raspberryPi.haskellPackages.bench.components.exes.bench
@@ -228,12 +228,12 @@ when necessary to run Template Haskell splices.  See
 <h3 id="static-executables-with-musl-libc"><a class="header" href="#static-executables-with-musl-libc">Static executables with Musl libc</a></h3>
 <p>Another application of cross-compiling is to produce fully static
 binaries for Linux. For information about how to do that with the
-<a href="https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure">Nixpkgs Haskell infrastructure</a> (not <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a>), see
+<a href="https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure">Nixpkgs Haskell infrastructure</a> (not <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a>), see
 <a href="https://github.com/nh2/static-haskell-nix">nh2/static‑haskell‑nix</a>. Vaibhav Sagar’s linked
 <a href="https://vaibhavsagar.com/blog/2018/01/03/static-haskell-nix/">blog post</a> is also very informative.</p>
 <pre><code class="language-nix">{ pkgs ? import &lt;nixpkgs&gt; {} }:
 let
-  haskellNix = import (builtins.fetchTarball https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz);
+  haskellNix = import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz);
   musl64 = haskellNix { pkgs = pkgs.pkgsCross.musl64; };
 in
   musl64.haskellPackages.bench.components.exes.bench
@@ -262,7 +262,7 @@ executables you must add package overrides to:</p>
 <p><strong>Note:</strong> Licensing</p>
 <p>Note that if copyleft licensing your program is a problem for you,
 then you need to statically link with <code>integer-simple</code> rather than
-<code>integer-gmp</code>. However, at present, <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a> does not provide
+<code>integer-gmp</code>. However, at present, <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> does not provide
 an option for this.</p>
 </blockquote>
 <h3 id="how-to-cross-compile-your-project"><a class="header" href="#how-to-cross-compile-your-project">How to cross-compile your project</a></h3>
@@ -271,7 +271,7 @@ an option for this.</p>
 { pkgs ? import &lt;nixpkgs&gt; {}}:
 let
   # Import the Haskell.nix library,
-  haskell = import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {
+  haskell = import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {
     inherit pkgs;
   };
 

@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -182,9 +182,9 @@ root of your git repo (or a git work tree).</p>
 it uses the results of that to filter your directory.  It does not
 need to parse the <code>.gitignore</code> files at all, but we do need to
 <code>git add</code> our files before they will be included.
-<a href="https://github.com/input-output-hk/haskell.nix/blob/master/lib/clean-git.nix">cleanGit source</a>.</p>
+<a href="https://github.com/ican-group/haskell.nix/blob/master/lib/clean-git.nix">cleanGit source</a>.</p>
 <p>In addition haskell.nix (including <code>cleanGit</code>) uses a version
-of <a href="https://github.com/input-output-hk/haskell.nix/blob/master/lib/clean-source-with.nix"><code>cleanSourceWith</code></a>
+of <a href="https://github.com/ican-group/haskell.nix/blob/master/lib/clean-source-with.nix"><code>cleanSourceWith</code></a>
 with a <code>subdir</code> argument to filter out just the package it is
 building.  Then it uses the info from the <code>cabal</code> file to filter
 just the source dirs for the component it is building.  That way

@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -174,13 +174,13 @@
 
                 <div id="mdbook-content" class="content">
                     <main>
-                        <p><a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a> contains a library of functions for creating buildable
+                        <p><a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> contains a library of functions for creating buildable
 package sets from their Nix expression descriptions. The library is
-what you get when importing <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a>. It might be helpful to
+what you get when importing <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a>. It might be helpful to
 load the library in the <a href="../tutorials/development.html#using-nix-repl">Nix REPL</a> to
 test things.</p>
 <ul>
-<li><a href="#data-structures">Data structures</a> — the kinds of data that you will encounter working with <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a>.</li>
+<li><a href="#data-structures">Data structures</a> — the kinds of data that you will encounter working with <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a>.</li>
 <li><a href="#top-level-attributes">Top-level attributes</a> — Functions and derivations defined in the Haskell.nix attrset.</li>
 <li><a href="#package-set-functions">Package-set functions</a> — Helper functions defined on the <code>hsPkgs</code> package set.</li>
 </ul>
@@ -208,7 +208,7 @@ system.</p>
 </thead>
 <tbody>
 <tr><td><code>options</code></td><td>Module options</td><td>The combination of all options set through the <code>modules</code> argument passed to <code>mkPkgsSet</code>.</td></tr>
-<tr><td><code>config</code></td><td></td><td>The result of evaluating and applying the <code>options</code> with <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a></td></tr>
+<tr><td><code>config</code></td><td></td><td>The result of evaluating and applying the <code>options</code> with <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a></td></tr>
 <tr><td><code>.hsPkgs</code></td><td>Attrset of <a href="#haskell-package">Haskell Packages</a></td><td>Buildable packages, created from <code>packages</code></td></tr>
 <tr><td><code>.packages</code></td><td>Attrset of <a href="#haskell-package-descriptions">Haskell Package descriptions</a></td><td>Configuration for each package in <code>hsPkgs</code></td></tr>
 <tr><td><code>.compiler</code></td><td>Attrset</td><td></td></tr>
@@ -228,7 +228,7 @@ derivations, but just the configuration for building an individual
 component. The configuration options are described under
 <code>packages.&lt;name&gt;.components.*</code> in <a href="./modules.html">Module options</a>.</p>
 <h2 id="haskell-package"><a class="header" href="#haskell-package">Haskell Package</a></h2>
-<p>In <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a>, a <em>Haskell package</em> is a derivation which has a
+<p>In <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a>, a <em>Haskell package</em> is a derivation which has a
 <code>components</code> attribute. This derivation is actually just for the
 package <code>Setup.hs</code> script, and isn’t very interesting. To actually use
 the package, look within the components structure.</p>
@@ -240,7 +240,7 @@ the package, look within the components structure.</p>
 }
 </code></pre>
 <h2 id="component"><a class="header" href="#component">Component</a></h2>
-<p>In <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a>, a <em>component</em> is a derivation corresponding to a
+<p>In <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a>, a <em>component</em> is a derivation corresponding to a
 <a href="https://www.haskell.org/cabal/users-guide/developing-packages.html">Cabal component</a>
 of a package.</p>
 <h2 id="identifier"><a class="header" href="#identifier">Identifier</a></h2>
@@ -394,7 +394,7 @@ of <code>plan-to-nix</code>.</p>
 <h2 id="haskellpackages"><a class="header" href="#haskellpackages">haskellPackages</a></h2>
 <p>A <code>hsPkgs</code> package set, which is one of the recent LTS Haskell
 releases from <a href="#snapshots"><code>snapshots</code></a>.</p>
-<p>The chosen LTS is updated occasionally in <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a>, though a
+<p>The chosen LTS is updated occasionally in <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a>, though a
 manual process.</p>
 <h2 id="nix-tools"><a class="header" href="#nix-tools">nix-tools</a></h2>
 <p>A derivation containing the <code>nix-tools</code> <a href="commands.html">command-line tools</a>.</p>
@@ -483,7 +483,7 @@ and files not needed to do a Haskell build from a source directory.</p>
 <p>It should be used with <code>pkgs.lib.cleanSourceWith</code>. Alternatively,
 use the convenience function <a href="#cleansourcehaskell"><code>cleanSourceHaskell</code></a>.</p>
 <h2 id="haskelllib"><a class="header" href="#haskelllib">haskellLib</a></h2>
-<p>Assorted functions for operating on <a href="https://github.com/input-output-hk/haskell.nix">Haskell.nix</a> data. This is
+<p>Assorted functions for operating on <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> data. This is
 distinct from <code>pkgs.haskell.lib</code> in the current Nixpkgs Haskell
 Infrastructure.</p>
 <h3 id="collectcomponents-collectcomponents"><a class="header" href="#collectcomponents-collectcomponents">collectComponents, collectComponents’</a></h3>

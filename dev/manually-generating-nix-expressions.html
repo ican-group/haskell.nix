@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -192,7 +192,7 @@ expression (see the links bellow). The following file then produces a package se
 <pre><code class="language-nix"># default.nix
 let
   # Import the Haskell.nix library,
-  pkgs = import &lt;nixpkgs&gt; (import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {}).nixpkgsArgs;
+  pkgs = import &lt;nixpkgs&gt; (import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {}).nixpkgsArgs;
 
   # Import the file you will create in the stack-to-nix or cabal-to-nix step.
   my-pkgs = import ./pkgs.nix;

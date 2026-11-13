@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-2637021b.js";
+            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -178,7 +178,7 @@
 <h2 id="from-a-stackage-snapshot"><a class="header" href="#from-a-stackage-snapshot">From a <a href="https://stackage.org">Stackage</a> snapshot</a></h2>
 <p>To build a package, say <a href="https://hackage.haskell.org/package/lens">lens</a>, from a Stackage snapshot, say
 <a href="https://www.stackage.org/lts-13.28">lts-13.28</a>, you could run:</p>
-<pre><code class="language-shell">nix-build -E '(with import &lt;nixpkgs&gt; (import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {}).nixpkgsArgs; haskell-nix.snapshots."lts-13.28").lens.components.library'
+<pre><code class="language-shell">nix-build -E '(with import &lt;nixpkgs&gt; (import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {}).nixpkgsArgs; haskell-nix.snapshots."lts-13.28").lens.components.library'
 </code></pre>
 <p>This would build the (public) library component of the <a href="https://hackage.haskell.org/package/lens">lens</a> package as
 fixed by the <a href="https://www.stackage.org/lts-13.28">lts-13.28</a> stackage snapshot. Nightly snapshots like
@@ -186,15 +186,15 @@ fixed by the <a href="https://www.stackage.org/lts-13.28">lts-13.28</a> stackage
 <h2 id="a-specific-version-from-hackage"><a class="header" href="#a-specific-version-from-hackage">A specific version from Hackage</a></h2>
 <p>To build any package from hackage, say <a href="https://hackage.haskell.org/package/lens">lens</a>, at any version, say 4.17.1,
 you could run:</p>
-<pre><code class="language-shell">nix-build -E '(with import &lt;nixpkgs&gt; (import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {}).nixpkgsArgs; (haskell-nix.hackage-package { name = "lens"; version = "4.17.1"; compiler-nix-name = "ghc8102"; })).components.library'
+<pre><code class="language-shell">nix-build -E '(with import &lt;nixpkgs&gt; (import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {}).nixpkgsArgs; (haskell-nix.hackage-package { name = "lens"; version = "4.17.1"; compiler-nix-name = "ghc8102"; })).components.library'
 </code></pre>
 <p>This would build the (public) library component of the <a href="https://hackage.haskell.org/package/lens-4.17.1">lens-4.17.1</a> package
 from hackage.</p>
 <h3 id="pinning-hackage-index"><a class="header" href="#pinning-hackage-index">Pinning hackage index</a></h3>
 <p>The dependencies would be resolved against the most recent
-<a href="https://github.com/input-output-hk/hackage.nix/blob/master/index-state-hashes.nix">hackage-index-state</a> which comes with your <a href="https://github.com/input-output-hk/haskell.nix">haskell.nix</a> checkout via the
-<a href="https://github.com/input-output-hk/hackage.nix">hackage.nix</a> pin.  A specific one can be specified as well:</p>
-<pre><code class="language-shell">nix-build -E '(with import &lt;nixpkgs&gt; (import (builtins.fetchTarball "https://github.com/input-output-hk/haskell.nix/archive/master.tar.gz") {}).nixpkgsArgs; (haskell-nix.hackage-package { name = "lens"; version = "4.17.1"; compiler-nix-name = "ghc8102"; index-state = "2019-07-14T00:00:00Z"; })).components.library'
+<a href="https://github.com/ican-group/hackage.nix/blob/master/index-state-hashes.nix">hackage-index-state</a> which comes with your <a href="https://github.com/ican-group/haskell.nix">haskell.nix</a> checkout via the
+<a href="https://github.com/ican-group/hackage.nix">hackage.nix</a> pin.  A specific one can be specified as well:</p>
+<pre><code class="language-shell">nix-build -E '(with import &lt;nixpkgs&gt; (import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {}).nixpkgsArgs; (haskell-nix.hackage-package { name = "lens"; version = "4.17.1"; compiler-nix-name = "ghc8102"; index-state = "2019-07-14T00:00:00Z"; })).components.library'
 </code></pre>
 <p>This would use the hackage index as of <code>2019-07-14T00:00:00Z</code> to produce a
 build plan for the <a href="https://hackage.haskell.org/package/lens-4.17.1">lens-4.17.1</a> package.</p>

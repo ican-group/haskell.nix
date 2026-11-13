@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-2637021b.js";
+            window.path_to_searchindex_js = "searchindex-760f44e2.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-5b1b9093.js"></script>
@@ -238,7 +238,7 @@ So we only include Haskell sources if they appear in a <code>hs-source-dirs</cod
 <p>This is good practice anyway: if you do not include such files in <code>extra-source-files</code> then they will not be included in <code>cabal sdist</code>, which will cause problems if you ever upload your package to Hackage.
 But <code>haskell.nix</code> is very picky about it.</p>
 <h3 id="why-does-my-executable-depend-on-ghcgcc"><a class="header" href="#why-does-my-executable-depend-on-ghcgcc">Why does my executable depend on GHC/GCC?</a></h3>
-<p>You may want to set the <code>dontStrip</code> option to <code>false</code> (see https://github.com/input-output-hk/haskell.nix/issues/829).
+<p>You may want to set the <code>dontStrip</code> option to <code>false</code> (see https://github.com/ican-group/haskell.nix/issues/829).
 This is not set by default because it can occasionally cause breakage.</p>
 
                     </main>
