@@ -1389,6 +1389,8 @@ final: prev: {
                 packages.Cabal.patches = [
                   ../builder/cabal-install-patches/static-external-only-when-supported.patch
                   ../builder/cabal-install-patches/no-object-for-unemitted-signature.patch
+                  # ordNub drops repeated -framework and -include pairs.
+                  ../builder/cabal-install-patches/hsc2hs-preserve-options.patch
                 ];
               }];
             };
@@ -1412,9 +1414,11 @@ final: prev: {
 
                 # Patch platform-specific iserv-proxy symbol tables before
                 # planning so v2 hashes and source archives describe the same
-                # implementation. The ARM32 Bionic patch removes stubs that
-                # shadow real static libc routines; the i386 musl patch drops
-                # a hidden libc symbol that prevents dynamic linking.
+                # implementation. The i386 musl patch drops a hidden libc
+                # symbol that prevents dynamic linking. Android uses the GNU
+                # libiconv built by the Android overlay: API 26 has no Bionic
+                # iconv, and the static interpreter must register those
+                # definitions itself. ARM32 also registers arc4random_buf.
                 src = if compiler-nix-name == "ghc914-sh"
                   && pkgs.stdenv.hostPlatform.isLinux
                   && pkgs.stdenv.hostPlatform.isMusl
@@ -1431,8 +1435,16 @@ final: prev: {
                   src = sources.iserv-proxy;
                   patches = [
                     ./patches/iserv-proxy-arm32-static-libc.patch
-                    ./patches/iserv-proxy-arm32-bionic-symbols.patch
+                    ./patches/iserv-proxy-arm32-gnu-iconv.patch
+                    ./patches/iserv-proxy-arm32-entropy.patch
                   ];
+                } else if compiler-nix-name == "ghc914-sh"
+                  && pkgs.stdenv.hostPlatform.isAndroid
+                  && pkgs.stdenv.hostPlatform.isAarch64
+                then config.evalPackages.applyPatches {
+                  name = "android-arm64-iserv-proxy-source";
+                  src = sources.iserv-proxy;
+                  patches = [ ./patches/iserv-proxy-arm64-iconv.patch ];
                 } else sources.iserv-proxy;
 
                 modules = [{
