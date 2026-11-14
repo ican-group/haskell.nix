@@ -14,7 +14,9 @@ final: prev: {
 } // prev.lib.optionalAttrs prev.stdenv.hostPlatform.isAndroid ({
 
   # we really only want the static one.
-  libiconv = (prev.libiconv.override { enableStatic = true; enableShared = false; }).overrideAttrs(_: {
+  libiconv = (prev.libiconv.override { enableStatic = true; enableShared = false; }).overrideAttrs(old: {
+    # The static archive is linked into shared objects, so its objects need PIC.
+    configureFlags = (old.configureFlags or []) ++ [ "--with-pic" ];
     hardeningDisable = [ "fortify" "stackprotector" "format" ];
     # For some reason building libiconv with nixpgks android setup produces
     # LANGINFO_CODESET to be found, which is not compatible with android sdk 23;

@@ -152,6 +152,8 @@ in
      ssl32 = null; eay32 = [ openssl ];
      iphlpapi = null; # IP Help API
      msvcrt = null; # this is the libc
+     # MinGW import-library names are lowercase; retain the legacy alias.
+     crypt32 = null;
      Crypt32 = null;
      mswsock = null;
      bcrypt = null;

@@ -2,8 +2,24 @@
 # Source preparation must follow evalSystem even when the build platform differs.
 let
   source = builtins.toFile "iserv-source-platform-input" "";
+  platform = system: {
+    inherit system;
+    isLinux = system == "x86_64-linux" || system == "armv7a-unknown-linux-androideabi";
+    isDarwin = system == "aarch64-darwin";
+    isx86_32 = false;
+    isx86_64 = system == "x86_64-linux";
+    isAarch64 = system == "aarch64-darwin";
+    isMusl = false;
+    isWindows = false;
+    isAndroid = system == "armv7a-unknown-linux-androideabi";
+    isAarch32 = system == "armv7a-unknown-linux-androideabi";
+    isGhcjs = false;
+    isWasm = false;
+    isStatic = system == "armv7a-unknown-linux-androideabi";
+    libc = if system == "armv7a-unknown-linux-androideabi" then "bionic" else "glibc";
+  };
   packageSet = system: {
-    stdenv.hostPlatform = { inherit system; };
+    stdenv.hostPlatform = platform system;
     applyPatches = args: builtins.derivation {
       inherit (args) name src patches;
       inherit system;
@@ -18,7 +34,10 @@ let
     let
       final = {
         lib.mapAttrs = builtins.mapAttrs;
-        stdenv.hostPlatform = { isAndroid = true; isAarch32 = true; };
+        stdenv = {
+          buildPlatform = platform buildSystem;
+          hostPlatform = platform "armv7a-unknown-linux-androideabi";
+        };
         pkgsBuildBuild = evalSets.${buildSystem};
         haskell-nix = (import ../overlays/haskell.nix {
           sources.iserv-proxy = source;

@@ -127,3 +127,20 @@ The production patch applies only to the `ghc914-sh` v2 source-built RTS for
 i386 musl targets built on Linux, including auxiliary interpreters and all
 RTS ways. The native loader test checks symbol-selection behavior; it does
 not by itself qualify a profiled target interpreter or a final static CLI.
+
+#### MinGW wide formatting
+
+`mingw-stdio.run` in the Windows x86_64 test matrix compiles a static C probe
+with the selected cross compiler and runs it under the existing Linux x86_64
+Wine provider. It checks ISO `swprintf` at exact, spare, and insufficient
+capacity, including bounds and successful termination. The output includes
+the linker map and runtime results. It does not test GHC or Template Haskell.
+
+Run the UCRT regression against the unstable Nixpkgs pin with
+`make test-mingw-stdio SYSTEM=x86_64-linux TIMEOUT=10800`. The first build can
+rebuild the patched CRT and cross compiler; later runs reuse those outputs.
+
+`make check` also checks backport selection and excluded-platform laziness
+without building a compiler, CRT, or Wine. The MinGW 13/14 backport can be
+removed when all supported Nixpkgs pins contain upstream fix
+[`e7e21db`](https://github.com/mingw-w64/mingw-w64/commit/e7e21db45eaae989b04f3c24964dead5b53310de).

@@ -1,4 +1,4 @@
-cabal-version: 1.24
+cabal-version: 2.2
 name: test-annotations
 version: 1
 build-type: Simple
@@ -8,3 +8,21 @@ library
   hs-source-dirs: .
   build-depends: base
   default-language: Haskell2010
+  if flag(i386-elf-got-relocations) && os(linux) && arch(i386)
+    build-depends: template-haskell, reloc-fixture
+    cpp-options: -DTEST_I386_ELF_GOT_RELOCS
+
+library reloc-fixture
+  exposed-modules: RelocProbe
+  hs-source-dirs: reloc-fixture/src
+  c-sources: reloc-fixture/cbits/rel10-a.c reloc-fixture/cbits/rel10-b.c
+  cc-options: -fPIC
+  build-depends: base
+  default-language: Haskell2010
+  if !flag(i386-elf-got-relocations) || !os(linux) || !arch(i386)
+    buildable: False
+
+flag i386-elf-got-relocations
+  description: Exercise i386 ELF GOT relocations in the compile-time interpreter.
+  default: False
+  manual: True

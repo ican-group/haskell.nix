@@ -118,6 +118,7 @@ let
     compiler-llvm = import ./compiler-llvm.nix;
     ghc-packages = import ./ghc-packages.nix;
     darwin = import ./darwin.nix;
+    mingw-stdio = import ./mingw-stdio.nix;
     windows = import ./windows.nix;
     armv6l-linux = import ./armv6l-linux.nix;
     hyper-linux = import ./hyper-linux.nix { inherit sources; };
@@ -158,6 +159,7 @@ let
     compiler-llvm
     ghc-packages
     darwin
+    mingw-stdio
     windows
     armv6l-linux
     hyper-linux
