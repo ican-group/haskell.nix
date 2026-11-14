@@ -305,6 +305,8 @@ in {
                 # GHC 9.6.7+, 9.8.3+, 9.10.2+ use m32 for regular sections but missed BSS and SHN_COMMON.
                 ++ onAarch64 (fromUntil "9.6.7" "9.8" ./patches/ghc/ghc-9.12-linker-use-m32-for-bss-and-common.patch)
                 ++ onAarch64 (from "9.8.3" ./patches/ghc/ghc-9.12-linker-use-m32-for-bss-and-common.patch)
+                # Provide SIMD hs_memcmp in RTS and route MO_Memcmp + Stage1+ bytestring to it on musl targets.
+                ++ onMusl (fromUntil "9.6.7" "9.8" ./patches/ghc/ghc-9.6.7-simd-memcmp.patch)
                 # these two are abit questionable. They are pretty rough, and assume static binary as well as posix.
                 # onMusl (fromUntil "9.6" "9.11" ./patches/ghc/ghc-9.6-0004-ghcidladdr.patch)
                 # onMusl (fromUntil "9.6" "9.11" ./patches/ghc/ghc-9.6-0005-Better-interpreter-debugging.-Needs-ghcidladdr.patch)
