@@ -16,6 +16,11 @@ in {
     ./replace-hackage-tarball-urls.nix
     ./stable-haskell-rts-comdat.nix
     ./stable-haskell-rts-macho-signed-addends.nix
+    ./stable-haskell-rts-elf-alignment.nix
+    ./stable-haskell-rts-windows-dll.nix
+    ./stable-haskell-ghc-macho-info-tables.nix
+    ./stable-haskell-android.nix
+    ./stable-haskell-darwin-bitvec.nix
   ];
   options = {
     # Used by callCabalProjectToNix
