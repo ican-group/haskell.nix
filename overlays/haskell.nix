@@ -1775,7 +1775,11 @@ final: prev: {
             # the same commit has to rebuild the whole cross toolchain before
             # it can evaluate any job.  Rooting it via `ghc` alone isn't
             # enough, because that only works once GHC itself builds.
-            // { cc = final.stdenv.cc; }
+            # nixpkgs gives ghcjs no C compiler (`stdenv.cc` throws "no C
+            # compiler provided for this platform"), so skip it there.
+            // final.lib.optionalAttrs (!final.stdenv.hostPlatform.isGhcjs) {
+              cc = final.stdenv.cc;
+            }
             // final.lib.optionalAttrs (ifdLevel > 0) {
             # Things that require one IFD to build (the inputs should be in level 0)
             inherit ghc;
