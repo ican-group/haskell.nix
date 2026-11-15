@@ -14,13 +14,6 @@ lib.mkIf (
   modules = [
     ({ lib, pkgs, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isAndroid {
       packages.ghc-internal.components.library.libs = lib.mkAfter [ pkgs.libiconv ];
-      # Cabal treats Android as os(linux), so crypton asks for libpthread.
-      # Bionic provides those symbols from libc and has no separate library.
-      packages.crypton.patches = [
-        ({ version }: if version == "0.34"
-          then ../overlays/patches/crypton-0.34-android-pthread.patch
-          else null)
-      ];
     })
   ];
 }
