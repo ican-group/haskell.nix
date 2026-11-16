@@ -342,7 +342,7 @@ The stable-haskell GHC symbol-table fixes are commits on the
 dynamically; on Android arm32 the interpreter uses
 [static Bionic][i-arm32-libc], [GNU libiconv][i-arm32-iconv] and
 [`arc4random_buf`][i-arm32-entropy]; on Android aarch64 it registers
-[the iconv that matches `iconv.h`][i-arm64-iconv].
+[GNU libiconv and, from API 28, Bionic iconv][i-arm64-iconv].
 
 [c-shared]: https://github.com/stable-haskell/cabal/commit/ed916be32331e541bfff74c1fea2592e49e84b45
 [c-static]: https://github.com/stable-haskell/cabal/commit/3b773094325aa515a7a59beddc5d88721d13d945
@@ -404,4 +404,4 @@ setup isn't reproducible outside haskell.nix yet.
 [i-arm32-libc]: https://github.com/stable-haskell/iserv-proxy/commit/176290feae055cdcaa1cd73ad143016b25e56ca5
 [i-arm32-iconv]: https://github.com/stable-haskell/iserv-proxy/commit/a60c2dcd22ed352e6e2a627d922c3b2332c9d99b
 [i-arm32-entropy]: https://github.com/stable-haskell/iserv-proxy/commit/d5228de08acc06a92528d87ba27308c7afb2aa31
-[i-arm64-iconv]: https://github.com/stable-haskell/iserv-proxy/commit/c2b155d607eeea9e2531645543220188191be945
+[i-arm64-iconv]: https://github.com/stable-haskell/iserv-proxy/commit/81ceb247a0d9a04827d25fd3bab3eddaea74f267

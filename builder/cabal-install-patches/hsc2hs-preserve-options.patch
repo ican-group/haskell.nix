@@ -1,27 +1,68 @@
-Preserve ordered compiler/linker arguments when invoking hsc2hs.
+Preserve option/argument pairs when deduplicating hsc2hs flags.
 
-Deduplicating individual tokens corrupts repeated option/argument pairs:
+ordNub over individual tokens corrupts repeated option/argument pairs:
   -framework Security -framework CoreFoundation
 becomes:
   -framework Security CoreFoundation
-The same applies to compiler options such as repeated -include. Leave
-deduplication of framework directory values in place.
+The same applies to compiler options such as repeated -include.
+
+Only deduplicate single-token search-directory flags (-I, -L, -F,
+-Wl,-R,), which are what the dependency graph repeats enough to
+overflow the command-line limit (the reason ordNub was added).
 
 --- a/src/Distribution/Simple/PreProcess.hs
 +++ b/src/Distribution/Simple/PreProcess.hs
-@@ -525,7 +525,6 @@
+@@ -68,6 +68,7 @@
+ import Distribution.Verbosity
+ import Distribution.Version
+
++import qualified Data.Set as Set
+ import qualified Data.Text as T
+ import System.Directory (doesDirectoryExist, doesFileExist)
+ import System.FilePath
+@@ -513,7 +514,7 @@
        where
          ldflags =
            map ("--lflag=" ++) $
 -            ordNub $
++            nubSearchDirs $
                concat
                  [ programDefaultArgs gccProg ++ programOverrideArgs gccProg
                  , osxFrameworkDirs
-@@ -574,7 +573,6 @@
- 
+@@ -562,7 +563,7 @@
+
          cflags =
            map ("--cflag=" ++) $
 -            ordNub $
++            nubSearchDirs $
                concat
                  [ programDefaultArgs gccProg ++ programOverrideArgs gccProg
                  , osxFrameworkDirs
+@@ -596,6 +597,27 @@
+                   ]
+                 ]
+
++        -- Dependencies repeat the same include, library and framework
++        -- directories often enough to overflow the command-line limit (see
++        -- c917edcda), so drop repeated single-token search-directory flags.
++        -- Do not deduplicate anything else: options such as -framework and
++        -- -include take the following argument, and dropping a repeated
++        -- token would corrupt those pairs
++        -- (-framework A -framework B became -framework A B).
++        nubSearchDirs = go Set.empty
++          where
++            go _ [] = []
++            go seen (x : xs)
++              | isSearchDir x =
++                  if x `Set.member` seen
++                    then go seen xs
++                    else x : go (Set.insert x seen) xs
++              | otherwise = x : go seen xs
++            isSearchDir x =
++              any
++                (\p -> p `isPrefixOf` x && length x > length p)
++                ["-I", "-L", "-F", "-Wl,-R,"]
++
+         osxFrameworkDirs =
+           [ "-F" ++ opt
+           | isOSX
