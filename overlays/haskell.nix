@@ -1392,40 +1392,7 @@ final: prev: {
                 name = "iserv-proxy";
                 inherit compiler-nix-name evalSystem;
 
-                # Patch platform-specific iserv-proxy symbol tables before
-                # planning so v2 hashes and source archives describe the same
-                # implementation. The i386 musl patch drops a hidden libc
-                # symbol that prevents dynamic linking. Android uses the GNU
-                # libiconv built by the Android overlay: API 26 has no Bionic
-                # iconv, and the static interpreter must register those
-                # definitions itself. ARM32 also registers arc4random_buf.
-                src = if compiler-nix-name == "ghc914-sh"
-                  && pkgs.stdenv.hostPlatform.isLinux
-                  && pkgs.stdenv.hostPlatform.isMusl
-                  && pkgs.stdenv.hostPlatform.isx86_32
-                then config.evalPackages.applyPatches {
-                  name = "i386-musl-iserv-proxy-source";
-                  src = sources.iserv-proxy;
-                  patches = [ ./patches/iserv-proxy-i386-musl-dynamic-libc.patch ];
-                } else if compiler-nix-name == "ghc914-sh"
-                  && pkgs.stdenv.hostPlatform.isAndroid
-                  && pkgs.stdenv.hostPlatform.isAarch32
-                then config.evalPackages.applyPatches {
-                  name = "android-arm32-iserv-proxy-source";
-                  src = sources.iserv-proxy;
-                  patches = [
-                    ./patches/iserv-proxy-arm32-static-libc.patch
-                    ./patches/iserv-proxy-arm32-gnu-iconv.patch
-                    ./patches/iserv-proxy-arm32-entropy.patch
-                  ];
-                } else if compiler-nix-name == "ghc914-sh"
-                  && pkgs.stdenv.hostPlatform.isAndroid
-                  && pkgs.stdenv.hostPlatform.isAarch64
-                then config.evalPackages.applyPatches {
-                  name = "android-arm64-iserv-proxy-source";
-                  src = sources.iserv-proxy;
-                  patches = [ ./patches/iserv-proxy-arm64-iconv.patch ];
-                } else sources.iserv-proxy;
+                src = sources.iserv-proxy;
 
                 modules = [{
                   config = {

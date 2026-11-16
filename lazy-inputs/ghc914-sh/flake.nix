@@ -28,6 +28,12 @@
       #     after consuming a suspension request (haskell.nix #2609).
       #   * RTS linker: the aarch64 ELF section/GOT pool, skipping libc.a, and
       #     the MinGW symbol exports time and unix need.
+      #   * RTS linker: ELF sections whose file offset does not satisfy their
+      #     alignment are copied into aligned storage rather than mmapped.
+      #   * RTS linker: PEi386 resolves a DLL search path to an absolute path
+      #     before AddDllDirectory, so DLLs beside the calling image are found.
+      #   * X86 NCG: Mach-O info tables stay in the same atom as their entry
+      #     code (`.alt_entry`), so the linker cannot pad between them.
       #   * `--abi-hash` does not claim an executable link (it stripped
       #     -dynamic on wasm and then rejected the dyn interfaces).
       #   * The dyn way defines DYNAMIC (as the prof way defines PROFILING), so

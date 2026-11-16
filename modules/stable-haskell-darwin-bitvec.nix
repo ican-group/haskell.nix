@@ -4,22 +4,14 @@ lib.mkIf (
   && pkgs.stdenv.hostPlatform.isx86_64
   && config.compiler-nix-name == "ghc914-sh"
 ) {
-  # GHC's Mach-O object linker does not add compiler-rt. bitvec's SIMD
-  # objects need clang_rt.osx from the selected compiler wrapper.
+  # bitvec's SIMD C code calls compiler-rt builtins (clang_rt.osx), which
+  # GHC's Mach-O RTS linker does not add when it loads the object for
+  # Template Haskell. Build bitvec with its pure Haskell implementation
+  # instead. The flag goes through cabal.project so plan-nix and the build
+  # agree on it; patching bitvec.cabal would move its v2 UnitId away from
+  # the plan.
   cabalProjectLocal = lib.mkAfter ''
     package bitvec
-      extra-lib-dirs: ${pkgs.stdenv.cc}/resource-root/lib/darwin
+      flags: -simd
   '';
-  modules = [
-    ({ lib, pkgs, ... }: {
-      packages.bitvec.patches = [
-        ({ version }: if version == "1.1.6.0"
-          then ../overlays/patches/bitvec-1.1.6.0-darwin-compiler-rt.patch
-          else null)
-      ];
-      packages.bitvec._module.args.pkgs = lib.mkForce (pkgs // {
-        "clang_rt.osx" = null;
-      });
-    })
-  ];
 }
