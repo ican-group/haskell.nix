@@ -1768,11 +1768,31 @@ final: prev: {
                  (withEvalVariants
                    { inherit (ghcBuild.dummyGhcPkgs) dummy-ghc dummy-ghc-pkg; }
                    { inherit (ghc.dummyGhcPkgs) dummy-ghc dummy-ghc-pkg; })
+            # The C compiler for the host platform: for a cross package set
+            # this is the cross gcc that GHC's configure runs against.  It is
+            # a build-time input of the eval-time `configured-src` IFD, so if
+            # nothing roots it, a GC on the evaluator means the next eval of
+            # the same commit has to rebuild the whole cross toolchain before
+            # it can evaluate any job.  Rooting it via `ghc` alone isn't
+            # enough, because that only works once GHC itself builds.
+            # nixpkgs gives ghcjs no C compiler (`stdenv.cc` throws "no C
+            # compiler provided for this platform"), so skip it there.
+            // final.lib.optionalAttrs (!final.stdenv.hostPlatform.isGhcjs) {
+              cc = final.stdenv.cc;
+            }
             // final.lib.optionalAttrs (ifdLevel > 0) {
             # Things that require one IFD to build (the inputs should be in level 0)
             inherit ghc;
             ghc-boot-packages-nix = final.ghc-boot-packages-nix.${compiler-nix-name};
-          } // final.lib.optionalAttrs (ifdLevel > 0 && ghc ? generated-light) {
+          } // final.lib.optionalAttrs (ifdLevel > 0 && ghcBuild ? configured-src) (
+            # The configured GHC source tree, read at evaluation time by
+            # `ghc-packages.nix`.  No job's runtime closure contains it, so
+            # without this the evaluator re-runs GHC's configure (and builds
+            # whatever it needs) after every GC.
+            withEvalVariants
+              { ghc-configured-src = ghcBuild.configured-src; }
+              { ghc-configured-src = ghc.configured-src; }
+          ) // final.lib.optionalAttrs (ifdLevel > 0 && ghc ? generated-light) {
             # Cache hadrian's generated sources (primops / deriveConstants /
             # config) built *without* compiling all of GHC.  Consumers pull
             # these at evaluation time (`useLocalGhcLib` / `ghc-lib-reinstallable`
