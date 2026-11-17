@@ -29,11 +29,12 @@ check: ## Check whitespace, Nix syntax, emulator selection, and dependencies
 	nix-instantiate --extra-experimental-features flakes --eval --strict --expr 'import ./test/elf-comdat-scope.nix {}'
 	nix-instantiate --parse modules/stable-haskell-rts-macho-signed-addends.nix >/dev/null
 	nix-instantiate --extra-experimental-features flakes --eval --strict --expr 'import ./test/macho-signed-addends-scope.nix {}'
+	nix-instantiate --parse modules/stable-haskell-android.nix >/dev/null
+	nix-instantiate --parse modules/stable-haskell-darwin-bitvec.nix >/dev/null
 	nix-instantiate --parse test/qemu-linux-user.nix >/dev/null
 	nix-instantiate --parse test/qemu-arm32-personality.nix >/dev/null
 	nix-instantiate --eval --strict test/qemu-selection.nix
 	nix-instantiate --eval --strict test/annotations/selection.nix
-	nix-instantiate --eval --strict test/iserv-source-platform.nix -A passed
 	nix-instantiate --eval --strict test/windows-system-libraries.nix
 	nix-instantiate --eval --strict test/qemu-linux-user-inputs.nix -A passed
 	nix-instantiate --parse test/rosetta-signals.nix >/dev/null

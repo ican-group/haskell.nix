@@ -335,8 +335,14 @@ archives (`.a`) of the C libraries splices use ([link][android-static-libs]).
 | Patch | What it does | Needed for |
 |---|---|---|
 | [windows-crt-symbols][p-win] | CRT symbol aliases for the interpreter | Windows, GHC 9.6–9.10 |
-| [arm32-static-libc][p-arm32-libc], [arm32-bionic-symbols][p-arm32-bionic] | static libc and a Bionic symbol table | Android arm32, *stable-haskell GHC* |
-| [i386-musl-dynamic-libc][p-i386] | drops a hidden libc symbol so the interpreter can link libc dynamically | i386 musl, *stable-haskell GHC* |
+
+The stable-haskell GHC symbol-table fixes are commits on the
+[`iserv-syms`][iserv-syms] branch that haskell.nix pins, not patches:
+[i386 musl][i-i386] drops a hidden libc symbol so the interpreter can link libc
+dynamically; on Android arm32 the interpreter uses
+[static Bionic][i-arm32-libc], [GNU libiconv][i-arm32-iconv] and
+[`arc4random_buf`][i-arm32-entropy]; on Android aarch64 it registers
+[GNU libiconv and, from API 28, Bionic iconv][i-arm64-iconv].
 
 [c-shared]: https://github.com/stable-haskell/cabal/commit/ed916be32331e541bfff74c1fea2592e49e84b45
 [c-static]: https://github.com/stable-haskell/cabal/commit/3b773094325aa515a7a59beddc5d88721d13d945
@@ -393,6 +399,9 @@ setup isn't reproducible outside haskell.nix yet.
 [android-static-libs]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/test/default.nix#L16-L30
 [th-dlls]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/test/th-dlls/default.nix
 [p-win]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-windows-crt-symbols.patch
-[p-arm32-libc]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-arm32-static-libc.patch
-[p-arm32-bionic]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-arm32-bionic-symbols.patch
-[p-i386]: https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-i386-musl-dynamic-libc.patch
+[iserv-syms]: https://github.com/stable-haskell/iserv-proxy/tree/iserv-syms
+[i-i386]: https://github.com/stable-haskell/iserv-proxy/commit/e0872da969ffa31be3da474e51bf8235e5f6f615
+[i-arm32-libc]: https://github.com/stable-haskell/iserv-proxy/commit/176290feae055cdcaa1cd73ad143016b25e56ca5
+[i-arm32-iconv]: https://github.com/stable-haskell/iserv-proxy/commit/a60c2dcd22ed352e6e2a627d922c3b2332c9d99b
+[i-arm32-entropy]: https://github.com/stable-haskell/iserv-proxy/commit/d5228de08acc06a92528d87ba27308c7afb2aa31
+[i-arm64-iconv]: https://github.com/stable-haskell/iserv-proxy/commit/81ceb247a0d9a04827d25fd3bab3eddaea74f267

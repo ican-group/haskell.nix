@@ -45,7 +45,14 @@ in
   z = [ zlib ];
   m = []; # Included with ghc
   pcap = [ libpcap ];
-  pthread = null; # available by default
+  # Available by default, except on Android: Bionic provides the pthread
+  # functions from libc and has no libpthread, but Cabal treats Android as
+  # os(linux), so packages such as crypton ask for `extra-libraries: pthread`.
+  # An empty archive satisfies `-lpthread` without changing the package
+  # source (patching it would move its v2 UnitId away from plan-nix).
+  pthread = if pkgs.stdenv.hostPlatform.isAndroid
+    then [ (pkgs.buildPackages.writeTextDir "lib/libpthread.a" "!<arch>\n") ]
+    else null;
   GL = [ libGL ];
   GLEW = [ glew ];
   GLU = [ libGLU ];

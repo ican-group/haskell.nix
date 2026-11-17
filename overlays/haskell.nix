@@ -1369,6 +1369,8 @@ final: prev: {
                   ../builder/cabal-install-patches/static-external-only-when-supported.patch
                   ../builder/cabal-install-patches/no-object-for-unemitted-signature.patch
                   ../builder/cabal-install-patches/configure-script-posix-path.patch
+                  # ordNub drops repeated -framework and -include pairs.
+                  ../builder/cabal-install-patches/hsc2hs-preserve-options.patch
                 ];
               }];
             };
@@ -1390,30 +1392,7 @@ final: prev: {
                 name = "iserv-proxy";
                 inherit compiler-nix-name evalSystem;
 
-                # Patch platform-specific iserv-proxy symbol tables before
-                # planning so v2 hashes and source archives describe the same
-                # implementation. The ARM32 Bionic patch removes stubs that
-                # shadow real static libc routines; the i386 musl patch drops
-                # a hidden libc symbol that prevents dynamic linking.
-                src = if compiler-nix-name == "ghc914-sh"
-                  && pkgs.stdenv.hostPlatform.isLinux
-                  && pkgs.stdenv.hostPlatform.isMusl
-                  && pkgs.stdenv.hostPlatform.isx86_32
-                then config.evalPackages.applyPatches {
-                  name = "i386-musl-iserv-proxy-source";
-                  src = sources.iserv-proxy;
-                  patches = [ ./patches/iserv-proxy-i386-musl-dynamic-libc.patch ];
-                } else if compiler-nix-name == "ghc914-sh"
-                  && pkgs.stdenv.hostPlatform.isAndroid
-                  && pkgs.stdenv.hostPlatform.isAarch32
-                then config.evalPackages.applyPatches {
-                  name = "android-arm32-iserv-proxy-source";
-                  src = sources.iserv-proxy;
-                  patches = [
-                    ./patches/iserv-proxy-arm32-static-libc.patch
-                    ./patches/iserv-proxy-arm32-bionic-symbols.patch
-                  ];
-                } else sources.iserv-proxy;
+                src = sources.iserv-proxy;
 
                 modules = [{
                   config = {
