@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-760f44e2.js";
+            window.path_to_searchindex_js = "../searchindex-55f38f8e.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -514,11 +514,16 @@ archives (<code>.a</code>) of the C libraries splices use (<a href="https://gith
 </thead>
 <tbody>
 <tr><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-windows-crt-symbols.patch">windows-crt-symbols</a></td><td>CRT symbol aliases for the interpreter</td><td>Windows, GHC 9.6–9.10</td></tr>
-<tr><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-arm32-static-libc.patch">arm32-static-libc</a>, <a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-arm32-bionic-symbols.patch">arm32-bionic-symbols</a></td><td>static libc and a Bionic symbol table</td><td>Android arm32, <em>stable-haskell GHC</em></td></tr>
-<tr><td><a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/overlays/patches/iserv-proxy-i386-musl-dynamic-libc.patch">i386-musl-dynamic-libc</a></td><td>drops a hidden libc symbol so the interpreter can link libc dynamically</td><td>i386 musl, <em>stable-haskell GHC</em></td></tr>
 </tbody>
 </table>
 </div>
+<p>The stable-haskell GHC symbol-table fixes are commits on the
+<a href="https://github.com/stable-haskell/iserv-proxy/tree/iserv-syms"><code>iserv-syms</code></a> branch that haskell.nix pins, not patches:
+<a href="https://github.com/stable-haskell/iserv-proxy/commit/e0872da969ffa31be3da474e51bf8235e5f6f615">i386 musl</a> drops a hidden libc symbol so the interpreter can link libc
+dynamically; on Android arm32 the interpreter uses
+<a href="https://github.com/stable-haskell/iserv-proxy/commit/176290feae055cdcaa1cd73ad143016b25e56ca5">static Bionic</a>, <a href="https://github.com/stable-haskell/iserv-proxy/commit/a60c2dcd22ed352e6e2a627d922c3b2332c9d99b">GNU libiconv</a> and
+<a href="https://github.com/stable-haskell/iserv-proxy/commit/d5228de08acc06a92528d87ba27308c7afb2aa31"><code>arc4random_buf</code></a>; on Android aarch64 it registers
+<a href="https://github.com/stable-haskell/iserv-proxy/commit/81ceb247a0d9a04827d25fd3bab3eddaea74f267">GNU libiconv and, from API 28, Bionic iconv</a>.</p>
 <h2 id="appendix-b-how-haskellnix-wires-this-up"><a class="header" href="#appendix-b-how-haskellnix-wires-this-up">Appendix B: how haskell.nix wires this up</a></h2>
 <p>For readers who want to dig into the reference implementation.</p>
 <p><strong>Hadrian-built cross GHCs</strong> get no <code>ghc-iserv</code> (<a href="https://github.com/ican-group/haskell.nix/blob/5ed5b883f37155506c841affd889483db21437f6/compiler/ghc/default.nix#L1307-L1310">link</a>):
