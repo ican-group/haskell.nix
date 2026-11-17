@@ -165,7 +165,13 @@ jobs:
             want=$(echo "$prod" | jq -er '.value.sha256hash')
 
             echo "$job -> build $bid product $nr ($name)"
-            curl -fsSL --retry 3 --retry-delay 5 -o "$name" "$hydra/build/$bid/download/$nr"
+            # Hydra serves these zips (100-250 MB) slowly, and a connection
+            # dropped mid-transfer (curl exit 56) is not one of the errors
+            # plain `--retry` considers transient, so it failed the run outright
+            # (master fd0b59fda, run 44000290404).  `--retry-all-errors`
+            # retries those too; each retry restarts the file from scratch and
+            # the sha256 check below still guards the result.
+            curl -fsSL --retry 5 --retry-delay 10 --retry-all-errors -o "$name" "$hydra/build/$bid/download/$nr"
             got=$(sha256sum "$name" | cut -d' ' -f1)
             [ "$got" = "$want" ] || { echo "::error::$name sha256 mismatch: got $got, Hydra says $want"; exit 1; }
           done
