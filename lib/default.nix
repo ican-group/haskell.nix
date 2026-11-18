@@ -257,9 +257,25 @@ in {
       # Keep the trailing slash if there was one.
       + (if lib.hasSuffix "/" path then "/" else "");
 
+  # Is `path` a YAML file that an hpack `package.yaml` in the directory
+  # `pkgDir` might include from outside that directory?  Matches files in
+  # `pkgDir`'s ancestor directories (for instance a `../common.yaml` shared
+  # by several packages through `!include` or `defaults: local:`), except
+  # `package.yaml`, stack configuration (`stack.yaml`, `stack-ghc9.yaml`, ...)
+  # and hidden files (`.hlint.yaml` and the like), so that editing those does
+  # not rebuild every hpack package (#485).
+  isHpackAncestorInclude = pkgDir: path: type:
+    let name = baseNameOf path;
+    in type != "directory"
+      && builtins.match ".*\\.ya?ml" name != null
+      && name != "package.yaml"
+      && builtins.match "stack([-.].*)?\\.ya?ml" name == null
+      && !lib.hasPrefix "." name
+      && lib.hasPrefix (dirOf path + "/") (pkgDir + "/");
+
   # Use cleanSourceWith to filter just the files needed for a particular
   # component of a package
-  cleanCabalComponent = import ./clean-cabal-component.nix { inherit lib cleanSourceWith normalizeRelativePath; };
+  cleanCabalComponent = import ./clean-cabal-component.nix { inherit lib cleanSourceWith normalizeRelativePath isHpackAncestorInclude; };
 
   # Clean git directory based on `git ls-files --recurse-submodules`
   cleanGit = import ./clean-git.nix {
