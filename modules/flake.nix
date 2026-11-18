@@ -43,6 +43,17 @@
         turned on by default.
       '';
     };
+    doDefaults = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Specifies if the flake should have `packages.default` and
+        `apps.default` (for a bare `nix build` and `nix run`) when there is
+        a package in the project directory: its executable if it has
+        exactly one, and otherwise its library.  Only the flake without a
+        cross or variant prefix gets them.
+      '';
+    };
     doHaddock = lib.mkOption {
       type = lib.types.bool;
       default = false;

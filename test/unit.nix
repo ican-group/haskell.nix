@@ -14,6 +14,12 @@ let
     package.buildable = true;
   };
 
+  # Project and package sources as `appendSubDir` makes them, for the
+  # `defaultFlakeComponents` tests.
+  projectSrc = { origSrc = "/repo"; origSubDir = ""; };
+  rootPkg = components: { identifier.name = "root"; src = projectSrc; inherit components; };
+  subPkg = components: { identifier.name = "sub"; src = projectSrc // { origSubDir = "/sub"; }; inherit components; };
+
   componentsConfig = {
     components = {
        benchmarks = { bbb = { buildable = true; planned = true; }; };
@@ -228,6 +234,152 @@ lib.runTests {
     }) ? haddock;
     expected = false;
   };
+
+  # `defaultFlakeComponents` picks the flake's `packages.default` and
+  # `apps.default` like bare `cabal build`/`cabal run` in the project
+  # directory: only the single package whose source is that directory
+  # counts (#1777).
+  testDefaultFlakeComponentsLibAndExe = {
+    expr = haskellLib.defaultFlakeComponents projectSrc {
+      root = rootPkg { library = "LIB"; exes.e = "EXE"; };
+      sub = subPkg { exes.s = "SUB-EXE"; };
+    };
+    expected = { package = "EXE"; app = "EXE"; };
+  };
+
+  # More than one executable: `cabal run` would need a target, so no app,
+  # and the library is the default package.
+  testDefaultFlakeComponentsTwoExes = {
+    expr = haskellLib.defaultFlakeComponents projectSrc {
+      root = rootPkg { library = "LIB"; exes = { a = "A"; b = "B"; }; };
+    };
+    expected = { package = "LIB"; app = null; };
+  };
+
+  # A library-only package (no `exes` attr at all) is still a default package.
+  testDefaultFlakeComponentsLibOnly = {
+    expr = haskellLib.defaultFlakeComponents projectSrc {
+      root = rootPkg { library = "LIB"; };
+    };
+    expected = { package = "LIB"; app = null; };
+  };
+
+  # No package in the project directory: nothing is chosen, even though
+  # there is exactly one package.
+  testDefaultFlakeComponentsNoRoot = {
+    expr = haskellLib.defaultFlakeComponents projectSrc {
+      sub = subPkg { library = "LIB"; exes.s = "S"; };
+    };
+    expected = { package = null; app = null; };
+  };
+
+  # Two packages claiming the project directory: ambiguous, nothing chosen.
+  testDefaultFlakeComponentsAmbiguous = {
+    expr = haskellLib.defaultFlakeComponents projectSrc {
+      a = rootPkg { exes.a = "A"; } // { identifier.name = "a"; };
+      b = rootPkg { exes.b = "B"; } // { identifier.name = "b"; };
+    };
+    expected = { package = null; app = null; };
+  };
+
+  # A package planned from `plan.json` has one `hsPkgs` entry per unit,
+  # each with only its own components; they count as one package.
+  testDefaultFlakeComponentsPerUnit = {
+    expr = haskellLib.defaultFlakeComponents projectSrc {
+      "root-0.1-inplace" = rootPkg { library = "LIB"; };
+      "root-0.1-inplace-e" = rootPkg { exes.e = "EXE"; };
+    };
+    expected = { package = "EXE"; app = "EXE"; };
+  };
+
+  # The same, with two executables in separate units: no single app.
+  testDefaultFlakeComponentsPerUnitTwoExes = {
+    expr = haskellLib.defaultFlakeComponents projectSrc {
+      "root-0.1-inplace" = rootPkg { library = "LIB"; };
+      "root-0.1-inplace-a" = rootPkg { exes.a = "A"; };
+      "root-0.1-inplace-b" = rootPkg { exes.b = "B"; };
+    };
+    expected = { package = "LIB"; app = null; };
+  };
+
+  # Two entries holding the same executable (a custom `selectPackages`
+  # that keeps both copies) are not one choice.
+  testDefaultFlakeComponentsDuplicateExe = {
+    expr = haskellLib.defaultFlakeComponents projectSrc {
+      host = rootPkg { library = "LIB"; exes.e = "EXE"; };
+      other = rootPkg { exes.e = "EXE2"; };
+    };
+    expected = { package = "LIB"; app = null; };
+  };
+
+  # A project in a subdirectory of its source (`src.origSubDir`): the
+  # package in that subdirectory is the root one, not the one at the top.
+  testDefaultFlakeComponentsProjectSubDir = {
+    expr = haskellLib.defaultFlakeComponents
+      { origSrc = "/repo"; origSubDir = "/proj"; } {
+        top = { identifier.name = "top"; src = { origSrc = "/repo"; origSubDir = ""; }; components.exes.t = "TOP"; };
+        proj = { identifier.name = "proj"; src = { origSrc = "/repo"; origSubDir = "/proj"; }; components.exes.p = "PROJ"; };
+        nested = { identifier.name = "nested"; src = { origSrc = "/repo"; origSubDir = "/proj/n"; }; components.exes.n = "N"; };
+      };
+    expected = { package = "PROJ"; app = "PROJ"; };
+  };
+
+  # A plain path `src` (no `origSrc`) matches packages cut from it.
+  testDefaultFlakeComponentsPlainSrc = {
+    expr = haskellLib.defaultFlakeComponents "/repo" {
+      root = { identifier.name = "root"; src = { origSrc = "/repo"; origSubDir = ""; }; components.exes.e = "EXE"; };
+    };
+    expected = { package = "EXE"; app = "EXE"; };
+  };
+
+  # Without a project `src` (a hand-made project passed to `mkFlake`)
+  # nothing is chosen.
+  testDefaultFlakeComponentsNoSrc = {
+    expr = haskellLib.defaultFlakeComponents null {
+      root = rootPkg { exes.e = "EXE"; };
+    };
+    expected = { package = null; app = null; };
+  };
+
+  # `mkFlake` adds the defaults to `packages` and `apps` only, so CI does
+  # not get the same job twice, and a `default` the caller passes wins.
+  testMkFlakeDefaults =
+    let
+      exe = { passthru.identifier.component-id = "root:exe:e"; exePath = "/bin/e"; meta = { }; };
+      project = {
+        args.src = projectSrc;
+        hsPkgs.root = rootPkg { exes.e = exe; };
+      };
+      flake = haskellLib.mkFlake project {
+        selectPackages = ps: ps;
+        checks = { }; checkedProject = { };
+      };
+      flakeWithDefault = haskellLib.mkFlake project {
+        selectPackages = ps: ps;
+        packages = { default = "MINE"; };
+        defaultApp = null;
+      };
+    in {
+      expr = {
+        packages = builtins.attrNames flake.packages;
+        app = flake.apps.default.program;
+        ciPackages = builtins.attrNames flake.ciJobs.packages;
+        userDefault = flakeWithDefault.packages.default;
+        noApp = flakeWithDefault.apps ? default;
+        off = (haskellLib.mkFlake project {
+          selectPackages = ps: ps;
+          doDefaults = false;
+        }).packages ? default;
+      };
+      expected = {
+        packages = [ "default" "root:exe:e" ];
+        app = "/bin/e";
+        ciPackages = [ "root:exe:e" ];
+        userDefault = "MINE";
+        noApp = false;
+        off = false;
+      };
+    };
 
   # testing that the tests work
   testId = {

@@ -109,6 +109,14 @@ compiles the test. To run it, build its check, or run all of them with
 nix build '.#checks.x86_64-linux."your-package-name:test:your-test-name"'
 ```
 
+When the project directory (the one with `cabal.project` or `stack.yaml`)
+is itself the directory of a package, the flake also has a `default`
+package and app taken from that package, the one a bare `cabal build` or
+`cabal run` would use there.  `nix build` builds the package's executable
+if it has exactly one, and its library otherwise; `nix run` runs that
+executable.  Set `flake.doDefaults = false` in the project to leave them
+out.
+
 Flakes provide a `devShell` attribute that allow you to spawn a developer shell, here with `cabal`, `hlint` and `haskell-language-server`:
 ```shell
 nix develop .

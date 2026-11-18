@@ -14,6 +14,19 @@ that will impact users.
     (`project.hsPkgs.<pkg>.sdist`), the tarball `cabal sdist` makes for
     it.  It needs no compiler and no dependencies, and fails if the
     `.cabal` file lists a file that is not in the source.
+  * `project.flake` (and `haskellLib.mkFlake`) now adds `packages.default`
+    and `apps.default` when the project directory (the one holding
+    `cabal.project` or `stack.yaml`) is itself a package's directory, so
+    a bare `nix build` or `nix run` works, taking its target from the
+    same package a bare `cabal build` or `cabal run` would.
+    `packages.default` is that package's executable when it has exactly
+    one, and otherwise its library; `apps.default` is that executable.
+    Nothing is added when there is no such package or no single choice,
+    nor to cross or variant (prefixed) flakes.  A `default` passed in
+    `packages` or `apps` wins.  To turn it off set `flake.doDefaults =
+    false` (or pass `doDefaults = false`, `defaultPackage = null` or
+    `defaultApp = null` to `haskellLib.mkFlake`).  `ciJobs` and
+    `hydraJobs` do not get a second copy of the component.
 
 ## November 8, 2026
 

@@ -657,6 +657,13 @@ in {
           package)
       { };
 
+  # A flake `apps` entry that runs an executable component.
+  mkFlakeApp = component: {
+    type = "app";
+    program = component.exePath;
+    inherit (component) meta;
+  };
+
   # Flake package names that are flat and match the cabal component names.
   mkFlakeApps =
     foldrAttrVals
@@ -664,15 +671,54 @@ in {
         foldComponents
           [ "exes" "tests" "benchmarks" ]
           (component: a: a // {
-            ${component.passthru.identifier.component-id} = {
-              type = "app";
-              program = component.exePath;
-              inherit (component) meta;
-            };
+            ${component.passthru.identifier.component-id} = mkFlakeApp component;
           })
           acc
           package)
       { };
+
+  # The packages in `haskellPackages` whose source is the project directory
+  # itself (the one holding `cabal.project` or `stack.yaml`), as opposed to
+  # a subdirectory of it.  Those are what a bare `cabal build` or
+  # `cabal run` acts on when run in the project directory.
+  # Project package sources are made with `appendSubDir` from the project
+  # `src`, so they keep its `origSrc` and add their own path to
+  # `origSubDir`; comparing the two finds them without reading any files.
+  projectRootPackages = projectSrc: haskellPackages:
+    let
+      srcDir = src: toString (src.origSrc or src) + (src.origSubDir or "");
+      rootDir = srcDir projectSrc;
+    in lib.filterAttrs (_: p: (p.src or null) != null && srcDir p.src == rootDir)
+      haskellPackages;
+
+  # The components to use for the flake's `packages.default` and
+  # `apps.default`.  Like bare `cabal build` and `cabal run`, they come from
+  # the package in the project directory, and only when there is exactly
+  # one.  `app` is that package's executable, when it has exactly one.
+  # `package` is that same executable, or else the package's library (a
+  # flake package is a single component, while `cabal build` builds all of
+  # the package's).  Each is `null` when there is no single obvious choice.
+  defaultFlakeComponents = projectSrc: haskellPackages:
+    let
+      roots = lib.optionals (projectSrc != null)
+        (lib.attrValues (projectRootPackages projectSrc haskellPackages));
+      # `hsPkgs` from a `plan.json` has an entry per unit, each holding just
+      # that unit's components (the library in one, each executable in
+      # another), so gather them up by package name.  The executables are
+      # listed, not merged by name: two entries holding the same one (with
+      # a custom `selectPackages`) mean there is no single choice.
+      names = lib.unique (map (p: p.identifier.name) roots);
+      exes = lib.concatMap (p: lib.attrValues (p.components.exes or {})) roots;
+      libs = lib.filter (l: l != null) (map (p: p.components.library or null) roots);
+      exe = if lib.length exes == 1 then lib.head exes else null;
+    in if lib.length names != 1
+      then { package = null; app = null; }
+      else {
+        app = exe;
+        package = if exe != null then exe
+          else if libs != [] then lib.head libs
+          else null;
+      };
 
   # Flatten the result of collectChecks or collectChecks' for use in flake `checks`
   mkFlakeChecks = allChecks:
@@ -743,20 +789,36 @@ in {
         , checkedProject ? project.appendModule { checkMaterialization = true; }
         , ciJobs ? mkFlakeCiJobs project { inherit checks coverage packages haddock devShells checkedProject; }
         , hydraJobs ? ciJobs
+        # The component for `packages.default` (`nix build`) and
+        # `apps.default` (`nix run`).  By default these come from the
+        # package in the project directory (see `defaultFlakeComponents`);
+        # pass `null` to leave either out, or `doDefaults = false` for both.
+        # A `default` already in `packages` or `apps` is kept.
+        , doDefaults ? true
+        , defaultComponents ?
+            if doDefaults
+              then defaultFlakeComponents (project.args.src or null) haskellPackages
+              else { package = null; app = null; }
+        , defaultPackage ? defaultComponents.package
+        , defaultApp ? defaultComponents.app
       }: {
-      inherit
           # Used by:
           #   `nix build .#pkg-name:lib:pkg-name`
           #   `nix build .#pkg-name:lib:sublib-name`
           #   `nix build .#pkg-name:exe:exe-name`
           #   `nix build .#pkg-name:test:test-name`
-          packages
+          #   `nix build`
+          packages = lib.optionalAttrs (defaultPackage != null) { default = defaultPackage; }
+            // packages;
+          #   `nix run .#pkg-name:exe:exe-name`
+          #   `nix run .#pkg-name:test:test-name`
+          #   `nix run`
+          apps = lib.optionalAttrs (defaultApp != null) { default = mkFlakeApp defaultApp; }
+            // apps;
+      inherit
           # Used by:
           #   `nix flake check`
           checks
-          #   `nix run .#pkg-name:exe:exe-name`
-          #   `nix run .#pkg-name:test:test-name`
-          apps
           # Used by hydra.
           hydraJobs
           # Like `hydraJobs` but with `${system}` first so that it the IFDs will not have
