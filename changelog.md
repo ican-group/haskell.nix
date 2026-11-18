@@ -27,6 +27,15 @@ that will impact users.
     false` (or pass `doDefaults = false`, `defaultPackage = null` or
     `defaultApp = null` to `haskellLib.mkFlake`).  `ciJobs` and
     `hydraJobs` do not get a second copy of the component.
+  * Local files a `cabal.project` (or `cabalProjectLocal`) pulls in with
+    `import:` are now kept in the source used to compute the plan, whatever
+    their names, and so are the files they import in turn.  Before only
+    `.cabal` and `package.yaml` files were kept, so cabal failed with
+    `withBinaryFile: does not exist` for the imported file.  Projects
+    without local imports get the same plan as before.  Imported files are
+    used as they are, so a `source-repository-package` or `repository`
+    stanza in one is reported as an error (move it to the project file or
+    `cabalProjectLocal`, where `sha256map`/`inputMap` apply).
 
 ## November 8, 2026
 
