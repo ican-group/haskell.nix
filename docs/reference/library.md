@@ -73,6 +73,25 @@ components = {
 }
 ```
 
+A package also has an `sdist` attribute: the source distribution
+tarball `cabal sdist` makes for it, built with no compiler and no
+dependencies.  `sdist.tarball` is the path of the `.tar.gz` file, and
+Hydra lists it as a build product.  It fails to build if the `.cabal`
+file names a file (for example in `extra-source-files`) that is not in
+the package source, so checking it in CI catches that before an upload
+to Hackage.
+
+```nix
+project.hsPkgs.my-package.sdist          # directory holding my-package-1.0.tar.gz
+project.hsPkgs.my-package.sdist.tarball  # the .tar.gz itself
+```
+
+It uses the `.cabal` file that `components` are built from (a Hackage
+revision, or the file hpack generates from `package.yaml`) but not the
+`patches` or hooks set for the package.  Symlinks in the package
+directory that point outside it (such as `LICENSE -> ../LICENSE`) are
+packed as the files they point to.
+
 ## Component
 
 In [Haskell.nix][], a _component_ is a derivation corresponding to a

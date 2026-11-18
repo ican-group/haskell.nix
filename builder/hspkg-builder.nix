@@ -224,13 +224,88 @@ let
     # option (1 or 2) — there's no per-component opt-in / opt-out.
     in if builderVersion == 2 then v2 else v1;
 
+  # The source distribution `cabal sdist` would make for this package.
+  # It needs no compiler and no dependencies: the prebuilt `cabal` from
+  # nix-tools only reads the .cabal file and packs the files it lists, so
+  # a file missing from `extra-source-files` (or similar) fails here
+  # rather than after an upload to Hackage.  The .cabal file is the one
+  # the builders use (a Hackage revision, or the hpack output for a
+  # package.yaml); haskell.nix `patches` and hooks are not applied.
+  # Built on the build platform, as the tarball does not depend on the
+  # host.
+  #
+  # `cabal` is the one the project plans with by default: the
+  # stable-haskell fork for v2 projects and stable-haskell compilers
+  # (see modules/cabal-project.nix), mainline otherwise.  `hpack` always
+  # comes from the mainline tools, as in both builders, so the .cabal
+  # file matches the one the components are built from.
+  sdistTools =
+    if builderVersion == 2 || (ghc.isStableHaskell or false)
+      then buildPackages.haskell-nix.nix-tools-unchecked-sh
+      else buildPackages.haskell-nix.nix-tools-unchecked;
+  # `cabal sdist` names the tarball from the .cabal file's name and version.
+  sdistName = "${package.identifier.name}-${package.identifier.version}";
+  sdist = buildPackages.stdenvNoCC.mkDerivation {
+    name = "${sdistName}-sdist";
+    inherit src cabalFile;
+    passAsFile = [ "cabalFile" ];
+    dontConfigure = true;
+    # A local package's `src` is its own directory in the store, so a
+    # relative symlink in it (`specifications -> ../../specifications`)
+    # does not resolve once copied into the build directory.  Replace each
+    # symlink whose target exists in the store copy with that target, as
+    # `cp -L` does for the v2 builder's package tarball.  Dangling links
+    # are left alone; `cabal sdist` only fails on them if the .cabal file
+    # lists them.
+    postUnpack = ''
+      if [ -d "$src" ]; then
+        (cd "$src" && find . -type l) | while IFS= read -r l; do
+          if [ -e "$src/$l" ]; then
+            rm "$sourceRoot/$l"
+            cp -rL --no-preserve=mode "$src/$l" "$sourceRoot/$l"
+          fi
+        done
+      fi
+    '';
+    # A Hackage revision replaces the package's .cabal file, which may
+    # have a different file name.  The builders read the .cabal file
+    # haskell.nix generates, and `cabal sdist` is given a project file of
+    # its own so that a cabal.project in the package directory (which may
+    # list packages not in `src`) is not read.
+    buildPhase = ''
+      runHook preBuild
+      ${if cabalFile != null
+        then ''
+          rm -f ./*.cabal
+          cp $cabalFilePath ${package.identifier.name}.cabal
+        ''
+        else lib.optionalString (cabal-generator == "hpack") ''
+          ${buildPackages.haskell-nix.nix-tools-unchecked}/bin/hpack
+        ''}
+      echo 'packages: .' > .haskell-nix-sdist.project
+      export HOME=$TMPDIR
+      ${sdistTools}/bin/cabal sdist \
+        --project-file=.haskell-nix-sdist.project \
+        --output-directory=$TMPDIR/sdist
+      runHook postBuild
+    '';
+    installPhase = ''
+      runHook preInstall
+      mkdir -p $out/nix-support
+      cp $TMPDIR/sdist/${sdistName}.tar.gz $out/
+      echo "file source-dist $out/${sdistName}.tar.gz" >> $out/nix-support/hydra-build-products
+      runHook postInstall
+    '';
+    passthru.tarball = "${sdist}/${sdistName}.tar.gz";
+  };
+
 in rec {
   components = haskellLib.applyComponents (buildComp pkg.allComponent) pkg;
   checks = pkgs.lib.recurseIntoAttrs (builtins.mapAttrs
     (_: d: haskellLib.check d)
       (lib.filterAttrs (_: d: d.config.doCheck) components.tests));
   inherit (package) identifier detailLevel isLocal isProject buildType;
-  inherit setup;
+  inherit setup sdist;
   isHaskell = true;
   inherit src;
 }

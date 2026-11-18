@@ -248,6 +248,7 @@ let
   allTests = {
     cabal-simple = callTest ./cabal-simple { inherit util; };
     cabal-files-filter = callTest ./cabal-files-filter {};
+    sdist = callTest ./sdist {};
     build-jobs = callTest ./build-jobs {};
     dummy-ghc-info = callTest ./dummy-ghc-info {};
     dummy-ghc-pkg-dump = callTest ./dummy-ghc-pkg-dump {};

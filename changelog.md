@@ -10,6 +10,10 @@ that will impact users.
     `modules = [{ projectPackages.ghcOptions = [ "-Werror" ]; }]` to use
     `-Werror` only in Nix builds.  See the Modules section of
     `docs/reference/library.md`.
+  * Each package now has an `sdist` attribute
+    (`project.hsPkgs.<pkg>.sdist`), the tarball `cabal sdist` makes for
+    it.  It needs no compiler and no dependencies, and fails if the
+    `.cabal` file lists a file that is not in the source.
 
 ## November 8, 2026
 
