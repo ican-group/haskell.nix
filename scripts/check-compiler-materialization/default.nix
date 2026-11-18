@@ -1,5 +1,5 @@
 # This is for checking the materialization of new GHC versions
-# See docs/adding-new-ghc.md for more details.
+# See docs/dev/adding-new-ghc.md for more details.
 { compiler-nix-name ? throw "Please pass `compiler-nix-name` or `compiler-nix-names`", compiler-nix-names ? [ compiler-nix-name ], systems ? [ builtins.currentSystem ] }:
 let
   eval = (import ../../. {}).pkgs;

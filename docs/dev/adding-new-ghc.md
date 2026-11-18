@@ -12,19 +12,44 @@ Check the LLVM version that should be used in the
 
 ## Update [supported ghc versions](../reference/supported-ghc-versions.md) document
 
-## Add the materialized files
+## Materialized files
 
-In the haskell.nix repo run:
+New GHC versions do not need their own materialized files.  Since GHC 9.11
+the nix files for the GHC boot packages are generated on demand (see
+`combineAndMaterialize` in `overlays/ghc-packages.nix`).
+
+The bootstrap tools used to build GHC (`alex`, `happy`, `hscolour`) are
+materialized per nixpkgs boot compiler, not per new GHC, in
+`materialized/alex-*`, `materialized/happy-*` and `materialized/bootstrap`
+(see `overlays/bootstrap.nix`).  Those only need new files when the boot
+compiler changes; the build fails with `Materialized nix used for ... is
+missing` and an `updateMaterialized` hint if they are needed.
+
+The files in `materialized/ghc-boot-packages-nix` are still used by GHC
+versions before 9.11.  There is one directory per `compiler-nix-name`
+(including the `llvm` variants), with `-aarch64` and `-ghcjs` variants for
+aarch64 and GHCJS targets.  If a change affects them (for instance a patch to
+the `.cabal` file of a boot package), check every affected compiler on both
+an x86_64 and an aarch64 system, for example:
 
 ```shell
-mkdir materialized/ghc884
-nix-build scripts/check-compiler-materialization --argstr compiler-nix-name ghc884
+nix-build scripts/check-compiler-materialization \
+  --arg compiler-nix-names '["ghc967" "ghc967llvm" "ghc984" "ghc984llvm" "ghc9103" "ghc9103llvm"]' \
+  --arg systems '["x86_64-linux" "aarch64-linux"]'
 ```
 
-The `nix-build` command will fail with something like:
+The ghcjs and cross entries in `scripts/check-compiler-materialization` are
+gated on hard-coded lists of compilers, so extend those if the `-ghcjs`
+directory of the compiler you changed is not covered.
+
+The script turns on `checkMaterialization` for everything it evaluates, so it
+also checks the bootstrap tool plans above.  Updating those can change the
+derivation of every GHC, so do that in a separate change.
+
+When a materialized file is out of date the build fails with a message like:
 
 ```
-Materialized nix used for dummy-data-x86_64-unknown-linux-musl-ghc-8.10.1 incorrect. To fix run: /nix/store/wnwpyrhv4nxgyljz3f20gdpspjxvm7h4-updateMaterialized
+Materialized nix used for ghc967-boot-packages-nix.nix incorrect. To fix run: /nix/store/...-updateMaterialized
 ```
 
 Run the `updateMaterialized` script and repeat the `nix-build` until it no longer fails.
