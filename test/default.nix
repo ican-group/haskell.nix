@@ -278,6 +278,7 @@ let
     project-flags-stack = callTest ./project-flags/stack.nix {};
     ghc-options-cabal = callTest ./ghc-options/cabal.nix {};
     ghc-options-stack = callTest ./ghc-options/stack.nix {};
+    project-packages = callTest ./project-packages {};
     exe-only = callTest ./exe-only { inherit util; };
     build-twin-pkgconfig = callTest ./build-twin-pkgconfig {};
     foreign-lib = callTest ./foreign-lib {};

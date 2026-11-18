@@ -1,6 +1,16 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 19, 2026
+
+  * New `projectPackages` and `localPackages` module options set package
+    options for all of the project's own packages (`package.isProject`) or
+    all local packages (`package.isLocal`, which also includes
+    `source-repository-package`s) without listing them, for instance
+    `modules = [{ projectPackages.ghcOptions = [ "-Werror" ]; }]` to use
+    `-Werror` only in Nix builds.  See the Modules section of
+    `docs/reference/library.md`.
+
 ## November 8, 2026
 
   * A v2 slice's pkg-config table now holds only the names declared by the
