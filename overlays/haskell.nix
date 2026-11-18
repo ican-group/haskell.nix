@@ -1071,9 +1071,12 @@ final: prev: {
                 # in v2 (build-tool-depends are surfaced via
                 # `executableToolDepends`), so keep it.
                 (if builderV == 2
-                  then builtins.removeAttrs shellArgs [
+                  then final.lib.warnIf (shellArgs.stripSourceRepositoryPackages or false)
+                    "haskell.nix: `stripSourceRepositoryPackages` only applies to `builderVersion = 1` shells; ignoring it"
+                    builtins.removeAttrs shellArgs [
                     "exactDeps" "packageSetupDeps"
                     "enableDWARF" "components" "additional"
+                    "stripSourceRepositoryPackages" "cabalProjectFileName"
                   ]
                   else shellArgs)
                 // {

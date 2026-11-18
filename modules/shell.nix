@@ -7,7 +7,10 @@
     };
     packages = lib.mkOption {
       type = lib.types.unspecified;
-      default = ps: builtins.attrValues (haskellLib.selectLocalPackages ps);
+      default = ps: builtins.attrValues (
+        if config.stripSourceRepositoryPackages
+          then haskellLib.selectProjectPackages ps
+          else haskellLib.selectLocalPackages ps);
     };
     components = lib.mkOption {
       type = lib.types.unspecified;
@@ -37,6 +40,30 @@
         of the haskell packages in the project.  Defaulted to `false` in
         stack projects (to avoid trying to build the tools used by
         every `stackage` package).
+      '';
+    };
+    stripSourceRepositoryPackages = lib.mkOption {
+      type = lib.types.bool;
+      default = false;
+      description = ''
+        cabal always builds a `source-repository-package` from source,
+        ignoring any copy in the package db (haskell/cabal#5444).  When
+        `true`, the shell's package db includes the nix-built
+        `source-repository-package`s (the default `packages` becomes the
+        project packages only) and a `cabal` wrapper on `PATH` runs cabal
+        with `--project-file` pointing at a copy of the project file (and of
+        its `.local` file) with the `source-repository-package` stanzas
+        removed.  The copy is written next to the project file as
+        `.haskell-nix-shell.<cabalProjectFileName>`.
+        Only affects `shellFor` under `builderVersion = 1`.
+      '';
+    };
+    cabalProjectFileName = lib.mkOption {
+      type = lib.types.str;
+      default = projectConfig.cabalProjectFileName or "cabal.project";
+      description = ''
+        The project file `stripSourceRepositoryPackages` makes a stripped
+        copy of.  Defaults to the project's `cabalProjectFileName`.
       '';
     };
     exposePackagesVia = lib.mkOption {

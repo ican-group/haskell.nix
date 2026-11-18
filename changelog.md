@@ -1,6 +1,16 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 19, 2026
+
+  * `shellFor` has a new `stripSourceRepositoryPackages` argument (default
+    `false`).  When set, the shell's package db includes the
+    `source-repository-package`s nix built, and the shell's `cabal` runs
+    with a copy of `cabal.project` that has the `source-repository-package`
+    stanzas removed, so `cabal` uses those copies instead of fetching and
+    building them (and `exactDeps = true` shells work with
+    `source-repository-package`s).  Only for `builderVersion = 1` shells.
+
 ## November 8, 2026
 
   * A v2 slice's pkg-config table now holds only the names declared by the

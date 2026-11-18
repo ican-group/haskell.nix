@@ -3,7 +3,12 @@
 { # `packages` function selects packages that will be worked on in the shell itself.
   # These packages will not be built by `shellFor`, but their
   # dependencies will be included in the shell's `ghc-pkg list`.
-  packages ? ps: builtins.attrValues (haskellLib.selectLocalPackages ps)
+  # With `stripSourceRepositoryPackages` the `source-repository-package`s
+  # are dependencies (pre-built by nix) rather than packages worked on.
+  packages ? ps: builtins.attrValues (
+    if stripSourceRepositoryPackages
+      then haskellLib.selectProjectPackages ps
+      else haskellLib.selectLocalPackages ps)
   # `components` function selects components that will be worked on in the shell itself.
   # By default `shellFor` will include the dependencies of all of the components
   # in the selected packages.  If only as subset of the components will be
@@ -19,6 +24,17 @@
 , tools ? {}
 , packageSetupDeps ? true
 , enableDWARF ? false
+  # cabal treats a `source-repository-package` as a package of the project:
+  # it always builds it from source and ignores any installed copy (see
+  # haskell/cabal#5444), so the copy nix built is wasted and `exactDeps`
+  # shells cannot build at all (no package repository to fetch the
+  # dependents' sources from).  Setting this puts the nix-built
+  # `source-repository-package`s in the shell's package db and puts a
+  # `cabal` wrapper on `PATH` that runs cabal with a copy of the project
+  # file that has the `source-repository-package` stanzas removed.
+, stripSourceRepositoryPackages ? false
+  # The project file the wrapper above makes the stripped copy of.
+, cabalProjectFileName ? "cabal.project"
 , ... } @ args:
 
 let
@@ -168,14 +184,141 @@ let
         }]);
     };
 
-  mkDrvArgs = builtins.removeAttrs args ["packages" "components" "additional" "withHoogle" "tools"];
+  mkDrvArgs = builtins.removeAttrs args ["packages" "components" "additional" "withHoogle" "tools"
+    "stripSourceRepositoryPackages" "cabalProjectFileName"];
+
+  # `cabal` that runs the next `cabal` on `PATH` with
+  # `--project-file=<dir>/.haskell-nix-shell.<project file>`, a copy of the
+  # project file (and of its `.local`) with every `source-repository-package`
+  # stanza removed, written next to the original so that relative paths in
+  # it resolve the same way.  The copy is remade whenever the original is
+  # newer, so edits to the project file are picked up.  It finds the next
+  # `cabal` at run time (rather than wrapping `tools.cabal`) so that a cabal
+  # from `nativeBuildInputs`, or from outside the shell, works too.
+  # Only the commands that read the project get the flag (others, such as
+  # `cabal init`, reject it), and what `configure` and `freeze` write next to
+  # the copy is moved to where plain cabal would have put it.
+  stripSourceRepositoryPackagesCabal = let
+    coreutils = "${pkgsBuildBuild.coreutils}/bin";
+  in pkgsBuildBuild.writeShellScriptBin "cabal" ''
+    set -uo pipefail
+    self=$(${coreutils}/readlink -f "$0")
+    real=""
+    IFS=: read -r -a path_dirs <<< "$PATH"
+    for d in "''${path_dirs[@]}"; do
+      if [ -n "$d" ] && [ -x "$d/cabal" ] && [ ! -d "$d/cabal" ] \
+          && [ "$(${coreutils}/readlink -f "$d/cabal")" != "$self" ]; then
+        real="$d/cabal"
+        break
+      fi
+    done
+    if [ -z "$real" ]; then
+      echo "haskell.nix: no cabal found on PATH after the shell's cabal wrapper (add one with \`tools.cabal\`)" >&2
+      exit 127
+    fi
+
+    # The command is the first argument that is not an option.  Leave cabal
+    # alone if the user picked the project themselves.
+    cmd_index=""
+    i=0
+    for a in "$@"; do
+      case "$a" in
+        --) break ;;
+        --project-file|--project-file=*|--project-dir|--project-dir=*|-z|--ignore-project)
+          exec "$real" "$@" ;;
+        -*) ;;
+        *) if [ -z "$cmd_index" ]; then cmd_index=$i; fi ;;
+      esac
+      i=$((i + 1))
+    done
+    if [ -z "$cmd_index" ]; then exec "$real" "$@"; fi
+    args=("$@")
+    cmd=''${args[$cmd_index]}
+    case "$cmd" in
+      v2-*|new-*) base_cmd=''${cmd#*-} ;;
+      *) base_cmd=$cmd ;;
+    esac
+    case "$base_cmd" in
+      build|b|repl|run|test|bench|haddock|haddock-project|exec|list-bin|install|configure|conf|freeze|clean|sdist|outdated|update|gen-bounds|target|path) ;;
+      *) exec "$real" "$@" ;;
+    esac
+
+    # Find the project the way cabal does: the nearest enclosing directory
+    # with a project file.  No project file means there is nothing to strip.
+    dir=$PWD
+    while [ ! -f "$dir/${cabalProjectFileName}" ]; do
+      if [ "$dir" = / ]; then exec "$real" "$@"; fi
+      dir=$(${coreutils}/dirname "$dir")
+    done
+
+    orig="$dir/${cabalProjectFileName}"
+    gen="$(${coreutils}/dirname "$orig")/.haskell-nix-shell.$(${coreutils}/basename "$orig")"
+
+    # Write the stripped copy of $1 to $2, unless $2 is already newer.
+    strip_srps() {
+      local tmp
+      if [ -f "$2" ] && [ "$2" -nt "$1" ]; then return 0; fi
+      tmp=$(${coreutils}/mktemp "$2.XXXXXX") || return 1
+      if ! ${pkgsBuildBuild.gawk}/bin/awk -f ${./strip-source-repository-packages.awk} "$1" > "$tmp" \
+          || ! ${coreutils}/mv -f "$tmp" "$2"; then
+        ${coreutils}/rm -f "$tmp"
+        return 1
+      fi
+    }
+
+    # cabal reads `<project file>.local` and `<project file>.freeze` too.
+    prepare() {
+      strip_srps "$orig" "$gen" || return 1
+      if [ -f "$orig.local" ]; then
+        strip_srps "$orig.local" "$gen.local" || return 1
+      else
+        ${coreutils}/rm -f "$gen.local" || return 1
+      fi
+      if [ -f "$orig.freeze" ]; then
+        ${coreutils}/ln -sfn "$(${coreutils}/basename "$orig").freeze" "$gen.freeze" || return 1
+      else
+        ${coreutils}/rm -f "$gen.freeze" || return 1
+      fi
+    }
+    if ! prepare; then
+      echo "haskell.nix: could not write $gen, running cabal with $orig" \
+        "(its source-repository-packages will be built by cabal)" >&2
+      exec "$real" "$@"
+    fi
+
+    local_before=$(${coreutils}/cksum < "$gen.local" 2>/dev/null || true)
+
+    # Put the project file flag right after the command.
+    "$real" "''${args[@]:0:cmd_index+1}" --project-file="$gen" "''${args[@]:cmd_index+1}"
+    status=$?
+
+    # `configure` writes `<project file>.local` and `freeze` writes
+    # `<project file>.freeze` (replacing the symlink above), which here
+    # means next to the copy.  Move them where plain cabal puts them.
+    case "$base_cmd" in
+      configure|conf)
+        if [ -f "$gen.local" ] \
+            && [ "$(${coreutils}/cksum < "$gen.local")" != "$local_before" ]; then
+          if [ -f "$orig.local" ]; then ${coreutils}/cp -f "$orig.local" "$orig.local~"; fi
+          ${coreutils}/mv -f "$gen.local" "$orig.local"
+        fi
+        ${coreutils}/rm -f "$gen.local~" ;;
+      freeze)
+        if [ -f "$gen.freeze" ] && [ ! -L "$gen.freeze" ]; then
+          ${coreutils}/mv -f "$gen.freeze" "$orig.freeze"
+        fi ;;
+    esac
+    exit $status
+  '';
 in
   mkShell (mkDrvArgs // {
     inherit name;
 
     buildInputs = systemInputs
       ++ mkDrvArgs.buildInputs or [];
-    nativeBuildInputs = [ ghcEnv.drv ]
+    # The wrapper comes first so that it shadows any other `cabal`.
+    nativeBuildInputs = lib.optional stripSourceRepositoryPackages stripSourceRepositoryPackagesCabal
+      ++ [ ghcEnv.drv ]
       ++ nativeBuildInputs
       ++ mkDrvArgs.nativeBuildInputs or []
       ++ lib.attrValues (pkgsBuildBuild.haskell-nix.tools' evalPackages.stdenv.hostPlatform.system compiler.nix-name tools)

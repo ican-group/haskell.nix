@@ -455,6 +455,8 @@ shellFor =
 | `allToolDeps`  | Boolean  | Indicates if the shell should include all the tool dependencies of the haskell packages in the project. |
 | `tools`        | Function | AttrSet of tools to make available e.g. `{ cabal = "3.2.0.0"; }` or `{ cabal = { version = "3.2.0.0"; }; }`. If an AttrSet is provided for a tool, the additional arguments will be passed to the function creating the derivation for that tool. So you can provide an `index-state` or a `materialized` argument like that `{ cabal = { version = "3.2.0.0"; index-state = "2020-10-30T00:00:00Z"; materialized = ./cabal.materialized; }; }` for example. You can specify and materialize the version of hoogle used to construct the hoogle index by including something like `{ hoogle = { version = "5.0.17.15"; index-state = "2020-05-31T00:00:00Z"; materialized = ./hoogle.materialized; }`. Uses a default version of hoogle if omitted. |
 | `packageSetupDeps` | Boolean | Set this to `false` to exclude custom-setup dependencies.
+| `stripSourceRepositoryPackages` | Boolean | Use the nix-built `source-repository-package`s in the shell instead of having `cabal` build them (see [below](#source-repository-packages-in-the-shell)). Defaults to `false`. |
+| `cabalProjectFileName` | String | The project file `stripSourceRepositoryPackages` makes a copy of. Defaults to the project's `cabalProjectFileName`. |
 | `enableDWARF`  | Boolean  | Include debug info |
 | `crossPlatforms` | Function | Platform selection function for cross compilation targets to support eg. `ps: with ps; [ghcjs mingwW64]` (see nixpkgs lib.systems.examples for list of platform names). |
 | `inputsFrom`   | List     | List of other shells to include in this one.  The `buildInputs` and `nativeBuildInputs` of each will be included using [mkShell](https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell).
@@ -531,6 +533,53 @@ project-level `shell.tools.cabal = {};` still applies when calling
 > `crossPlatforms` has a similar cost even when using `.shell`: the
 > shell for each selected platform is made by calling `shellFor` on the
 > corresponding `projectCross` project.
+
+### source-repository-packages in the shell
+
+`cabal` treats a `source-repository-package` as part of the project: it
+always builds it (and everything in the project that depends on it) from
+source, and ignores any copy in the package db
+([haskell/cabal#5444](https://github.com/haskell/cabal/issues/5444)).  So by
+default `shellFor` leaves them out of the shell's package db (they are
+selected by the default `packages`, like the project's own packages), and
+`cabal` in the shell fetches and builds them.  With `exactDeps = true` that
+fails, because `cabal` has no package repository to fetch the sources of
+their reverse dependencies from.
+
+`stripSourceRepositoryPackages = true` uses the copies nix built instead:
+
+* the default `packages` selects only the project's own packages, so the
+  `source-repository-package`s (and any non-project packages that depend
+  on them) are in the shell's package db, and
+* the shell's `cabal` is a wrapper that runs the next `cabal` on `PATH`
+  (for instance the one from `tools.cabal`) with
+  `--project-file=.haskell-nix-shell.cabal.project`.  The wrapper writes
+  that file (and `.haskell-nix-shell.cabal.project.local`, when there is a
+  `cabal.project.local`) next to `cabal.project` whenever `cabal.project`
+  is newer: a copy with the `source-repository-package` stanzas removed.
+  What `cabal configure` and `cabal freeze` write is moved back to
+  `cabal.project.local` and `cabal.project.freeze`.  You will probably
+  want to add `.haskell-nix-shell.*` to `.gitignore`.
+
+```nix
+project.shellFor {
+  tools.cabal = {};
+  exactDeps = true;
+  stripSourceRepositoryPackages = true;
+}
+```
+
+The wrapper leaves `cabal` alone for commands that do not read the
+project (such as `cabal init`) and when it is given `--project-file`,
+`--project-dir` or `--ignore-project`.  `source-repository-package` stanzas
+in files brought in with `import:` are not removed.
+
+To get the same effect without the wrapper, move the
+`source-repository-package` stanzas from `cabal.project` to the project's
+`cabalProjectLocal` argument (nix sees them, `cabal` in the shell does
+not) and pass
+`packages = ps: builtins.attrValues (haskellLib.selectProjectPackages ps)`
+to `shellFor`.  `cabal` without nix will then not see them either.
 
 **Return value**: a derivation
 
