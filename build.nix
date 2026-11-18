@@ -60,7 +60,13 @@ in rec {
           version = "2.11.1";
           inherit evalSystem;
         };
-    } // pkgs.lib.optionalAttrs (ghcFromTo "9.0" "9.13") {
+    } // pkgs.lib.optionalAttrs (ghcFromTo "9.0" "9.15"
+        # Released HLS (2.15 onwards) supports GHC 9.14.  Stable-haskell GHCs
+        # are left out: HLS on them needs extra project configuration that this
+        # plain `tool` call lacks.  The LLVM variants are left out because
+        # building all of HLS through LLVM costs a lot of CI time for little use.
+        && !(haskell.compiler.${compiler-nix-name}.isStableHaskell or false)
+        && __match ".*llvm" compiler-nix-name == null) {
       "hls" = tool compiler-nix-name "haskell-language-server" {
         inherit evalSystem;
       };
