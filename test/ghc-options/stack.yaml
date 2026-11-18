@@ -4,6 +4,8 @@ packages:
 - .
 
 ghc-options:
-  test-ghc-options: -DTEST_GHC_OPTION
+  test-ghc-options: -DTEST_GHC_OPTION -DSTACK_BUILD
   # See https://github.com/ndmitchell/weeder/issues/53
-  $locals: -ddump-to-file -ddump-hi
+  $locals: -ddump-to-file -ddump-hi -DSTACK_LOCALS
+  $targets: -DSTACK_TARGETS
+  $everything: -DSTACK_EVERYTHING

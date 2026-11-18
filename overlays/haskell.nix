@@ -214,11 +214,59 @@ final: prev: {
                 # The compiler referenced in the stack config
                 compiler = (stack-pkgs.extras hackageForStack).compiler or (pkg-def hackageForStack).compiler;
                 patchesModule = ghcHackagePatches.${compiler.nix-name} or {};
-                # Remove fake packages generated from stack keywords used in ghc-options
-                removeStackSpecial = module: if builtins.typeOf module == "set"
-                  then module // { packages = removeSpecialPackages (module.packages or {}); }
-                  else module;
-                removeSpecialPackages = ps: removeAttrs ps [ "$locals" "$targets" "$everything" ];
+                # stack-to-nix writes the `ghc-options` of stack.yaml as a
+                # module setting `packages.<key>.ghcOptions`, including stack's
+                # special keys, which are not packages.  A module that has any
+                # of them is replaced by `stackGhcOptionsModule`.
+                stackSpecialKeys = [ "$everything" "$locals" "$targets" ];
+                applyStackSpecial = module:
+                  let specials = builtins.intersectAttrs
+                        (final.lib.genAttrs stackSpecialKeys (_: null))
+                        (module.packages or {});
+                  in if builtins.typeOf module == "set" && specials != {}
+                    then {
+                      imports = [
+                        (removeAttrs module [ "packages" ])
+                        (stackGhcOptionsModule specials
+                          (removeAttrs module.packages stackSpecialKeys))
+                      ];
+                    }
+                    else module;
+                # The packages stack-to-nix generated (project packages and
+                # extra-deps).  Only these can be project packages.
+                stackPackageNames = builtins.attrNames
+                  ((stack-pkgs.extras hackageForStack).packages or {});
+                # Applies stack's special `ghc-options` keys:
+                #   `$everything`         every package: it becomes part of the
+                #                         project-wide `ghcOptions`, which every
+                #                         package receives (as `mkDefault`);
+                #   `$locals`, `$targets` project packages (stack's locals are
+                #                         its project packages, and haskell.nix
+                #                         builds all of them, so they are all
+                #                         targets too).
+                # A package that gets a definition of its own here (from its
+                # stack.yaml entry or from `$locals`/`$targets`) would lose that
+                # `mkDefault` copy, so its definition includes the project-wide
+                # `ghcOptions` explicitly.  The `mkOrder`s keep stack's order:
+                # `$everything` (and any other project-wide options), `$locals`,
+                # `$targets`, then the package's own entry (default order 1000).
+                stackGhcOptionsModule = specials: perPackage: { lib, config, ... }:
+                  let
+                    optsFor = key: specials.${key}.ghcOptions or [];
+                    projectOpts = optsFor "$locals" ++ optsFor "$targets";
+                    names = lib.unique (builtins.attrNames perPackage
+                      ++ lib.optionals (projectOpts != []) stackPackageNames);
+                  in {
+                    ghcOptions = lib.mkOrder 700 (optsFor "$everything");
+                    packages = lib.genAttrs names (name: (perPackage.${name} or {}) // {
+                      ghcOptions = lib.mkMerge ([
+                          (lib.mkOrder 700 config.ghcOptions)
+                        ] ++ lib.optional (projectOpts != [])
+                          (lib.mkIf config.packages.${name}.package.isProject
+                            (lib.mkOrder 800 projectOpts))
+                          ++ [ (perPackage.${name}.ghcOptions or []) ]);
+                    });
+                  };
             in mkPkgSet {
                 pkg-def = excludeBootPackages compiler.nix-name pkg-def;
                 pkg-def-extras = [ stack-pkgs.extras
@@ -229,7 +277,7 @@ final: prev: {
                 # and we should trust stackage here!
                 modules = [ { doExactConfig = true; } patchesModule ]
                        ++ modules
-                       ++ map removeStackSpecial (stack-pkgs.modules or []);
+                       ++ map applyStackSpecial (stack-pkgs.modules or []);
                 hackage = hackageForStack;
             };
 
