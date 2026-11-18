@@ -400,7 +400,8 @@ to `tests.mypackage.unit-tests`.
 
 These are just like `collectComponents` and `collectComponents'`, except that they collect
 the `checks` attributes of packages (which aren't components, and so can't be collected
-by the other functions.
+by the other functions). Only tests with `doCheck` enabled have a check; see
+[Running tests](../tutorials/testing.md).
 
 #### check
 
@@ -411,7 +412,8 @@ This function turns a derivation that builds a test into one to run it.
 | `drv`           | Derivation | One of `$pkg.components.tests.$test`. |
 
 For convenience `$pkg.components.tests` are mapped with this function
-to `$pkg.checks`.
+to `$pkg.checks` (only the tests with `doCheck` enabled; see
+[Running tests](../tutorials/testing.md)).
 
 This function is intended for use with `tests` but it should also work
 for `exes` and `benchmarks` if you just want to run them to make sure

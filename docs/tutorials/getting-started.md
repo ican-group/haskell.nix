@@ -101,6 +101,14 @@ To build an executable:
 nix build .#your-package-name:exe:your-exe-name
 ```
 
+Building a test component (`your-package-name:test:your-test-name`) only
+compiles the test. To run it, build its check, or run all of them with
+`nix flake check`
+(see [Running tests](./testing.md)). Replace `x86_64-linux` with your system:
+```shell
+nix build '.#checks.x86_64-linux."your-package-name:test:your-test-name"'
+```
+
 Flakes provide a `devShell` attribute that allow you to spawn a developer shell, here with `cabal`, `hlint` and `haskell-language-server`:
 ```shell
 nix develop .

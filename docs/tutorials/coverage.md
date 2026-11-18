@@ -48,7 +48,8 @@ nix-build default.nix -A "projectWithCoverage.$pkg.coverageReport"
 
 This will generate a coverage report for the package you requested.
 All tests that are enabled (configured with `doCheck == true`) are
-included in the coverage report.
+included in the coverage report. See [Running tests](./testing.md) for
+how `doCheck` selects tests.
 
 See the [developer coverage docs](../dev/coverage.md#package-reports) for more information.
 
