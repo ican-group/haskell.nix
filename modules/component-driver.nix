@@ -5,6 +5,12 @@ let
     ghc = config.ghc.package;
     compiler-nix-name = config.compiler.nix-name;
     inherit (config) nonReinstallablePkgs hsPkgs compiler evalPackages builderVersion crossTemplateHaskellSupport v2LocalPackageSlices v2LocalPackageSliceNames cabalProjectLocal withBuildCompiler;
+    # The project's `extra-packages` (for `shellFor`).  Stack projects have
+    # no `plan.json`, and no `extra-packages`.
+    extraPackageUnitIds =
+      if options ? plan-json && options.plan-json.isDefined
+        then haskellLib.extraPackageUnitIds config.plan-json
+        else [];
   };
 
   # Packages listed in `nonReinstallablePkgs` are forced to the copy shipped

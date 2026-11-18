@@ -121,6 +121,29 @@ in {
       && packages.${name}.package.identifier.version != compilerPackages.${name}
     ) nonReinstallablePkgs;
 
+  # The unit ids of a `plan.json`'s `extra-packages`: the configured
+  # (`style: global`) units that nothing else in the plan needs.  That is,
+  # units no local or inplace unit needs, directly or transitively (through
+  # library, setup or build-tool dependencies), and that no other such unit
+  # needs either (so not the extra packages' own dependencies).
+  extraPackageUnitIds = plan-json:
+    let
+      plan = plan-json.install-plan;
+      byId = builtins.listToAttrs (map (p: lib.nameValuePair p.id p) plan);
+      unitDeps = p: p.depends or [] ++ p.exe-depends or []
+        ++ lib.concatMap (c: c.depends or [] ++ c.exe-depends or [])
+             (builtins.attrValues (p.components or {}));
+      isGlobal = p: p.type == "configured" && (p.style or "") == "global";
+      toSet = ids: builtins.listToAttrs (map (id: lib.nameValuePair id true) ids);
+      reachable = toSet (map (x: x.key) (builtins.genericClosure {
+        startSet = map (p: { key = p.id; })
+          (lib.filter (p: p.type == "configured" && !isGlobal p) plan);
+        operator = { key }: map (key: { inherit key; }) (unitDeps (byId.${key} or {}));
+      }));
+      unreachable = lib.filter (p: isGlobal p && !(reachable ? ${p.id})) plan;
+      neededByUnreachable = toSet (lib.concatMap unitDeps unreachable);
+    in map (p: p.id) (lib.filter (p: !(neededByUnreachable ? ${p.id})) unreachable);
+
   # Was there a reference to the package source in the `cabal.project` or `stack.yaml` file.
   # This is used to make the default `packages` list for `shellFor`.
   isLocalPackage = p: p.isLocal or false;

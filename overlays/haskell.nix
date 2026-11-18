@@ -1122,6 +1122,7 @@ final: prev: {
                   then builtins.removeAttrs shellArgs [
                     "exactDeps" "packageSetupDeps"
                     "enableDWARF" "components" "additional"
+                    "includeExtraPackages"
                   ]
                   else shellArgs)
                 // {

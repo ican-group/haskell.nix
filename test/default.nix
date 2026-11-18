@@ -301,6 +301,7 @@ let
     sha256map = callTest ./sha256map {};
     # fully-static = callTest ./fully-static { inherit (pkgs) buildPackages; };
     shell-for = callTest ./shell-for {};
+    shell-for-extra-packages = callTest ./shell-for-extra-packages {};
     cabal-22 = callTest ./cabal-22 { inherit util; };
     coverage = callTest ./coverage {};
     coverage-golden = callTest ./coverage-golden {};

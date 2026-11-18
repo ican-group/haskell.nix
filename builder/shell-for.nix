@@ -1,4 +1,4 @@
-{ lib, stdenv, mkShell, glibcLocales, ghcForComponent, makeConfigFiles, hsPkgs, hoogleLocal, haskellLib, pkgsBuildBuild, evalPackages, compiler, haskell-nix, ghc, llvmPackages }:
+{ lib, stdenv, mkShell, glibcLocales, ghcForComponent, makeConfigFiles, hsPkgs, hoogleLocal, haskellLib, pkgsBuildBuild, evalPackages, compiler, haskell-nix, ghc, llvmPackages, extraPackageUnitIds ? [] }:
 
 { # `packages` function selects packages that will be worked on in the shell itself.
   # These packages will not be built by `shellFor`, but their
@@ -12,6 +12,11 @@
 , components ? ps: lib.concatMap haskellLib.getAllComponents (packages ps)
   # Additional packages to be added unconditionally
 , additional ? _: []
+  # Also add the libraries of the project's `extra-packages` (see
+  # `haskellLib.extraPackageUnitIds`).  They are in the plan, but nothing in
+  # the project depends on them, so `cabal build` never builds them and they
+  # would otherwise be missing from the shell.
+, includeExtraPackages ? true
 , withHoogle ? true
 , withHaddock ? withHoogle
 , exactDeps ? false
@@ -26,7 +31,12 @@ let
   withHoogle' = withHoogle && !haskellLib.isCrossHost;
 
   selectedPackages = packages hsPkgs;
-  additionalPackages = additional hsPkgs;
+  # Looked up by unit id: `hsPkgs.<name>` is a redirect that throws when
+  # the plan has more than one version of the package.
+  extraPackages = lib.optionals includeExtraPackages
+    (lib.filter (p: p != null && (p.components.library or null) != null)
+      (map (id: hsPkgs.${id} or null) extraPackageUnitIds));
+  additionalPackages = additional hsPkgs ++ extraPackages;
   directlySelectedComponents = components hsPkgs;
 
   # Given `directlySelectedComponents = [ a b ]`, we construct a shell that includes all of their dependencies
@@ -168,7 +178,7 @@ let
         }]);
     };
 
-  mkDrvArgs = builtins.removeAttrs args ["packages" "components" "additional" "withHoogle" "tools"];
+  mkDrvArgs = builtins.removeAttrs args ["packages" "components" "additional" "withHoogle" "tools" "includeExtraPackages"];
 in
   mkShell (mkDrvArgs // {
     inherit name;
