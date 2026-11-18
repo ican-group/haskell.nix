@@ -250,6 +250,7 @@ let
     cabal-files-filter = callTest ./cabal-files-filter {};
     build-jobs = callTest ./build-jobs {};
     dummy-ghc-info = callTest ./dummy-ghc-info {};
+    dummy-ghc-pkg-dump = callTest ./dummy-ghc-pkg-dump {};
     check-datadir = callTest ./check-datadir {};
     pkgconf-pc-version = callTest ./pkgconf-pc-version {};
     cabal-simple-debug = callTest ./cabal-simple-debug { inherit util; };

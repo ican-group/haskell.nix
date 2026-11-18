@@ -926,6 +926,21 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
   passthru = {
     inherit bootPkgs targetPrefix libDir llvmPackages enableShared enableTerminfo useLLVM useLdLld hadrian hadrianProject;
 
+    # Whether the installed compiler actually ships `terminfo` (and builds
+    # haskeline/ghc with `+terminfo`), for the eval-time stand-ins
+    # (`ghc-pre-existing`, lib/dummy-ghc.nix).  `WITH_TERMINFO=NO` only
+    # affects the make build; hadrian decides for itself with
+    # `[ terminfo | not windowsHost, not cross ]`, where `cross` is
+    # configure's CrossCompiling: the normalised arch-os of host and target
+    # differ, ignoring the libc.  So a glibc -> musl GHC for the same arch
+    # (musl64) has terminfo even though `enableTerminfo` is false for it.
+    hasTerminfo =
+      let ghcPlatform = p: "${p.parsed.cpu.name}-${p.parsed.kernel.name}"
+            + lib.optionalString p.isAndroid "-android";
+      in enableTerminfo || (useHadrian
+        && !stdenv.targetPlatform.isWindows
+        && ghcPlatform stdenv.hostPlatform == ghcPlatform stdenv.targetPlatform);
+
     # The plan-nix derivations that must be realised (via IFD) to evaluate
     # this compiler.  `haskell-nix.roots` links them (and, when the eval
     # system differs from the build system, the `evalWith` variant's) so CI

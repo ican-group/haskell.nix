@@ -76,23 +76,129 @@ let
   # script byte-identical for compilers that are not the fork.
   editionInfoLine = pkgs.lib.optionalString (ghc.isStableHaskell or false)
     "\n    echo ',(\"Edition\",\"Stable Haskell\")'";
-  # A `<pkg>/<pkg>.cabal.in` fallback for the stable-haskell fork, whose boot
-  # packages live outside the GHC source tree layout and ship only the generated
-  # `.cabal.in`.  (The `compiler/` and `libraries/` `.cabal.in` branches below
-  # are NOT gated — they predate the fork and serve every compiler.)
-  #
-  # Emitted as a whole `elif` branch carrying its own leading newline, and only
-  # for the fork.  Written inline it adds 2 lines per boot package (~90 in
-  # total) to the generated dump for EVERY compiler: dead code for hadrian GHCs,
-  # since an earlier branch always matches first, but it still changes
-  # dummy-ghc-pkg-dump's hash and with it every plan-nix that consumes it.
-  # Keeping the newline inside the conditional leaves the script byte-identical
-  # for compilers that are not the fork.
-  dotCabalInBranches = paths:
-    pkgs.lib.optionalString (ghc.isStableHaskell or false)
-      (pkgs.lib.concatMapStrings
-        (p: "\nelif [ -f ${p}.cabal.in ]; then\n  cabal_file=${p}.cabal.in")
-        paths);
+  # Which `build-depends` of a boot package's library GHC actually built it
+  # with, i.e. the `depends:` the real compiler registered.  cabal2json keeps
+  # the `.cabal` file's conditionals (`{"_if": cond, "_then": [...],
+  # "_else": [...]}`), so evaluate them the way Cabal would for this
+  # compiler and target.  `test/dummy-ghc-pkg-dump` diffs the result against
+  # the real compiler's `ghc-pkg dump`; when it fails, fix `buildDependsEnv`
+  # (usually a flag GHC builds with a non-default value).
+  tp = pkgs.stdenv.targetPlatform;
+  buildDependsEnv = builtins.toJSON {
+    os =
+      if tp.isWindows then "windows"
+      else if tp.isGhcjs then "ghcjs"
+      else if tp.isWasi then "wasi"
+      else if tp.isAndroid then "android"
+      else if tp.isDarwin then "osx"
+      else if tp.isLinux then "linux"
+      else if tp.isFreeBSD then "freebsd"
+      else if tp.isNetBSD then "netbsd"
+      else if tp.isOpenBSD then "openbsd"
+      else tp.parsed.kernel.name;
+    arch =
+      if tp.isWasm then "wasm32"
+      else if tp.isGhcjs then "javascript"
+      else if tp.isx86_64 then "x86_64"
+      else if tp.isx86_32 then "i386"
+      else if tp.isAarch64 then "aarch64"
+      else if tp.isAarch32 then "arm"
+      else tp.parsed.cpu.name;
+    inherit (ghc) version;
+    # Flag values GHC builds its boot libraries with.  Flags not listed
+    # here are taken to be off.
+    flags = {
+      # filepath >= 1.5 split out os-string; GHC builds the packages that
+      # can use it with it on.  Harmless for older GHCs: os-string is not
+      # pre-existing there, so the edge is dropped below.
+      os-string = true;
+      # Only set when building the stage1 compiler.
+      bootstrap = false;
+      # stable-haskell `ghc.cabal`: bytecode interpreter (ghc -> ghci).
+      interpreter = true;
+      # haddock-api is built as part of the GHC tree.
+      in-ghc-tree = true;
+      pure-haskell = false;
+      vendor-filepath = false;
+      terminfo = ghc.hasTerminfo or ghc.enableTerminfo or true;
+      # Compilers whose bundled text links simdutf set
+      # passthru.enableTextSimdutf (e.g. ghc914-sh).
+      simdutf = ghc.enableTextSimdutf or false;
+    };
+  };
+  buildDependsJq = evalPackages.writeText "dummy-ghc-build-depends.jq" ''
+    def vparse: [splits("\\.") | select(. != "") | tonumber];
+    def vterm($v):
+      gsub("^\\s+|\\s+$"; "") as $t
+      | if $t == "" or $t == "-any" then true
+        elif $t == "-none" then false
+        elif ($t | test("^==\\s*[0-9.]+\\.\\*$")) then
+          ($t | capture("^==\\s*(?<p>[0-9.]+)\\.\\*$").p | vparse) as $p
+          | $v[0:($p | length)] == $p
+        elif ($t | startswith("^>=")) then
+          ($t[3:] | gsub("\\s"; "") | vparse) as $b
+          | ($v >= $b) and ($v < [$b[0], (($b[1] // 0) + 1)])
+        elif ($t | startswith(">=")) then $v >= ($t[2:] | gsub("\\s"; "") | vparse)
+        elif ($t | startswith("<=")) then $v <= ($t[2:] | gsub("\\s"; "") | vparse)
+        elif ($t | startswith("==")) then $v == ($t[2:] | gsub("\\s"; "") | vparse)
+        elif ($t | startswith(">")) then $v > ($t[1:] | gsub("\\s"; "") | vparse)
+        elif ($t | startswith("<")) then $v < ($t[1:] | gsub("\\s"; "") | vparse)
+        else error("dummy-ghc: unsupported version range term: " + $t) end;
+    # `&&` binds tighter than `||`, and the boot packages only parenthesise
+    # `||`-groups that are themselves `||`-ed, so dropping parentheses is safe.
+    def vrange($v):
+      gsub("[()]"; "") | [splits("\\|\\|")]
+      | any(.[]; [splits("&&")] | all(.[]; vterm($v)));
+    def cond($env):
+      if type == "boolean" then .
+      elif has("not") then (.not | cond($env) | not)
+      elif has("and") then all(.and[]; cond($env))
+      elif has("or") then any(.or[]; cond($env))
+      elif has("os") then
+        (.os | ascii_downcase) as $o
+        | $o == $env.os or ($o == "mingw32" and $env.os == "windows")
+          or ($o == "darwin" and $env.os == "osx")
+      elif has("arch") then
+        (.arch | ascii_downcase) as $a
+        | $a == $env.arch or ($a == "amd64" and $env.arch == "x86_64")
+          or ($a == "arm64" and $env.arch == "aarch64")
+      elif has("impl") then
+        (.impl | ascii_downcase) == "ghc"
+          and ((.range // "-any") | vrange($env.version | vparse))
+      elif has("flag") then ($env.flags[.flag | ascii_downcase] // false)
+      else error("dummy-ghc: unsupported cabal condition: " + tojson) end;
+    # A dependency on a package's main library is printed as `pkg`, one on
+    # one of its sub-libraries as `pkg:sublib`.
+    def deps($env):
+      .[]? | if type != "object" then empty
+        elif has("package") then
+          .package as $p | (.libs // [$p])[] | if . == $p then $p else "\($p):\(.)" end
+        elif has("_if") then
+          if (._if | cond($env))
+            then (._then // [] | deps($env))
+            else (._else // [] | deps($env)) end
+        else empty end;
+    # `buildable` is absent (True), a boolean, or a list of conditionals.
+    def buildable($env):
+      def vals: .[]? | if type == "boolean" then .
+        elif type == "object" and has("_if") then
+          if (._if | cond($env)) then (._then | if type == "array" then vals else . end)
+          else (._else // true | if type == "array" then vals else . end) end
+        else empty end;
+      if . == null then true
+      elif type == "boolean" then .
+      else all(vals; .) end;
+    # One line per library component GHC registers: `-` for the main
+    # library, otherwise the (public, buildable) sub-library name, followed
+    # by its dependencies.
+    .components
+    | (.lib // {} | ["-"] + [."build-depends" // [] | deps($env)]),
+      (to_entries[]
+        | select((.key | startswith("lib:")) and .value.visibility == "public"
+                 and (.value.buildable | buildable($env)))
+        | [.key[4:]] + [.value."build-depends" // [] | deps($env)])
+    | join(" ")
+  '';
   dummy-ghc = evalPackages.writeTextFile {
   name = "dummy-" + ghc.name;
   executable = true;
@@ -609,9 +715,17 @@ let
                 cabal_file=${ghcSrc}/libraries/${name}/${name}.cabal.in
               elif [ -f ${ghcSrc}/utils/haddock/${name}/${name}.cabal ]; then
                 cabal_file=${ghcSrc}/utils/haddock/${name}/${name}.cabal
+              elif [ -f ${ghcSrc}/utils/${name}/${name}.cabal ]; then
+                cabal_file=${ghcSrc}/utils/${name}/${name}.cabal
               elif [ -f ${ghcSrc}/${name}/${name}.cabal ]; then
-                cabal_file=${ghcSrc}/${name}/${name}.cabal${
-                  dotCabalInBranches [ "${ghcSrc}/${name}/${name}" ]}
+                cabal_file=${ghcSrc}/${name}/${name}.cabal
+              ''
+              # `<pkg>/<pkg>.cabal.in`: the stable-haskell fork's boot packages
+              # outside the GHC source tree layout, and `rts/rts.cabal.in`
+              # before GHC 9.10.
+              + ''
+              elif [ -f ${ghcSrc}/${name}/${name}.cabal.in ]; then
+                cabal_file=${ghcSrc}/${name}/${name}.cabal.in
               fi
               if [[ "$cabal_file" != "" ]]; then
                 fixed_cabal_file=$(mktemp)
@@ -634,42 +748,18 @@ let
                 ''}
 
                 EXPOSED_MODULES_${varname name}="$(tr '\n' ' ' <<< "$exposed_modules $reexported_modules")"
-                deps="$(jq -r '.components.lib."build-depends"//[]|.[]|select(.package)|.package' $json_cabal_file)"
-                deps+=" $(jq -r '.components.lib."build-depends"//[]|.[]|select((.if.flag or ._if.not.flag) and ._if.not.flag != "vendor-filepath")._then[]|.package' $json_cabal_file)"
-                ''
-                # containers-0.8 uses `if impl(ghc) build-depends: template-haskell`
-                + ''
-                deps+=" $(jq -r '.components.lib."build-depends"//[]|.[]|select(._if.impl == "ghc")|._then[]|.package' $json_cabal_file)"
-                ${pkgs.lib.optionalString pkgs.stdenv.targetPlatform.isWindows ''
-                deps+=" $(jq -r '.components.lib."build-depends"//[]|.[]|select(._if.os == "windows")|._then[]|.package' $json_cabal_file)"
-                ''}
-                ${pkgs.lib.optionalString (!pkgs.stdenv.targetPlatform.isWindows) ''
-                deps+=" $(jq -r '.components.lib."build-depends"//[]|.[]|select(._if.not.os == "windows")|._then[]|.package' $json_cabal_file)"
-                ''
-                # Fix problem with `haskeline` using a `terminfo` flag
-                # For haskell-nix ghc we can use ghc.enableTerminfo to get the flag setting
-                + pkgs.lib.optionalString (name == "haskeline" && !pkgs.stdenv.targetPlatform.isWindows && ghc.enableTerminfo or true) ''
-                deps+=" terminfo"
-                ''
-                # Same for `text` built with the `simdutf` flag: its installed
-                # conf depends on system-cxx-std-lib, but the flag conditional
-                # in text.cabal is invisible to the extraction above.  Without
-                # this edge the solver never marks system-cxx-std-lib
-                # pre-existing and the pruned component package DB has a
-                # broken installed text.  Compilers whose bundled text links
-                # simdutf set passthru.enableTextSimdutf (e.g. ghc914-sh).
-                + pkgs.lib.optionalString (name == "text" && ghc.enableTextSimdutf or false) ''
-                deps+=" system-cxx-std-lib"
-                ''
-                # Similar issue for Win32:filepath build-depends (hidden behind `if impl(ghc >= 8.0)`)
-                + pkgs.lib.optionalString (name == "Win32" && pkgs.stdenv.targetPlatform.isWindows) ''
-                deps+=" filepath"
-                ''
-                }
-                DEPS_${varname name}="$(tr '\n' ' ' <<< "$deps")"
+                components="$(jq -r --argjson env '${buildDependsEnv}' -f ${buildDependsJq} $json_cabal_file)"
+                SUBLIBS_${varname name}=""
+                while read -r component component_deps; do
+                  if [[ "$component" == "-" ]]; then
+                    DEPS_${varname name}="$component_deps"
+                  else
+                    SUBLIBS_${varname name}+=" $component"
+                    declare "DEPS_${varname name}__$(tr - _ <<< "$component")=$component_deps"
+                  fi
+                done <<< "$components"
                 VER_${varname name}="$(jq -r '.version' $json_cabal_file)"
                 PKGS+=" ${name}"
-                LAST_PKG="${name}"
               fi
             '') (pkgs.lib.optionals (!emptyDump)
                   (pkgs.lib.filter (n: n != "system-cxx-std-lib") (pkgs.haskell-nix.ghc-pre-existing ghc))))
@@ -681,7 +771,6 @@ let
                 DEPS_${varname name}=""
                 VER_${varname name}="1.0"
                 PKGS+=" ${name}"
-                LAST_PKG="${name}"
               '')
             # ghcjs packages (before the ghc JS backend). TODO remove this when GHC 8.10 support is dropped
             + pkgs.lib.optionalString (pkgs.stdenv.targetPlatform.isGhcjs && builtins.compareVersions ghc.version "9" < 0) ''
@@ -692,7 +781,6 @@ let
                 DEPS_${varname "ghcjs-th"}="base binary bytestring containers ghc-prim ghci template-haskell"
                 VER_${varname "ghcjs-th"}="0.1.0.0"
                 PKGS+=" ghcjs-prim ghcjs-th"
-                LAST_PKG="ghcjs-th"
               ''
           }${
             # Nothing above writes `$out` when the boot-package loop produced no
@@ -751,25 +839,48 @@ let
               echo ""
             ''}
           }
+          # The unit id of a `pkg` or `pkg:sublib` dependency, or nothing when
+          # `pkg` is not pre-existing.
+          dep_id() {
+            local p="''${1%%:*}" sub=""
+            if [[ "$1" == *:* ]]; then sub="-''${1#*:}"; fi
+            local ver_dep="VER_$(echo $p | tr "-" "_")"
+            if [[ "''${!ver_dep}" != "" ]]; then
+              echo "$p-''${!ver_dep}$(suffix $p)$sub"
+            fi
+          }
+          # `record <name> <id> <exposed-modules> <deps> [<package-name> <lib-name>]`
+          separator=""
+          record() {
+            if [[ -n "$separator" ]]; then echo '---' >> $out; fi
+            separator=1
+            echo "name: $1" >> $out
+            echo "version: $ver" >> $out
+            if [[ -n "''${5:-}" ]]; then
+              echo "package-name: $5" >> $out
+              echo "lib-name: $6" >> $out
+              echo "visibility: public" >> $out
+            fi
+            echo "id: $2" >> $out
+            echo "exposed-modules: $3" >> $out
+            echo "depends:" >> $out
+            for dep in $4; do
+              id="$(dep_id $dep)"
+              if [[ -n "$id" ]]; then echo "  $id" >> $out; fi
+            done
+          }
           for pkg in $PKGS; do
             varname="$(echo $pkg | tr "-" "_")"
-            ver="VER_$varname"
+            ver_var="VER_$varname"
+            ver="''${!ver_var}"
             exposed_mods="EXPOSED_MODULES_$varname"
             deps="DEPS_$varname"
-            echo "name: $pkg" >> $out
-            echo "version: ''${!ver}" >> $out
-            echo "id: $pkg-''${!ver}$(suffix $pkg)" >> $out
-            echo "exposed-modules: ''${!exposed_mods}" >> $out
-            echo "depends:" >> $out
-            for dep in ''${!deps}; do
-              ver_dep="VER_$(echo $dep | tr "-" "_")"
-              if [[ "''${!ver_dep}" != "" ]]; then
-                echo "  $dep-''${!ver_dep}$(suffix $dep)" >> $out
-              fi
+            record "$pkg" "$pkg-$ver$(suffix $pkg)" "''${!exposed_mods}" "''${!deps:-}"
+            sublibs="SUBLIBS_$varname"
+            for sublib in ''${!sublibs:-}; do
+              sub_deps="DEPS_''${varname}__$(echo $sublib | tr "-" "_")"
+              record "z-$pkg-z-$sublib" "$pkg-$ver$(suffix $pkg)-$sublib" "" "''${!sub_deps:-}" "$pkg" "$sublib"
             done
-            if [[ "$pkg" != "$LAST_PKG" ]]; then
-              echo '---' >> $out
-            fi
           done
         '');
   # Dummy `ghc-pkg` that uses the captured output

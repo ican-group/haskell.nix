@@ -1662,10 +1662,15 @@ final: prev: {
             "rts-fs"
             "template-haskell-lift"
             "template-haskell-quasiquoter"
+          ] ++ final.lib.optionals (builtins.compareVersions ghc.version "9.14" >= 0
+               # rts.cabal: `if !flag(use-system-libffi) && !arch(javascript) && !arch(wasm32)`
+               && !final.stdenv.targetPlatform.isGhcjs
+               && !final.stdenv.targetPlatform.isWasm) [
+            "libffi-clib"
           ] ++ final.lib.optionals (
                   !final.stdenv.targetPlatform.isGhcjs
                && !final.stdenv.targetPlatform.isWindows
-               && ghc.enableTerminfo or true) [
+               && ghc.hasTerminfo or ghc.enableTerminfo or true) [
             "terminfo"
           ] ++ (if final.stdenv.targetPlatform.isWindows
             then [ "Win32" ]
