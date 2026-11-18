@@ -1664,6 +1664,7 @@ final: prev: {
             "template-haskell-quasiquoter"
           ] ++ final.lib.optionals (builtins.compareVersions ghc.version "9.14" >= 0
                # rts.cabal: `if !flag(use-system-libffi) && !arch(javascript) && !arch(wasm32)`
+               && !(ghc.useSystemLibffi or false)
                && !final.stdenv.targetPlatform.isGhcjs
                && !final.stdenv.targetPlatform.isWasm) [
             "libffi-clib"

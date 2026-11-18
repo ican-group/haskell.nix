@@ -84,6 +84,8 @@ let
   # the real compiler's `ghc-pkg dump`; when it fails, fix `buildDependsEnv`
   # (usually a flag GHC builds with a non-default value).
   tp = pkgs.stdenv.targetPlatform;
+  # `os`/`arch` are Cabal's names; the jq below canonicalises Cabal's aliases
+  # (and nixpkgs' cpu names such as `powerpc64le`) on both sides.
   buildDependsEnv = builtins.toJSON {
     os =
       if tp.isWindows then "windows"
@@ -106,11 +108,12 @@ let
       else tp.parsed.cpu.name;
     inherit (ghc) version;
     # Flag values GHC builds its boot libraries with.  Flags not listed
-    # here are taken to be off.
+    # here are taken to be off (cabal2json does not report the `.cabal`
+    # file's flag defaults).
     flags = {
       # filepath >= 1.5 split out os-string; GHC builds the packages that
       # can use it with it on.  Harmless for older GHCs: os-string is not
-      # pre-existing there, so the edge is dropped below.
+      # pre-existing there, so the edge is dropped.
       os-string = true;
       # Only set when building the stage1 compiler.
       bootstrap = false;
@@ -120,13 +123,36 @@ let
       in-ghc-tree = true;
       pure-haskell = false;
       vendor-filepath = false;
-      terminfo = ghc.hasTerminfo or ghc.enableTerminfo or true;
+      terminfo = ghc.terminfoFlag or ghc.enableTerminfo or true;
       # Compilers whose bundled text links simdutf set
       # passthru.enableTextSimdutf (e.g. ghc914-sh).
       simdutf = ghc.enableTextSimdutf or false;
+      # rts/ghci -> libffi-clib unless GHC uses the system libffi (hadrian
+      # GHCs, see passthru.useSystemLibffi in compiler/ghc/default.nix).
+      use-system-libffi = ghc.useSystemLibffi or false;
     };
   };
+  # The jq program below has no comments of its own: its text is hashed into
+  # every dummy-ghc-pkg-dump (and so every plan-nix), so the rationale lives
+  # here instead.
+  #
+  # * `vrange` evaluates a Cabal version range.  `&&` binds tighter than `||`,
+  #   so parentheses around `||`-groups that are themselves `||`-ed can be
+  #   dropped; a parenthesised group next to `&&` cannot, and is rejected
+  #   rather than silently mis-evaluated.  So is any range or condition form
+  #   it does not know: a loud failure here is caught by
+  #   `tests.dummy-ghc-pkg-dump`, a wrong answer would not be.
+  # * `cond` evaluates a cabal2json condition (`os`, `arch`, `impl`, `flag`,
+  #   `and`/`or`/`not`).
+  # * `deps` prints a dependency on a package's main library as `pkg`, one on
+  #   a sub-library as `pkg:sublib`.
+  # * `buildable` is absent (True), a boolean, or a list of conditionals.
+  # * The output is one line per library component GHC registers: `-` for
+  #   the main library, otherwise the public, buildable sub-library's name,
+  #   followed by its dependencies.
   buildDependsJq = evalPackages.writeText "dummy-ghc-build-depends.jq" ''
+    def canon_os: {"mingw32": "windows", "win32": "windows", "cygwin32": "windows", "darwin": "osx", "gnu": "hurd", "solaris2": "solaris"}[ascii_downcase] // ascii_downcase;
+    def canon_arch: {"i486": "i386", "i586": "i386", "i686": "i386", "amd64": "x86_64", "arm64": "aarch64", "armeb": "arm", "armel": "arm", "powerpc": "ppc", "powerpc64": "ppc64", "powerpc64le": "ppc64le", "mipsel": "mips", "mipseb": "mips"}[ascii_downcase] // ascii_downcase;
     def vparse: [splits("\\.") | select(. != "") | tonumber];
     def vterm($v):
       gsub("^\\s+|\\s+$"; "") as $t
@@ -135,40 +161,34 @@ let
         elif ($t | test("^==\\s*[0-9.]+\\.\\*$")) then
           ($t | capture("^==\\s*(?<p>[0-9.]+)\\.\\*$").p | vparse) as $p
           | $v[0:($p | length)] == $p
-        elif ($t | startswith("^>=")) then
+        elif ($t | test("^\\^>=\\s*[0-9.]+$")) then
           ($t[3:] | gsub("\\s"; "") | vparse) as $b
           | ($v >= $b) and ($v < [$b[0], (($b[1] // 0) + 1)])
-        elif ($t | startswith(">=")) then $v >= ($t[2:] | gsub("\\s"; "") | vparse)
-        elif ($t | startswith("<=")) then $v <= ($t[2:] | gsub("\\s"; "") | vparse)
-        elif ($t | startswith("==")) then $v == ($t[2:] | gsub("\\s"; "") | vparse)
-        elif ($t | startswith(">")) then $v > ($t[1:] | gsub("\\s"; "") | vparse)
-        elif ($t | startswith("<")) then $v < ($t[1:] | gsub("\\s"; "") | vparse)
+        elif ($t | test("^(>=|<=|==|>|<)\\s*[0-9.]+$")) then
+          ($t | capture("^(?<op>>=|<=|==|>|<)\\s*(?<n>[0-9.]+)$")) as $m
+          | ($m.n | vparse) as $n
+          | if $m.op == ">=" then $v >= $n
+            elif $m.op == "<=" then $v <= $n
+            elif $m.op == "==" then $v == $n
+            elif $m.op == ">" then $v > $n
+            else $v < $n end
         else error("dummy-ghc: unsupported version range term: " + $t) end;
-    # `&&` binds tighter than `||`, and the boot packages only parenthesise
-    # `||`-groups that are themselves `||`-ed, so dropping parentheses is safe.
     def vrange($v):
-      gsub("[()]"; "") | [splits("\\|\\|")]
-      | any(.[]; [splits("&&")] | all(.[]; vterm($v)));
+      if test("&&\\s*\\(|\\)\\s*&&") then error("dummy-ghc: unsupported version range: " + .)
+      else gsub("[()]"; "") | [splits("\\|\\|")]
+        | any(.[]; [splits("&&")] | all(.[]; vterm($v))) end;
     def cond($env):
       if type == "boolean" then .
       elif has("not") then (.not | cond($env) | not)
       elif has("and") then all(.and[]; cond($env))
       elif has("or") then any(.or[]; cond($env))
-      elif has("os") then
-        (.os | ascii_downcase) as $o
-        | $o == $env.os or ($o == "mingw32" and $env.os == "windows")
-          or ($o == "darwin" and $env.os == "osx")
-      elif has("arch") then
-        (.arch | ascii_downcase) as $a
-        | $a == $env.arch or ($a == "amd64" and $env.arch == "x86_64")
-          or ($a == "arm64" and $env.arch == "aarch64")
+      elif has("os") then (.os | canon_os) == ($env.os | canon_os)
+      elif has("arch") then (.arch | canon_arch) == ($env.arch | canon_arch)
       elif has("impl") then
         (.impl | ascii_downcase) == "ghc"
           and ((.range // "-any") | vrange($env.version | vparse))
       elif has("flag") then ($env.flags[.flag | ascii_downcase] // false)
       else error("dummy-ghc: unsupported cabal condition: " + tojson) end;
-    # A dependency on a package's main library is printed as `pkg`, one on
-    # one of its sub-libraries as `pkg:sublib`.
     def deps($env):
       .[]? | if type != "object" then empty
         elif has("package") then
@@ -178,7 +198,6 @@ let
             then (._then // [] | deps($env))
             else (._else // [] | deps($env)) end
         else empty end;
-    # `buildable` is absent (True), a boolean, or a list of conditionals.
     def buildable($env):
       def vals: .[]? | if type == "boolean" then .
         elif type == "object" and has("_if") then
@@ -188,9 +207,6 @@ let
       if . == null then true
       elif type == "boolean" then .
       else all(vals; .) end;
-    # One line per library component GHC registers: `-` for the main
-    # library, otherwise the (public, buildable) sub-library name, followed
-    # by its dependencies.
     .components
     | (.lib // {} | ["-"] + [."build-depends" // [] | deps($env)]),
       (to_entries[]
@@ -721,11 +737,14 @@ let
                 cabal_file=${ghcSrc}/${name}/${name}.cabal
               ''
               # `<pkg>/<pkg>.cabal.in`: the stable-haskell fork's boot packages
-              # outside the GHC source tree layout, and `rts/rts.cabal.in`
-              # before GHC 9.10.
-              + ''
+              # outside the GHC source tree layout, and `rts/rts.cabal.in` for
+              # GHC 9.6 and 9.8.  Not before 9.6: those GHCs register the rts
+              # from `rts/package.conf.in` as `id: rts`, not `rts-<version>`.
+              + pkgs.lib.optionalString (ghc.isStableHaskell or false
+                  || builtins.compareVersions ghc.version "9.6" >= 0) ''
               elif [ -f ${ghcSrc}/${name}/${name}.cabal.in ]; then
                 cabal_file=${ghcSrc}/${name}/${name}.cabal.in
+              '' + ''
               fi
               if [[ "$cabal_file" != "" ]]; then
                 fixed_cabal_file=$(mktemp)
@@ -839,17 +858,27 @@ let
               echo ""
             ''}
           }
-          # The unit id of a `pkg` or `pkg:sublib` dependency, or nothing when
-          # `pkg` is not pre-existing.
-          dep_id() {
+          ${
+            # `dep_id <pkg>` / `dep_id <pkg>:<sublib>`: the unit id of a
+            # dependency, or nothing when it is not pre-existing (including a
+            # sub-library the loop above did not emit: private, or not
+            # buildable for this target).
+            #
+            # `record <name> <id> <exposed-modules> <deps> [<package-name> <lib-name>]`
+            # appends one unit to the dump.
+            ""
+          }dep_id() {
             local p="''${1%%:*}" sub=""
-            if [[ "$1" == *:* ]]; then sub="-''${1#*:}"; fi
-            local ver_dep="VER_$(echo $p | tr "-" "_")"
-            if [[ "''${!ver_dep}" != "" ]]; then
-              echo "$p-''${!ver_dep}$(suffix $p)$sub"
+            local varname_dep="$(echo $p | tr "-" "_")"
+            local ver_dep="VER_$varname_dep"
+            if [[ "''${!ver_dep}" == "" ]]; then return; fi
+            if [[ "$1" == *:* ]]; then
+              local sublibs_dep="SUBLIBS_$varname_dep"
+              if [[ " ''${!sublibs_dep:-} " != *" ''${1#*:} "* ]]; then return; fi
+              sub="-''${1#*:}"
             fi
+            echo "$p-''${!ver_dep}$(suffix $p)$sub"
           }
-          # `record <name> <id> <exposed-modules> <deps> [<package-name> <lib-name>]`
           separator=""
           record() {
             if [[ -n "$separator" ]]; then echo '---' >> $out; fi

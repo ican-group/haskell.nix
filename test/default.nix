@@ -353,6 +353,7 @@ let
     plugin = callTest ./plugin {};
     supported-languages = callTest ./supported-langauges {};
     js-template-haskell = callTest ./js-template-haskell {};
+    th-boot-only = callTest ./th-boot-only {};
     gi-gtk = callTest ./gi-gtk { inherit util; };
     literate-haskell = callTest ./literate-haskell {};
     backpack = callTest ./backpack {};

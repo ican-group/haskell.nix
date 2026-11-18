@@ -389,6 +389,33 @@ let
   # value for us.
   installStage1 = useHadrian && (with haskell-nix.haskellLib; isCrossTarget || isNativeMusl);
 
+  # What the installed compiler actually ships, for the eval-time
+  # stand-ins (`ghc-pre-existing`, lib/dummy-ghc.nix).
+  #
+  # `useSystemLibffi`: configured `--with-system-libffi` (see
+  # `configureFlags`), so the rts/ghci are built `+use-system-libffi` and
+  # there is no `libffi-clib` package.
+  useSystemLibffi = targetLibffi != null && !targetPlatform.isGhcjs && !targetPlatform.isWasm;
+
+  # `terminfoFlag`: haskeline (and ghc) are built `+terminfo`.
+  # `WITH_TERMINFO=NO` only affects the make build; hadrian decides for
+  # itself with `[ terminfo | not windowsHost, not cross ]` and
+  # `notM cross ? cabalFlag "terminfo"`, where `cross` is configure's
+  # CrossCompiling: the normalised arch-os of host and target differ,
+  # ignoring the libc.  So a glibc -> musl GHC for the same arch (musl64)
+  # has it even though `enableTerminfo` is false for it.
+  terminfoFlag =
+    let ghcPlatform = p: "${p.parsed.cpu.name}-${p.parsed.kernel.name}"
+          + lib.optionalString p.isAndroid "-android";
+    in enableTerminfo || (useHadrian
+      && !stdenv.targetPlatform.isWindows
+      && ghcPlatform stdenv.hostPlatform == ghcPlatform stdenv.targetPlatform);
+
+  # `hasTerminfo`: the `terminfo` package is registered.  `buildPhase`
+  # also builds `stage1:lib:terminfo` explicitly for every musl target,
+  # whether or not haskeline uses it.
+  hasTerminfo = terminfoFlag || (useHadrian && targetPlatform.isMusl);
+
   hadrianProject =
     let
       compiler-nix-name =
@@ -926,20 +953,8 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
   passthru = {
     inherit bootPkgs targetPrefix libDir llvmPackages enableShared enableTerminfo useLLVM useLdLld hadrian hadrianProject;
 
-    # Whether the installed compiler actually ships `terminfo` (and builds
-    # haskeline/ghc with `+terminfo`), for the eval-time stand-ins
-    # (`ghc-pre-existing`, lib/dummy-ghc.nix).  `WITH_TERMINFO=NO` only
-    # affects the make build; hadrian decides for itself with
-    # `[ terminfo | not windowsHost, not cross ]`, where `cross` is
-    # configure's CrossCompiling: the normalised arch-os of host and target
-    # differ, ignoring the libc.  So a glibc -> musl GHC for the same arch
-    # (musl64) has terminfo even though `enableTerminfo` is false for it.
-    hasTerminfo =
-      let ghcPlatform = p: "${p.parsed.cpu.name}-${p.parsed.kernel.name}"
-            + lib.optionalString p.isAndroid "-android";
-      in enableTerminfo || (useHadrian
-        && !stdenv.targetPlatform.isWindows
-        && ghcPlatform stdenv.hostPlatform == ghcPlatform stdenv.targetPlatform);
+    # See the `let` bindings of the same names.
+    inherit useSystemLibffi terminfoFlag hasTerminfo;
 
     # The plan-nix derivations that must be realised (via IFD) to evaluate
     # this compiler.  `haskell-nix.roots` links them (and, when the eval
