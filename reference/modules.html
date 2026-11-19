@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-55f38f8e.js";
+            window.path_to_searchindex_js = "../searchindex-6859e7d6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -509,6 +509,17 @@ cabal computes for the slice includes the same
 <p>Keep component source in the store in a <code>source</code> output</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: {“_type”:“literalExpression”,“text”:“false”}</p>
+<p><strong>No Example</strong></p>
+<h2 id="localpackages"><a class="header" href="#localpackages">localPackages</a></h2>
+<p>Package options applied to every package with <code>package.isLocal</code> set:
+the project’s own packages and those from <code>source-repository-package</code>
+stanzas (or <code>extra-deps</code> with a git/local location for stack).  For
+example <code>localPackages = { doHaddock = false; };</code>.  It may also be a
+module function (taking <code>config</code>, <code>lib</code>, <code>pkgs</code>, … of the package),
+as long as it does not decide which options to set from the
+package’s <code>config</code>, or a list of these.</p>
+<p><strong>Type</strong>: package options (as for packages.<name>), or a module function returning them</name></p>
+<p><strong>Default</strong>: {“_type”:“literalExpression”,“text”:“[ ]”}</p>
 <p><strong>No Example</strong></p>
 <h2 id="nonreinstallablepkgs"><a class="header" href="#nonreinstallablepkgs">nonReinstallablePkgs</a></h2>
 <p><strong>Type</strong>: list of string</p>
@@ -122118,6 +122129,15 @@ reads <code>configureFlags</code> directly (which retains the
 <code>--&lt;prog&gt;-option=...</code> form) and ignores this option.</p>
 <p><strong>Type</strong>: attribute set of list of string</p>
 <p><strong>Default</strong>: {“_type”:“literalExpression”,“text”:“{ }”}</p>
+<p><strong>No Example</strong></p>
+<h2 id="projectpackages"><a class="header" href="#projectpackages">projectPackages</a></h2>
+<p>Like <code>localPackages</code>, but only for packages with <code>package.isProject</code>
+set: the project’s own packages, not those from
+<code>source-repository-package</code> stanzas.  For example, to build them with
+<code>-Werror</code> (only in the Nix build, not when using <code>cabal</code> in a shell):
+<code>projectPackages = { ghcOptions = [ "-Werror" ]; };</code>.</p>
+<p><strong>Type</strong>: package options (as for packages.<name>), or a module function returning them</name></p>
+<p><strong>Default</strong>: {“_type”:“literalExpression”,“text”:“[ ]”}</p>
 <p><strong>No Example</strong></p>
 <h2 id="reinstallablelibghc"><a class="header" href="#reinstallablelibghc">reinstallableLibGhc</a></h2>
 <p>Is lib:ghc reinstallable?</p>

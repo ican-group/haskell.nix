@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-55f38f8e.js";
+            window.path_to_searchindex_js = "../searchindex-6859e7d6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -273,6 +273,37 @@ will be passed to it:</p>
 </tbody>
 </table>
 </div>
+<h3 id="options-for-all-local-or-project-packages"><a class="header" href="#options-for-all-local-or-project-packages">Options for all local or project packages</a></h3>
+<p>Options for a single package go under <code>packages.&lt;name&gt;</code>.  To set options
+for every package of the project without naming them, use
+<code>projectPackages</code> (packages with <code>package.isProject</code> set: the packages
+listed in the project itself) or <code>localPackages</code> (packages with
+<code>package.isLocal</code> set: those plus the ones from <code>source-repository-package</code>
+stanzas, or local and git <code>extra-deps</code> for stack).  Packages from Hackage
+are never affected.</p>
+<p>For example, to turn warnings into errors when the project is built by
+Nix, but not when <code>cabal</code> is used in a development shell:</p>
+<pre><code class="language-nix">project = pkgs.haskell-nix.cabalProject' {
+  # ...
+  modules = [{
+    projectPackages = { ghcOptions = [ "-Werror" ]; };
+    # Skip building the documentation of the project's own packages
+    # and of the `source-repository-package`s.
+    localPackages = { doHaddock = false; };
+  }];
+};
+</code></pre>
+<p>Each takes the same options as <code>packages.&lt;name&gt;</code> (including <code>components</code>),
+or a function of the package’s module arguments returning them.  Several
+definitions (from different modules, or as a list) are merged as if each
+was given for every one of those packages.  The function must not decide
+<em>which</em> options to set from the package’s own <code>config</code> (that leads to
+infinite recursion), but it may set options that merge with the package’s
+other definitions, such as appending to <code>postUnpack</code>.</p>
+<p>With <code>builderVersion = 2</code> these behave exactly like the same options set
+under <code>packages.&lt;name&gt;</code>, so the limits described in
+<a href="../dev/migrating-to-v2.html">migrating to v2</a> apply (for instance
+<code>ghcOptions</code> is per package, not per component).</p>
 <h1 id="top-level-attributes"><a class="header" href="#top-level-attributes">Top-level attributes</a></h1>
 <h2 id="project"><a class="header" href="#project">project’</a></h2>
 <p>Function that accepts attribute set with a <code>src</code> attribute and looks for <code>stack.yaml</code> file relative to it.</p>

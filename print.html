@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-55f38f8e.js";
+            window.path_to_searchindex_js = "searchindex-6859e7d6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-5b1b9093.js"></script>
@@ -2522,6 +2522,37 @@ will be passed to it:</p>
 </tbody>
 </table>
 </div>
+<h3 id="options-for-all-local-or-project-packages"><a class="header" href="#options-for-all-local-or-project-packages">Options for all local or project packages</a></h3>
+<p>Options for a single package go under <code>packages.&lt;name&gt;</code>.  To set options
+for every package of the project without naming them, use
+<code>projectPackages</code> (packages with <code>package.isProject</code> set: the packages
+listed in the project itself) or <code>localPackages</code> (packages with
+<code>package.isLocal</code> set: those plus the ones from <code>source-repository-package</code>
+stanzas, or local and git <code>extra-deps</code> for stack).  Packages from Hackage
+are never affected.</p>
+<p>For example, to turn warnings into errors when the project is built by
+Nix, but not when <code>cabal</code> is used in a development shell:</p>
+<pre><code class="language-nix">project = pkgs.haskell-nix.cabalProject' {
+  # ...
+  modules = [{
+    projectPackages = { ghcOptions = [ "-Werror" ]; };
+    # Skip building the documentation of the project's own packages
+    # and of the `source-repository-package`s.
+    localPackages = { doHaddock = false; };
+  }];
+};
+</code></pre>
+<p>Each takes the same options as <code>packages.&lt;name&gt;</code> (including <code>components</code>),
+or a function of the package’s module arguments returning them.  Several
+definitions (from different modules, or as a list) are merged as if each
+was given for every one of those packages.  The function must not decide
+<em>which</em> options to set from the package’s own <code>config</code> (that leads to
+infinite recursion), but it may set options that merge with the package’s
+other definitions, such as appending to <code>postUnpack</code>.</p>
+<p>With <code>builderVersion = 2</code> these behave exactly like the same options set
+under <code>packages.&lt;name&gt;</code>, so the limits described in
+<a href="#migrating-a-project-from-builderversion--1-to-builderversion--2">migrating to v2</a> apply (for instance
+<code>ghcOptions</code> is per package, not per component).</p>
 <h1 id="top-level-attributes"><a class="header" href="#top-level-attributes">Top-level attributes</a></h1>
 <h2 id="project"><a class="header" href="#project">project’</a></h2>
 <p>Function that accepts attribute set with a <code>src</code> attribute and looks for <code>stack.yaml</code> file relative to it.</p>
@@ -3241,6 +3272,17 @@ cabal computes for the slice includes the same
 <p>Keep component source in the store in a <code>source</code> output</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: {“_type”:“literalExpression”,“text”:“false”}</p>
+<p><strong>No Example</strong></p>
+<h2 id="localpackages"><a class="header" href="#localpackages">localPackages</a></h2>
+<p>Package options applied to every package with <code>package.isLocal</code> set:
+the project’s own packages and those from <code>source-repository-package</code>
+stanzas (or <code>extra-deps</code> with a git/local location for stack).  For
+example <code>localPackages = { doHaddock = false; };</code>.  It may also be a
+module function (taking <code>config</code>, <code>lib</code>, <code>pkgs</code>, … of the package),
+as long as it does not decide which options to set from the
+package’s <code>config</code>, or a list of these.</p>
+<p><strong>Type</strong>: package options (as for packages.<name>), or a module function returning them</name></p>
+<p><strong>Default</strong>: {“_type”:“literalExpression”,“text”:“[ ]”}</p>
 <p><strong>No Example</strong></p>
 <h2 id="nonreinstallablepkgs"><a class="header" href="#nonreinstallablepkgs">nonReinstallablePkgs</a></h2>
 <p><strong>Type</strong>: list of string</p>
@@ -124851,6 +124893,15 @@ reads <code>configureFlags</code> directly (which retains the
 <p><strong>Type</strong>: attribute set of list of string</p>
 <p><strong>Default</strong>: {“_type”:“literalExpression”,“text”:“{ }”}</p>
 <p><strong>No Example</strong></p>
+<h2 id="projectpackages"><a class="header" href="#projectpackages">projectPackages</a></h2>
+<p>Like <code>localPackages</code>, but only for packages with <code>package.isProject</code>
+set: the project’s own packages, not those from
+<code>source-repository-package</code> stanzas.  For example, to build them with
+<code>-Werror</code> (only in the Nix build, not when using <code>cabal</code> in a shell):
+<code>projectPackages = { ghcOptions = [ "-Werror" ]; };</code>.</p>
+<p><strong>Type</strong>: package options (as for packages.<name>), or a module function returning them</name></p>
+<p><strong>Default</strong>: {“_type”:“literalExpression”,“text”:“[ ]”}</p>
+<p><strong>No Example</strong></p>
 <h2 id="reinstallablelibghc"><a class="header" href="#reinstallablelibghc">reinstallableLibGhc</a></h2>
 <p>Is lib:ghc reinstallable?</p>
 <p><strong>Type</strong>: boolean</p>
@@ -126656,6 +126707,16 @@ hix-shell
 <h1 id="changelog"><a href="#changelog" class="header">ChangeLog</a></h1>
 <p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="november-19-2026"><a class="header" href="#november-19-2026">November 19, 2026</a></h2>
+<ul>
+<li>New <code>projectPackages</code> and <code>localPackages</code> module options set package
+options for all of the project’s own packages (<code>package.isProject</code>) or
+all local packages (<code>package.isLocal</code>, which also includes
+<code>source-repository-package</code>s) without listing them, for instance
+<code>modules = [{ projectPackages.ghcOptions = [ "-Werror" ]; }]</code> to use
+<code>-Werror</code> only in Nix builds.  See the Modules section of
+<code>docs/reference/library.md</code>.</li>
+</ul>
 <h2 id="november-8-2026"><a class="header" href="#november-8-2026">November 8, 2026</a></h2>
 <ul>
 <li>A v2 slice’s pkg-config table now holds only the names declared by the

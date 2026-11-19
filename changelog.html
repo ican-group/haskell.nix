@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-55f38f8e.js";
+            window.path_to_searchindex_js = "searchindex-6859e7d6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-5b1b9093.js"></script>
@@ -176,6 +176,16 @@
                     <main>
                         <p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="november-19-2026"><a class="header" href="#november-19-2026">November 19, 2026</a></h2>
+<ul>
+<li>New <code>projectPackages</code> and <code>localPackages</code> module options set package
+options for all of the project’s own packages (<code>package.isProject</code>) or
+all local packages (<code>package.isLocal</code>, which also includes
+<code>source-repository-package</code>s) without listing them, for instance
+<code>modules = [{ projectPackages.ghcOptions = [ "-Werror" ]; }]</code> to use
+<code>-Werror</code> only in Nix builds.  See the Modules section of
+<code>docs/reference/library.md</code>.</li>
+</ul>
 <h2 id="november-8-2026"><a class="header" href="#november-8-2026">November 8, 2026</a></h2>
 <ul>
 <li>A v2 slice’s pkg-config table now holds only the names declared by the
