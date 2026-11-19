@@ -1,4 +1,5 @@
 # This overlay helps accessing common executable components.
+# (User documentation: docs/reference/tools.md.)
 # Typically we want to make these available in a nix-shell
 # created with shellFor.  In most cases the package name
 # will be the same as the executable, but we have a
@@ -11,9 +12,10 @@
 # This does the same thing as:
 #   (haskell-nix.hackage-package {
 #     compiler-nix-name = "ghc884";
-#     name = "cabal-install"
-#     version = "3.2.0.0"
-#   }).components.exes.cabal
+#     name = "cabal-install";
+#     version = "3.2.0.0";
+#     configureArgs = "--disable-benchmarks --disable-tests";
+#   }).getComponent "exe:cabal"
 #
 # To get an attr set containing multiple tools:
 #   haskell-nix.tools "ghc884" { cabal = "3.2.0.0"; hlint = "2.2.11"; }
