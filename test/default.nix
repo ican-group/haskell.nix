@@ -265,6 +265,7 @@ let
     stack-local-resolver-subdir = callTest ./stack-local-resolver-subdir {};
     stack-remote-resolver = callTest ./stack-remote-resolver {};
     stack-symlink-yaml = callTest ./stack-symlink-yaml {};
+    stack-hpack-include = callTest ./stack-hpack-include {};
     shell-for-setup-deps = callTest ./shell-for-setup-deps {};
     setup-deps = import ./setup-deps { inherit pkgs evalPackages evalSystem compiler-nix-name testCabalProjectLocal testInputMap; };
     setup-deps-boot-cabal = callTest ./setup-deps-boot-cabal {};

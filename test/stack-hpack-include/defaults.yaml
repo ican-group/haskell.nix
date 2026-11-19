@@ -1,0 +1,3 @@
+# Used by each package.yaml with `defaults: local:` (see #485).
+source-dirs: src
+ghc-options: -Wall

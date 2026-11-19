@@ -1,6 +1,6 @@
 # Use cleanSourceWith to filter just the files needed for a particular
 # component of the package
-{ lib, cleanSourceWith, normalizeRelativePath }: package: component: componentName: src:
+{ lib, cleanSourceWith, normalizeRelativePath, isHpackAncestorInclude }: package: component: componentName: src:
 let
   srcStr' = src.origSrc or null;
   subDir = if src.origSubDir or "" == ""
@@ -34,6 +34,8 @@ in
     else
       let
         srcStr = toString srcStr';
+        # The package directory, for `isHpackAncestorInclude`.
+        pkgDir = srcStr + lib.optionalString (subDir != "") ("/" + lib.removeSuffix "/" subDir);
         dataDir = combinePaths subDir package.dataDir;
         hsSourceDirs = builtins.map (d: combinePaths subDir d) component.hsSourceDirs
           ++ (if component.hsSourceDirs == [] then [subDir] else []);
@@ -97,6 +99,8 @@ in
               || traceReason "cabal package definition" (lib.strings.hasPrefix subDir rPath
                 && lib.strings.hasSuffix ".cabal" rPath)
               || traceReason "hpack package definition" (rPath == subDir + "package.yaml")
+              || traceReason "hpack include" ((package.cleanHpack or false)
+                && isHpackAncestorInclude pkgDir path type)
               || traceReason "data file" (isInDir dataDir rPath
                 && dataFileMatch rPath)
               || traceReason "haskell source dir" (lib.any (d: isInDir d rPath) hsSourceDirs)

@@ -269,16 +269,23 @@ let
     then haskellLib.cleanCabalComponent package componentForSetup "${componentId.ctype}-${componentId.cname}" src
     else
       # We can clean out the siblings though to at least avoid changes to other packages
-      # from triggering a rebuild of this one.
-      # Passing `subDir` but not `includeSiblings = true;` will exclude anything not
-      # in the `subDir`.
+      # from triggering a rebuild of this one.  Outside the package directory
+      # keep only the YAML files in its ancestor directories: a `package.yaml`
+      # may `!include` (or take `defaults: local:` from) a file such as
+      # `../common.yaml` shared by several packages, and hpack runs in this
+      # source (#485).
       if src ? origSrc && src ? filter && src.origSubDir or "" != ""
-        then haskellLib.cleanSourceWith {
-          name = src.name or "source";
-          src = src.origSrc;
-          subDir = lib.removePrefix "/" src.origSubDir;
-          inherit (src) filter;
-        }
+        then
+          let pkgDir = toString src.origSrc + src.origSubDir;
+          in haskellLib.cleanSourceWith {
+            name = src.name or "source";
+            src = src.origSrc;
+            subDir = lib.removePrefix "/" src.origSubDir;
+            includeSiblings = true;
+            filter = path: type: src.filter path type && (
+              lib.hasPrefix (pkgDir + "/") path
+              || haskellLib.isHpackAncestorInclude pkgDir path type);
+          }
         else src);
 
   nameOnly = "${package.identifier.name}-${componentId.ctype}-${componentId.cname}";

@@ -1,0 +1,11 @@
+name: pkg-b
+version: 0.1.0.0
+license: BSD3
+
+# Both of these refer to YAML files in the parent directory (see #485).
+defaults:
+  local: ../defaults.yaml
+dependencies: !include "../common-dependencies.yaml"
+
+library:
+  exposed-modules: Lib
