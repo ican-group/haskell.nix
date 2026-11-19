@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-f920c368.js";
+            window.path_to_searchindex_js = "searchindex-3909441b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-924aa984.js"></script>
@@ -201,6 +201,15 @@ nor to cross or variant (prefixed) flakes.  A <code>default</code> passed in
 <code>packages</code> or <code>apps</code> wins.  To turn it off set <code>flake.doDefaults = false</code> (or pass <code>doDefaults = false</code>, <code>defaultPackage = null</code> or
 <code>defaultApp = null</code> to <code>haskellLib.mkFlake</code>).  <code>ciJobs</code> and
 <code>hydraJobs</code> do not get a second copy of the component.</li>
+<li>Local files a <code>cabal.project</code> (or <code>cabalProjectLocal</code>) pulls in with
+<code>import:</code> are now kept in the source used to compute the plan, whatever
+their names, and so are the files they import in turn.  Before only
+<code>.cabal</code> and <code>package.yaml</code> files were kept, so cabal failed with
+<code>withBinaryFile: does not exist</code> for the imported file.  Projects
+without local imports get the same plan as before.  Imported files are
+used as they are, so a <code>source-repository-package</code> or <code>repository</code>
+stanza in one is reported as an error (move it to the project file or
+<code>cabalProjectLocal</code>, where <code>sha256map</code>/<code>inputMap</code> apply).</li>
 </ul>
 <h2 id="november-8-2026"><a class="header" href="#november-8-2026">November 8, 2026</a></h2>
 <ul>
