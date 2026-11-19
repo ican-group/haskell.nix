@@ -10,14 +10,19 @@ let
     cabalProjectLocal = testCabalProjectLocal;
   };
 
+  # Under `builderVersion = 2` the shell's `ghc` only sees the composed
+  # store with `exposePackagesVia = "ghc-pkg"` (the default links it into
+  # the cabal store instead).  v1 ignores it.
   env = project.shellFor {
     withHoogle = false;
     exactDeps = true;
+    exposePackagesVia = "ghc-pkg";
   };
 
   envWithout = project.shellFor {
     withHoogle = false;
     exactDeps = true;
+    exposePackagesVia = "ghc-pkg";
     includeExtraPackages = false;
   };
 

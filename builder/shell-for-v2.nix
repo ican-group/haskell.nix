@@ -1131,6 +1131,10 @@ let
   #
   # Mainline shapes are probed first throughout, so nothing changes for
   # the compilers that already work.
+  emptyPkgDb = pkgs.pkgsBuildBuild.runCommand "${ghc.name}-empty-package-db"
+    { nativeBuildInputs = [ ghc ]; preferLocalBuild = true; } ''
+      ${ghc.targetPrefix or ""}ghc-pkg init $out
+    '';
   discoverDbs = ''
     composedPkgDb=
     for d in ${composedStore}/ghc-*; do
@@ -1153,6 +1157,13 @@ let
       fi
       composedPkgDb=${composedStore}/host/$hostPlatformDir/package.conf.d
     fi
+  '' + lib.optionalString (depSlices == []) ''
+    # Every dependency is a boot package, so there are no slices and the
+    # composed store has no package db.  Use an empty one.
+    if [ -z "$composedPkgDb" ]; then
+      composedPkgDb=${emptyPkgDb}
+    fi
+  '' + ''
     if [ -z "$composedPkgDb" ]; then
       echo "shell-for-v2: no package db found under ${composedStore}" >&2
       exit 1

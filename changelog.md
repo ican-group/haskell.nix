@@ -54,6 +54,9 @@ that will impact users.
     shell could not use them at all.  Set `includeExtraPackages = false`
     to leave them out.  Under `builderVersion = 2` they are added to the
     shell's composed cabal store.
+  * A `builderVersion = 2` shell with `exposePackagesVia = "ghc-pkg"` no
+    longer fails to build when every dependency is a boot package (the
+    composed store has no package db; an empty one is used).
 
 ## November 8, 2026
 
