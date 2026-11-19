@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9942da08.js";
+            window.path_to_searchindex_js = "../searchindex-d6fa419a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-924aa984.js"></script>
+        <script src="../toc-a339c369.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -617,7 +617,7 @@ packages with <code>ghci</code> or <code>cabal v2-build</code> (but not Stack).<
 <tr><td><code>withHoogle</code></td><td>Boolean</td><td>Whether to build a Hoogle documentation index and provide the <code>hoogle</code> command.</td></tr>
 <tr><td><code>exactDeps</code></td><td>Boolean</td><td>Prevents the Cabal solver from choosing any package dependency other than what are in the package set.</td></tr>
 <tr><td><code>allToolDeps</code></td><td>Boolean</td><td>Indicates if the shell should include all the tool dependencies of the haskell packages in the project.</td></tr>
-<tr><td><code>tools</code></td><td>Function</td><td>AttrSet of tools to make available e.g. <code>{ cabal = "3.2.0.0"; }</code> or <code>{ cabal = { version = "3.2.0.0"; }; }</code>. If an AttrSet is provided for a tool, the additional arguments will be passed to the function creating the derivation for that tool. So you can provide an <code>index-state</code> or a <code>materialized</code> argument like that <code>{ cabal = { version = "3.2.0.0"; index-state = "2020-10-30T00:00:00Z"; materialized = ./cabal.materialized; }; }</code> for example. You can specify and materialize the version of hoogle used to construct the hoogle index by including something like <code>{ hoogle = { version = "5.0.17.15"; index-state = "2020-05-31T00:00:00Z"; materialized = ./hoogle.materialized; }</code>. Uses a default version of hoogle if omitted.</td></tr>
+<tr><td><code>tools</code></td><td>Function</td><td>AttrSet of tools to make available e.g. <code>{ cabal = "3.2.0.0"; }</code> or <code>{ cabal = { version = "3.2.0.0"; }; }</code>. If an AttrSet is provided for a tool, the additional arguments will be passed to the function creating the derivation for that tool. So you can provide an <code>index-state</code> or a <code>materialized</code> argument like that <code>{ cabal = { version = "3.2.0.0"; index-state = "2020-10-30T00:00:00Z"; materialized = ./cabal.materialized; }; }</code> for example. You can specify and materialize the version of hoogle used to construct the hoogle index by including something like <code>{ hoogle = { version = "5.0.17.15"; index-state = "2020-05-31T00:00:00Z"; materialized = ./hoogle.materialized; }</code>. Uses a default version of hoogle if omitted. See <a href="tools.html">Tools</a> for the details.</td></tr>
 <tr><td><code>packageSetupDeps</code></td><td>Boolean</td><td>Set this to <code>false</code> to exclude custom-setup dependencies.</td></tr>
 <tr><td><code>enableDWARF</code></td><td>Boolean</td><td>Include debug info</td></tr>
 <tr><td><code>crossPlatforms</code></td><td>Function</td><td>Platform selection function for cross compilation targets to support eg. <code>ps: with ps; [ghcjs mingwW64]</code> (see nixpkgs lib.systems.examples for list of platform names).</td></tr>

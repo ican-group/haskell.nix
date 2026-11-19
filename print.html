@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9942da08.js";
+            window.path_to_searchindex_js = "searchindex-d6fa419a.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-924aa984.js"></script>
+        <script src="toc-a339c369.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -3019,7 +3019,7 @@ packages with <code>ghci</code> or <code>cabal v2-build</code> (but not Stack).<
 <tr><td><code>withHoogle</code></td><td>Boolean</td><td>Whether to build a Hoogle documentation index and provide the <code>hoogle</code> command.</td></tr>
 <tr><td><code>exactDeps</code></td><td>Boolean</td><td>Prevents the Cabal solver from choosing any package dependency other than what are in the package set.</td></tr>
 <tr><td><code>allToolDeps</code></td><td>Boolean</td><td>Indicates if the shell should include all the tool dependencies of the haskell packages in the project.</td></tr>
-<tr><td><code>tools</code></td><td>Function</td><td>AttrSet of tools to make available e.g. <code>{ cabal = "3.2.0.0"; }</code> or <code>{ cabal = { version = "3.2.0.0"; }; }</code>. If an AttrSet is provided for a tool, the additional arguments will be passed to the function creating the derivation for that tool. So you can provide an <code>index-state</code> or a <code>materialized</code> argument like that <code>{ cabal = { version = "3.2.0.0"; index-state = "2020-10-30T00:00:00Z"; materialized = ./cabal.materialized; }; }</code> for example. You can specify and materialize the version of hoogle used to construct the hoogle index by including something like <code>{ hoogle = { version = "5.0.17.15"; index-state = "2020-05-31T00:00:00Z"; materialized = ./hoogle.materialized; }</code>. Uses a default version of hoogle if omitted.</td></tr>
+<tr><td><code>tools</code></td><td>Function</td><td>AttrSet of tools to make available e.g. <code>{ cabal = "3.2.0.0"; }</code> or <code>{ cabal = { version = "3.2.0.0"; }; }</code>. If an AttrSet is provided for a tool, the additional arguments will be passed to the function creating the derivation for that tool. So you can provide an <code>index-state</code> or a <code>materialized</code> argument like that <code>{ cabal = { version = "3.2.0.0"; index-state = "2020-10-30T00:00:00Z"; materialized = ./cabal.materialized; }; }</code> for example. You can specify and materialize the version of hoogle used to construct the hoogle index by including something like <code>{ hoogle = { version = "5.0.17.15"; index-state = "2020-05-31T00:00:00Z"; materialized = ./hoogle.materialized; }</code>. Uses a default version of hoogle if omitted. See <a href="#tools">Tools</a> for the details.</td></tr>
 <tr><td><code>packageSetupDeps</code></td><td>Boolean</td><td>Set this to <code>false</code> to exclude custom-setup dependencies.</td></tr>
 <tr><td><code>enableDWARF</code></td><td>Boolean</td><td>Include debug info</td></tr>
 <tr><td><code>crossPlatforms</code></td><td>Function</td><td>Platform selection function for cross compilation targets to support eg. <code>ps: with ps; [ghcjs mingwW64]</code> (see nixpkgs lib.systems.examples for list of platform names).</td></tr>
@@ -136342,6 +136342,223 @@ e.g. in a project’s <code>modules</code>:
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: {“_type”:“literalExpression”,“text”:“false”}</p>
 <p><strong>No Example</strong></p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="tools"><a class="header" href="#tools">Tools</a></h1>
+<p>Executables you want on hand while working on a project, rather than
+as part of it (<code>cabal</code>, <code>hlint</code>, <code>haskell-language-server</code>, <code>hoogle</code>,
+<code>ormolu</code>, …), are usually built from Hackage with <code>haskell-nix.tool</code>,
+<code>haskell-nix.tools</code> or, most often, the <code>tools</code> argument of
+<a href="#shellfor"><code>shellFor</code></a> (or a project’s <code>shell</code>).</p>
+<h2 id="adding-tools-to-a-shell"><a class="header" href="#adding-tools-to-a-shell">Adding tools to a shell</a></h2>
+<pre><code class="language-nix">project.shellFor {
+  tools = {
+    cabal = "latest";
+    hlint = "3.8";
+    haskell-language-server = {};
+  };
+}
+</code></pre>
+<p>or, using the project <code>shell</code> argument (see
+<a href="#project"><code>project'</code></a>):</p>
+<pre><code class="language-nix">pkgs.haskell-nix.project' {
+  src = ./.;
+  compiler-nix-name = "ghc912";
+  shell.tools = {
+    cabal = "latest";
+    hlint = "latest";
+  };
+}
+</code></pre>
+<p>Each entry is <code>&lt;name&gt; = &lt;version or arguments&gt;</code>.  The tools are built
+with the same GHC as the shell (the build platform’s GHC when cross
+compiling), which matters for tools such as <code>haskell-language-server</code>
+that load your code into GHC.</p>
+<p>Shells of projects using the v2 builder (<code>builderVersion = 2</code>, the
+default for the stable-haskell compilers) treat <code>cabal</code> specially and
+also accept prebuilt derivations; see
+<a href="#shells-with-builderversion--2">Shells with <code>builderVersion = 2</code></a>.</p>
+<h2 id="haskell-nixtool-and-haskell-nixtools"><a class="header" href="#haskell-nixtool-and-haskell-nixtools">haskell-nix.tool and haskell-nix.tools</a></h2>
+<p>The same tools are available outside a shell:</p>
+<pre><code class="language-nix">pkgs.haskell-nix.tool "ghc912" "cabal" "3.14.2.0"
+pkgs.haskell-nix.tools "ghc912" { cabal = "latest"; hlint = "latest"; }
+</code></pre>
+<p><code>tool</code> takes the GHC (<code>compiler-nix-name</code>), the tool name and a version
+(or arguments, see below), and returns the executable component.
+<code>tools</code> takes an attribute set of tools and returns an attribute set of
+the executables.</p>
+<p>A project has <code>tool</code> and <code>tools</code> attributes too, which use the
+project’s GHC (and its <code>evalSystem</code>):</p>
+<pre><code class="language-nix">project.tool "cabal" "latest"
+project.tools { cabal = "latest"; hlint = "latest"; }
+</code></pre>
+<h2 id="what-a-tool-is"><a class="header" href="#what-a-tool-is">What a tool is</a></h2>
+<p><code>haskell-nix.tool "ghc912" "cabal" "3.14.2.0"</code> is a shorthand for:</p>
+<pre><code class="language-nix">(pkgs.haskell-nix.hackage-package {
+  compiler-nix-name = "ghc912";
+  name = "cabal-install";
+  version = "3.14.2.0";
+  configureArgs = "--disable-benchmarks --disable-tests";
+}).getComponent "exe:cabal"
+</code></pre>
+<p>So a tool is a <a href="#build-a-specific-package-from-hackage-or-stackage"><code>hackage-package</code></a>:
+a one package <code>cabalProject'</code> whose <code>cabal.project</code> only asks for that
+package from Hackage, planned against haskell.nix’s Hackage index.</p>
+<p>Some tools are better known by their executable’s name than their
+package’s.  <code>haskell-nix.toolPackageName</code> maps the name you use to the
+Hackage package (<code>cabal</code> is <code>cabal-install</code>, <code>gen-hie</code> is <code>implicit-hie</code>,
+<code>refactor</code> is <code>apply-refact</code>, <code>sos</code> is <code>steeloverseer</code>), and
+<code>haskell-nix.packageToolName</code> maps the package back to its executable.
+Every other tool’s executable must have the same name as its package.</p>
+<p><code>modules/hackage-quirks.nix</code> holds fixes applied to particular tools
+(for instance constraints that keep old <code>stack</code> versions buildable).</p>
+<h2 id="versions"><a class="header" href="#versions">Versions</a></h2>
+<p>The version can be:</p>
+<ul>
+<li>An exact Hackage version, such as <code>"3.14.2.0"</code>.</li>
+<li><code>"latest"</code>, which leaves the version out of the plan, so cabal’s
+solver picks the newest version that builds with the GHC and index
+state in use.  <code>{}</code> means the same, as <code>"latest"</code> is the default.</li>
+</ul>
+<p><code>"latest"</code> depends on the Hackage index haskell.nix was pinned with, so
+it changes when you update haskell.nix.  Pin a version (and if you like
+an <code>index-state</code>, see below) when you need the tool to stay the same.</p>
+<h2 id="arguments"><a class="header" href="#arguments">Arguments</a></h2>
+<p>Instead of a version you can give an attribute set.  Its attributes are
+passed to <code>hackage-package</code>, so they can be any
+<a href="#cabalproject-1"><code>cabalProject'</code></a> argument, as well as
+<code>version</code>:</p>
+<pre><code class="language-nix">tools.cabal = {
+  version = "3.14.2.0";
+  # The Hackage index to plan with (defaults to the latest one
+  # haskell.nix knows about).
+  index-state = "2025-06-01T00:00:00Z";
+  # Extra cabal.project text, e.g. to set flags or constraints.
+  cabalProjectLocal = ''
+    constraints: hackage-security &gt;=0.6.3
+  '';
+  # haskell.nix modules for the tool's package set.
+  modules = [{ packages.cabal-install.doHaddock = false; }];
+};
+</code></pre>
+<p>A list is also accepted, and treated as a list of project modules
+(each one an attribute set or module function):</p>
+<pre><code class="language-nix">tools.hlint = [
+  { version = "3.8"; }
+  ({ lib, ... }: { modules = [{ packages.hlint.flags.ghc-lib = true; }]; })
+];
+</code></pre>
+<h3 id="pinning-the-plan-with-materialization"><a class="header" href="#pinning-the-plan-with-materialization">Pinning the plan with materialization</a></h3>
+<p>Building a tool’s plan (<code>plan-nix</code>) needs evaluation-time builds (IFD).
+To avoid it, <a href="#materialization">materialize</a> the tool’s
+plan.  This needs a fixed <code>index-state</code> and <code>version</code>:</p>
+<pre><code class="language-nix">tools.cabal = {
+  version = "3.14.2.0";
+  index-state = "2025-06-01T00:00:00Z";
+  materialized = ./materialized/cabal;
+};
+</code></pre>
+<p>The <code>hoogle</code> used for a shell’s Hoogle index (<code>withHoogle = true</code>) is
+built from <code>tools.hoogle</code> too, so it can be pinned and materialized
+the same way.  (A v2 shell builds no Hoogle index; it only puts that
+<code>hoogle</code> on <code>PATH</code>.)</p>
+<h3 id="a-different-ghc"><a class="header" href="#a-different-ghc">A different GHC</a></h3>
+<p>A tool is built with the GHC you give <code>tool</code> (or the shell’s / project’s
+GHC).  If a tool does not support it yet, set <code>compiler-nix-name</code>
+for that tool:</p>
+<pre><code class="language-nix">tools.hlint = { version = "latest"; compiler-nix-name = "ghc910"; };
+</code></pre>
+<p>Do not do this for tools that need to match the GHC your code is built
+with, such as <code>haskell-language-server</code>.</p>
+<h3 id="executables-that-need-a-flag"><a class="header" href="#executables-that-need-a-flag">Executables that need a flag</a></h3>
+<p>Some packages only build their executable when a Cabal flag is on.  If
+the solver turns it off, asking for the tool fails with an error
+listing the executables the package does have.  Turn the flag on with
+<code>cabalProjectLocal</code>:</p>
+<pre><code class="language-nix">tools.cabal-plan = {
+  version = "latest";
+  cabalProjectLocal = ''
+    package cabal-plan
+      flags: +exe
+  '';
+};
+</code></pre>
+<h2 id="building-a-tool-from-source"><a class="header" href="#building-a-tool-from-source">Building a tool from source</a></h2>
+<p>To use a version of a tool that is not on Hackage (a branch, an
+unreleased fix, a fork), set <code>src</code> instead of a Hackage version.  The
+tool is then planned using the <code>cabal.project</code> in that source.  With
+flakes, add the source as an input:</p>
+<pre><code class="language-nix">{
+  inputs.cabal-src = { url = "github:haskell/cabal"; flake = false; };
+  outputs = { self, nixpkgs, haskellNix, cabal-src, ... }:
+    ...
+      shell.tools.cabal = { src = cabal-src; };
+    ...
+}
+</code></pre>
+<p>Without flakes, use any source, for instance <code>builtins.fetchGit</code> or a
+local checkout (<code>src = ../cabal;</code>).  <code>index-state</code>,
+<code>cabalProjectLocal</code> and <code>modules</code> work here as they do for a Hackage
+version.</p>
+<p>In a v2 shell, <code>tools.cabal</code> without a <code>version</code> is replaced by the
+cabal that built the project (see below), so pass the tool you built
+instead:</p>
+<pre><code class="language-nix">shell.tools.cabal = pkgs.haskell-nix.tool "ghc912" "cabal" { src = cabal-src; };
+</code></pre>
+<p>Building a tool from source only changes that tool.  It does not change
+the Cabal library haskell.nix itself uses to plan projects (which comes
+with <code>nix-tools</code>) or to build <code>Setup.hs</code>.</p>
+<h2 id="shells-with-builderversion--2"><a class="header" href="#shells-with-builderversion--2">Shells with <code>builderVersion = 2</code></a></h2>
+<p>A v2 shell (<code>builder/shell-for-v2.nix</code>) gives you a cabal store that
+already holds your project’s dependencies, built by haskell.nix’s own
+cabal-install (<code>haskell-nix.v2-cabal-install</code>, also available as
+<code>project.v2-cabal-install</code>).  A different cabal-install computes
+different unit IDs, misses every unit in that store and rebuilds all of
+them.  So in a v2 shell:</p>
+<ul>
+<li><code>tools.cabal = "latest"</code>, <code>{}</code>, or any argument set without a
+<code>version</code> gives you <code>v2-cabal-install</code>, not a cabal-install from
+Hackage.  Its other arguments (<code>src</code>, <code>index-state</code>,
+<code>cabalProjectLocal</code>, …) are not used.</li>
+<li><code>tools.cabal = "&lt;version&gt;"</code> (or <code>{ version = "&lt;version&gt;"; ... }</code>)
+builds that version from Hackage as usual, with a warning when it is
+not the version that built the store.</li>
+<li>A tool can be a derivation, which is put on <code>PATH</code> as it is.  This is
+how to use a cabal built from source (see above), or any tool that
+cannot be built with the project’s GHC.  For instance a from-source
+compiler such as <code>ghc914-sh</code> cannot always build tools itself, so
+build them with a nixpkgs-provided GHC:
+<code>tools.hlint = pkgs.haskell-nix.tool "ghc912" "hlint" "latest";</code>.
+(v1 shells do not accept derivations in <code>tools</code>; add them to
+<code>nativeBuildInputs</code> instead.)</li>
+<li>Tools are built with <code>haskell-nix.tool</code>, so their plans are made on
+the build machine’s system rather than the project’s <code>evalSystem</code>.</li>
+<li><code>withHoogle = true</code> only puts <code>hoogle</code> on <code>PATH</code> (from <code>tools.hoogle</code>
+when given); run <code>hoogle generate</code> yourself to make an index.</li>
+</ul>
+<h2 id="alternatives"><a class="header" href="#alternatives">Alternatives</a></h2>
+<p><code>tools</code> is a convenience for “the executable of one Hackage package”.
+Use something else when that is not what you want:</p>
+<ul>
+<li><strong><a href="#build-a-specific-package-from-hackage-or-stackage"><code>hackage-package</code></a></strong>
+gives you the whole package (its library, its tests, all of its
+executables) rather than one executable.  <code>hackage-project</code> gives you
+the project (<code>plan-nix</code>, <code>hsPkgs</code>, <code>shellFor</code>, …).</li>
+<li><strong><a href="#cabalproject-1"><code>cabalProject'</code></a> or
+<a href="#project"><code>project'</code></a></strong> on the tool’s source (or on a
+<code>cabal.project</code> listing several tools) is best when a tool needs a
+custom <code>cabal.project</code>, several tools have to share one build plan,
+or you want the tool’s library too.  Pass its executables to the shell
+with <code>nativeBuildInputs</code> (or <code>buildInputs</code>).</li>
+<li><strong>Your own project’s executables</strong> do not need <code>tools</code>.  The
+<code>build-tool-depends</code> of the packages a shell is for are added to it
+already (see <code>allToolDeps</code> in <a href="#shellfor"><code>shellFor</code></a>).</li>
+<li><strong>nixpkgs</strong> (<code>pkgs.haskellPackages.&lt;tool&gt;</code> or <code>pkgs.&lt;tool&gt;</code>) is
+usually cached and quick to get, but is built with nixpkgs’ GHC and
+Hackage snapshot, not your project’s.  That is fine for tools that do
+not look at your code with GHC (formatters you run on files, <code>cabal</code>
+itself), and wrong for <code>haskell-language-server</code> and other tools that
+use the GHC API.  Add them with <code>nativeBuildInputs</code>.</li>
+</ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h1>
 <h2 id="issues-with-building-and-garbage-collection"><a class="header" href="#issues-with-building-and-garbage-collection">Issues with building and garbage-collection</a></h2>
