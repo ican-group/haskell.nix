@@ -109,6 +109,44 @@ will be passed to it:
 | `config` | | |
 | `options` | | |
 
+### Options for all local or project packages
+
+Options for a single package go under `packages.<name>`.  To set options
+for every package of the project without naming them, use
+`projectPackages` (packages with `package.isProject` set: the packages
+listed in the project itself) or `localPackages` (packages with
+`package.isLocal` set: those plus the ones from `source-repository-package`
+stanzas, or local and git `extra-deps` for stack).  Packages from Hackage
+are never affected.
+
+For example, to turn warnings into errors when the project is built by
+Nix, but not when `cabal` is used in a development shell:
+
+```nix
+project = pkgs.haskell-nix.cabalProject' {
+  # ...
+  modules = [{
+    projectPackages = { ghcOptions = [ "-Werror" ]; };
+    # Skip building the documentation of the project's own packages
+    # and of the `source-repository-package`s.
+    localPackages = { doHaddock = false; };
+  }];
+};
+```
+
+Each takes the same options as `packages.<name>` (including `components`),
+or a function of the package's module arguments returning them.  Several
+definitions (from different modules, or as a list) are merged as if each
+was given for every one of those packages.  The function must not decide
+*which* options to set from the package's own `config` (that leads to
+infinite recursion), but it may set options that merge with the package's
+other definitions, such as appending to `postUnpack`.
+
+With `builderVersion = 2` these behave exactly like the same options set
+under `packages.<name>`, so the limits described in
+[migrating to v2](../dev/migrating-to-v2.md) apply (for instance
+`ghcOptions` is per package, not per component).
+
 
 # Top-level attributes
 
