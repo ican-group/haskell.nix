@@ -40,8 +40,7 @@
         # This adds support for `nix build .#js-unknown-ghcjs:hello:exe:hello`
         # crossPlatforms = p: [p.ghcjs];
       };
-    in flake // {
-      # Built by `nix build .`
-      packages.default = flake.packages."hello:exe:hello";
-    });
+      # `nix build .` builds `hello:exe:hello` (`packages.default`), as
+      # `hello` is the package in the project directory.
+    in flake);
 }

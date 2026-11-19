@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9d388b0d.js";
+            window.path_to_searchindex_js = "searchindex-f920c368.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-924aa984.js"></script>
@@ -189,6 +189,18 @@ all local packages (<code>package.isLocal</code>, which also includes
 (<code>project.hsPkgs.&lt;pkg&gt;.sdist</code>), the tarball <code>cabal sdist</code> makes for
 it.  It needs no compiler and no dependencies, and fails if the
 <code>.cabal</code> file lists a file that is not in the source.</li>
+<li><code>project.flake</code> (and <code>haskellLib.mkFlake</code>) now adds <code>packages.default</code>
+and <code>apps.default</code> when the project directory (the one holding
+<code>cabal.project</code> or <code>stack.yaml</code>) is itself a package’s directory, so
+a bare <code>nix build</code> or <code>nix run</code> works, taking its target from the
+same package a bare <code>cabal build</code> or <code>cabal run</code> would.
+<code>packages.default</code> is that package’s executable when it has exactly
+one, and otherwise its library; <code>apps.default</code> is that executable.
+Nothing is added when there is no such package or no single choice,
+nor to cross or variant (prefixed) flakes.  A <code>default</code> passed in
+<code>packages</code> or <code>apps</code> wins.  To turn it off set <code>flake.doDefaults = false</code> (or pass <code>doDefaults = false</code>, <code>defaultPackage = null</code> or
+<code>defaultApp = null</code> to <code>haskellLib.mkFlake</code>).  <code>ciJobs</code> and
+<code>hydraJobs</code> do not get a second copy of the component.</li>
 </ul>
 <h2 id="november-8-2026"><a class="header" href="#november-8-2026">November 8, 2026</a></h2>
 <ul>

@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-9d388b0d.js";
+            window.path_to_searchindex_js = "searchindex-f920c368.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-924aa984.js"></script>
@@ -661,10 +661,9 @@ cabal build
         # This adds support for `nix build .#js-unknown-ghcjs:hello:exe:hello`
         # crossPlatforms = p: [p.ghcjs];
       };
-    in flake // {
-      # Built by `nix build .`
-      packages.default = flake.packages."hello:exe:hello";
-    });
+      # `nix build .` builds `hello:exe:hello` (`packages.default`), as
+      # `hello` is the package in the project directory.
+    in flake);
 }
 </code></pre>
 <blockquote>
@@ -687,6 +686,13 @@ compiles the test. To run it, build its check, or run all of them with
 (see <a href="#running-tests-1">Running tests</a>). Replace <code>x86_64-linux</code> with your system:</p>
 <pre><code class="language-shell">nix build '.#checks.x86_64-linux."your-package-name:test:your-test-name"'
 </code></pre>
+<p>When the project directory (the one with <code>cabal.project</code> or <code>stack.yaml</code>)
+is itself the directory of a package, the flake also has a <code>default</code>
+package and app taken from that package, the one a bare <code>cabal build</code> or
+<code>cabal run</code> would use there.  <code>nix build</code> builds the package’s executable
+if it has exactly one, and its library otherwise; <code>nix run</code> runs that
+executable.  Set <code>flake.doDefaults = false</code> in the project to leave them
+out.</p>
 <p>Flakes provide a <code>devShell</code> attribute that allow you to spawn a developer shell, here with <code>cabal</code>, <code>hlint</code> and <code>haskell-language-server</code>:</p>
 <pre><code class="language-shell">nix develop .
 cabal repl your-package-name:lib:your-package-name
@@ -130847,6 +130853,18 @@ all local packages (<code>package.isLocal</code>, which also includes
 (<code>project.hsPkgs.&lt;pkg&gt;.sdist</code>), the tarball <code>cabal sdist</code> makes for
 it.  It needs no compiler and no dependencies, and fails if the
 <code>.cabal</code> file lists a file that is not in the source.</li>
+<li><code>project.flake</code> (and <code>haskellLib.mkFlake</code>) now adds <code>packages.default</code>
+and <code>apps.default</code> when the project directory (the one holding
+<code>cabal.project</code> or <code>stack.yaml</code>) is itself a package’s directory, so
+a bare <code>nix build</code> or <code>nix run</code> works, taking its target from the
+same package a bare <code>cabal build</code> or <code>cabal run</code> would.
+<code>packages.default</code> is that package’s executable when it has exactly
+one, and otherwise its library; <code>apps.default</code> is that executable.
+Nothing is added when there is no such package or no single choice,
+nor to cross or variant (prefixed) flakes.  A <code>default</code> passed in
+<code>packages</code> or <code>apps</code> wins.  To turn it off set <code>flake.doDefaults = false</code> (or pass <code>doDefaults = false</code>, <code>defaultPackage = null</code> or
+<code>defaultApp = null</code> to <code>haskellLib.mkFlake</code>).  <code>ciJobs</code> and
+<code>hydraJobs</code> do not get a second copy of the component.</li>
 </ul>
 <h2 id="november-8-2026"><a class="header" href="#november-8-2026">November 8, 2026</a></h2>
 <ul>

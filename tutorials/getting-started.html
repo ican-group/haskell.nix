@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-9d388b0d.js";
+            window.path_to_searchindex_js = "../searchindex-f920c368.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-924aa984.js"></script>
@@ -267,10 +267,9 @@ cabal build
         # This adds support for `nix build .#js-unknown-ghcjs:hello:exe:hello`
         # crossPlatforms = p: [p.ghcjs];
       };
-    in flake // {
-      # Built by `nix build .`
-      packages.default = flake.packages."hello:exe:hello";
-    });
+      # `nix build .` builds `hello:exe:hello` (`packages.default`), as
+      # `hello` is the package in the project directory.
+    in flake);
 }
 </code></pre>
 <blockquote>
@@ -293,6 +292,13 @@ compiles the test. To run it, build its check, or run all of them with
 (see <a href="./testing.html">Running tests</a>). Replace <code>x86_64-linux</code> with your system:</p>
 <pre><code class="language-shell">nix build '.#checks.x86_64-linux."your-package-name:test:your-test-name"'
 </code></pre>
+<p>When the project directory (the one with <code>cabal.project</code> or <code>stack.yaml</code>)
+is itself the directory of a package, the flake also has a <code>default</code>
+package and app taken from that package, the one a bare <code>cabal build</code> or
+<code>cabal run</code> would use there.  <code>nix build</code> builds the package’s executable
+if it has exactly one, and its library otherwise; <code>nix run</code> runs that
+executable.  Set <code>flake.doDefaults = false</code> in the project to leave them
+out.</p>
 <p>Flakes provide a <code>devShell</code> attribute that allow you to spawn a developer shell, here with <code>cabal</code>, <code>hlint</code> and <code>haskell-language-server</code>:</p>
 <pre><code class="language-shell">nix develop .
 cabal repl your-package-name:lib:your-package-name
