@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-6859e7d6.js";
+            window.path_to_searchindex_js = "../searchindex-4df9cfbc.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-5b1b9093.js"></script>
@@ -183,13 +183,33 @@ Check the LLVM version that should be used in the
 <a href="https://gitlab.haskell.org/ghc/ghc/-/wikis/commentary/compiler/backends/llvm/installing">ghc wiki</a>.</p>
 <h2 id="update-the-list-of-cached-ghc-versions-in-cinix"><a class="header" href="#update-the-list-of-cached-ghc-versions-in-cinix">Update the list of cached GHC versions in <code>ci.nix</code></a></h2>
 <h2 id="update-supported-ghc-versions-document"><a class="header" href="#update-supported-ghc-versions-document">Update <a href="../reference/supported-ghc-versions.html">supported ghc versions</a> document</a></h2>
-<h2 id="add-the-materialized-files"><a class="header" href="#add-the-materialized-files">Add the materialized files</a></h2>
-<p>In the haskell.nix repo run:</p>
-<pre><code class="language-shell">mkdir materialized/ghc884
-nix-build scripts/check-compiler-materialization --argstr compiler-nix-name ghc884
+<h2 id="materialized-files"><a class="header" href="#materialized-files">Materialized files</a></h2>
+<p>New GHC versions do not need their own materialized files.  Since GHC 9.11
+the nix files for the GHC boot packages are generated on demand (see
+<code>combineAndMaterialize</code> in <code>overlays/ghc-packages.nix</code>).</p>
+<p>The bootstrap tools used to build GHC (<code>alex</code>, <code>happy</code>, <code>hscolour</code>) are
+materialized per nixpkgs boot compiler, not per new GHC, in
+<code>materialized/alex-*</code>, <code>materialized/happy-*</code> and <code>materialized/bootstrap</code>
+(see <code>overlays/bootstrap.nix</code>).  Those only need new files when the boot
+compiler changes; the build fails with <code>Materialized nix used for ... is missing</code> and an <code>updateMaterialized</code> hint if they are needed.</p>
+<p>The files in <code>materialized/ghc-boot-packages-nix</code> are still used by GHC
+versions before 9.11.  There is one directory per <code>compiler-nix-name</code>
+(including the <code>llvm</code> variants), with <code>-aarch64</code> and <code>-ghcjs</code> variants for
+aarch64 and GHCJS targets.  If a change affects them (for instance a patch to
+the <code>.cabal</code> file of a boot package), check every affected compiler on both
+an x86_64 and an aarch64 system, for example:</p>
+<pre><code class="language-shell">nix-build scripts/check-compiler-materialization \
+  --arg compiler-nix-names '["ghc967" "ghc967llvm" "ghc984" "ghc984llvm" "ghc9103" "ghc9103llvm"]' \
+  --arg systems '["x86_64-linux" "aarch64-linux"]'
 </code></pre>
-<p>The <code>nix-build</code> command will fail with something like:</p>
-<pre><code>Materialized nix used for dummy-data-x86_64-unknown-linux-musl-ghc-8.10.1 incorrect. To fix run: /nix/store/wnwpyrhv4nxgyljz3f20gdpspjxvm7h4-updateMaterialized
+<p>The ghcjs and cross entries in <code>scripts/check-compiler-materialization</code> are
+gated on hard-coded lists of compilers, so extend those if the <code>-ghcjs</code>
+directory of the compiler you changed is not covered.</p>
+<p>The script turns on <code>checkMaterialization</code> for everything it evaluates, so it
+also checks the bootstrap tool plans above.  Updating those can change the
+derivation of every GHC, so do that in a separate change.</p>
+<p>When a materialized file is out of date the build fails with a message like:</p>
+<pre><code>Materialized nix used for ghc967-boot-packages-nix.nix incorrect. To fix run: /nix/store/...-updateMaterialized
 </code></pre>
 <p>Run the <code>updateMaterialized</code> script and repeat the <code>nix-build</code> until it no longer fails.
 If the failure is not a problem with materialization and no <code>updateMaterialized</code> script

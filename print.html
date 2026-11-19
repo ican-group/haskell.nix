@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-6859e7d6.js";
+            window.path_to_searchindex_js = "searchindex-4df9cfbc.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-5b1b9093.js"></script>
@@ -126149,21 +126149,44 @@ nix build -f . pkgs.haskell-nix.nix-tools.ghc884 --arg sourcesOverride '{ nix-to
 </code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="how-to-update-nix-tools-1"><a href="#how-to-update-nix-tools-1" class="header">How to update nix-tools</a></h1>
-<h2 id="how-to-update-nix-tools"><a class="header" href="#how-to-update-nix-tools">How to update <a href="https://github.com/input-output-hk/nix-tools"><code>nix-tools</code></a></a></h2>
+<h2 id="how-to-update-nix-tools"><a class="header" href="#how-to-update-nix-tools">How to update <a href="https://github.com/ican-group/haskell.nix/tree/master/nix-tools"><code>nix-tools</code></a></a></h2>
+<p>The <code>nix-tools</code> source lives in this repository (<code>./nix-tools</code>, and the
+stable-haskell variant in <code>./nix-tools-sh</code>), but haskell.nix does not build it
+from source when making plans.  It uses prebuilt static binaries from a GitHub
+release, pinned in:</p>
+<ul>
+<li><code>nix-tools-static.nix</code> – <code>plan-to-nix</code>, <code>make-install-plan</code> and friends.</li>
+<li><code>nix-tools-static-for-default-setup.nix</code> – <code>default-setup</code>.  This has its own
+pin because changing it rebuilds every package.</li>
+<li><code>nix-tools-static-sh.nix</code> – the stable-haskell variant (opt-in per project).</li>
+</ul>
+<p>So a change to the <code>nix-tools</code> source has no effect on plans until a new
+release is made and the pin is bumped:</p>
 <ol>
 <li>
-<p>Use niv to update the sources.json:</p>
-<pre><code class="language-shell">nix flake update nix-tools
-</code></pre>
+<p>Merge the <code>nix-tools</code> change to <code>master</code>.</p>
 </li>
 <li>
-<p>If <code>nix-tools.cabal</code> or <code>plan-to-nix</code> have changed, check the
-materialized files for each of the compiler nix name in
-<code>ls -d materialized/ghc*/nix-tools</code> with:</p>
-<pre><code class="language-shell">nix-build scripts/check-compiler-materialization --argstr compiler-nix-name ghc884
-</code></pre>
+<p>Push a plain tag on that <code>master</code> commit: <code>nix-tools-X.Y.Z</code>
+(or <code>nix-tools-sh-X.Y.Z</code>).  The commit must be one Hydra evaluates
+(any <code>master</code> commit is), because the release is built from the
+<code>&lt;system&gt;.nix-tools.static.zipped.*</code> jobs
+(<code>&lt;system&gt;.nix-tools-sh.static.zipped.*</code> for <code>nix-tools-sh</code>).</p>
+</li>
+<li>
+<p>The <code>upload-artifacts</code> (or <code>upload-artifacts-sh</code>) workflow waits for
+those Hydra jobs to finish, downloads the zips, publishes the GitHub release, and pushes a branch
+<code>update-nix-tools-static/&lt;tag&gt;</code> (<code>update-nix-tools-static-sh/&lt;tag&gt;</code>)
+that updates the pin file.  If the workflow cannot open the pull request
+itself, open it by hand from that branch.</p>
+</li>
+<li>
+<p>Merge the pin pull request once CI is green.</p>
 </li>
 </ol>
+<p><code>nix-tools-static-for-default-setup.nix</code> is not updated by the workflow; bump
+it by hand (copy the URLs and hashes from <code>nix-tools-static.nix</code>) only when the
+<code>default-setup</code> change is worth a full rebuild.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="manually-generating-nix-expressions"><a class="header" href="#manually-generating-nix-expressions">Manually generating Nix expressions</a></h1>
 <p>We believe that imports from derivations (IFDs) provide tremendous
@@ -126502,13 +126525,33 @@ Check the LLVM version that should be used in the
 <a href="https://gitlab.haskell.org/ghc/ghc/-/wikis/commentary/compiler/backends/llvm/installing">ghc wiki</a>.</p>
 <h2 id="update-the-list-of-cached-ghc-versions-in-cinix"><a class="header" href="#update-the-list-of-cached-ghc-versions-in-cinix">Update the list of cached GHC versions in <code>ci.nix</code></a></h2>
 <h2 id="update-supported-ghc-versions-document"><a class="header" href="#update-supported-ghc-versions-document">Update <a href="#supported-ghc-versions">supported ghc versions</a> document</a></h2>
-<h2 id="add-the-materialized-files"><a class="header" href="#add-the-materialized-files">Add the materialized files</a></h2>
-<p>In the haskell.nix repo run:</p>
-<pre><code class="language-shell">mkdir materialized/ghc884
-nix-build scripts/check-compiler-materialization --argstr compiler-nix-name ghc884
+<h2 id="materialized-files"><a class="header" href="#materialized-files">Materialized files</a></h2>
+<p>New GHC versions do not need their own materialized files.  Since GHC 9.11
+the nix files for the GHC boot packages are generated on demand (see
+<code>combineAndMaterialize</code> in <code>overlays/ghc-packages.nix</code>).</p>
+<p>The bootstrap tools used to build GHC (<code>alex</code>, <code>happy</code>, <code>hscolour</code>) are
+materialized per nixpkgs boot compiler, not per new GHC, in
+<code>materialized/alex-*</code>, <code>materialized/happy-*</code> and <code>materialized/bootstrap</code>
+(see <code>overlays/bootstrap.nix</code>).  Those only need new files when the boot
+compiler changes; the build fails with <code>Materialized nix used for ... is missing</code> and an <code>updateMaterialized</code> hint if they are needed.</p>
+<p>The files in <code>materialized/ghc-boot-packages-nix</code> are still used by GHC
+versions before 9.11.  There is one directory per <code>compiler-nix-name</code>
+(including the <code>llvm</code> variants), with <code>-aarch64</code> and <code>-ghcjs</code> variants for
+aarch64 and GHCJS targets.  If a change affects them (for instance a patch to
+the <code>.cabal</code> file of a boot package), check every affected compiler on both
+an x86_64 and an aarch64 system, for example:</p>
+<pre><code class="language-shell">nix-build scripts/check-compiler-materialization \
+  --arg compiler-nix-names '["ghc967" "ghc967llvm" "ghc984" "ghc984llvm" "ghc9103" "ghc9103llvm"]' \
+  --arg systems '["x86_64-linux" "aarch64-linux"]'
 </code></pre>
-<p>The <code>nix-build</code> command will fail with something like:</p>
-<pre><code>Materialized nix used for dummy-data-x86_64-unknown-linux-musl-ghc-8.10.1 incorrect. To fix run: /nix/store/wnwpyrhv4nxgyljz3f20gdpspjxvm7h4-updateMaterialized
+<p>The ghcjs and cross entries in <code>scripts/check-compiler-materialization</code> are
+gated on hard-coded lists of compilers, so extend those if the <code>-ghcjs</code>
+directory of the compiler you changed is not covered.</p>
+<p>The script turns on <code>checkMaterialization</code> for everything it evaluates, so it
+also checks the bootstrap tool plans above.  Updating those can change the
+derivation of every GHC, so do that in a separate change.</p>
+<p>When a materialized file is out of date the build fails with a message like:</p>
+<pre><code>Materialized nix used for ghc967-boot-packages-nix.nix incorrect. To fix run: /nix/store/...-updateMaterialized
 </code></pre>
 <p>Run the <code>updateMaterialized</code> script and repeat the <code>nix-build</code> until it no longer fails.
 If the failure is not a problem with materialization and no <code>updateMaterialized</code> script
