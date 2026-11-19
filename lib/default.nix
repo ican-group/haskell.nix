@@ -329,6 +329,82 @@ in {
       requiredSystemFeatures = features;
     };
 
+  # Add bash, zsh and fish completion scripts to an exe component built with
+  # optparse-applicative: haskell.nix's counterpart of nixpkgs'
+  # `haskell.lib.compose.generateOptparseApplicativeCompletions`, and like it
+  # installed with `installShellCompletion`.  The
+  # `generateOptparseApplicativeCompletions` component option applies it to
+  # `hsPkgs.<pkg>.components.exes.<exe>` itself.
+  #
+  # The scripts are made by a separate derivation that links to `drv`'s
+  # output, so the exe is not rebuilt and this works the same for both
+  # builders.  Every top-level entry of `drv` except `share` is one symlink
+  # (a v2 slice's `store/` stays a single link, and composing the result as
+  # a slice still finds it).  It keeps `drv`'s passthru (with `exePath`
+  # pointing into the new output, and `withoutCompletions` giving back
+  # `drv`); `override` and v1's `profiled`/`dwarf` give results with
+  # completions too, `overrideAttrs` changes only this derivation.
+  #
+  # The exe has to run on the build machine: natively, or through the
+  # component's emulator (`testWrapper`) when cross compiling.  When neither
+  # is possible (and for Windows, JavaScript and WebAssembly hosts, which have
+  # no use for shell completions) `drv` is returned as it is.
+  addOptparseApplicativeCompletions = drv:
+    let
+      inherit (drv) exeName;
+      inherit (stdenv) hostPlatform;
+      native = stdenv.buildPlatform.canExecute hostPlatform;
+      testWrapper = drv.config.testWrapper or [];
+      emulated = !native && testWrapper != []
+        && !(hostPlatform.isWindows || hostPlatform.isGhcjs || hostPlatform.isWasm);
+      # `timeout`: an exe that does not use optparse-applicative may ignore
+      # the flag and keep running (a server, say).
+      run = flag: lib.concatStringsSep " " (
+        [ "timeout" "300" ] ++ lib.optionals emulated testWrapper
+        ++ [ ''"$exe"'' flag ''"$exe"'' "< /dev/null" ]);
+      isV1 = !(drv.passthru.isSlice or false);
+      withCompletions = pkgs.buildPackages.runCommand drv.name
+        (haskellLib.emulatorRunAttrs // {
+          nativeBuildInputs = [
+            (pkgs.buildPackages.lndir or pkgs.buildPackages.xorg.lndir)
+            pkgs.buildPackages.installShellFiles
+          ];
+          passthru = (drv.passthru or {}) // {
+            exePath = withCompletions + "/bin/${exeName}";
+            withoutCompletions = drv;
+          } // lib.optionalAttrs isV1 (
+            lib.mapAttrs (_: haskellLib.addOptparseApplicativeCompletions)
+              (lib.filterAttrs (n: _: lib.elem n [ "profiled" "dwarf" ]) (drv.passthru or {})));
+          # `drv`'s `platforms` name its host, which is not where this runs.
+          meta = removeAttrs (drv.meta or {}) [ "platforms" "badPlatforms" ];
+        }) ''
+          mkdir -p $out/share
+          for e in ${drv}/* ${drv}/.[!.]*; do
+            [ -e "$e" ] || [ -L "$e" ] || continue
+            [ "$(basename "$e")" = share ] || ln -s "$e" $out/
+          done
+          if [ -d ${drv}/share ]; then
+            lndir -silent ${drv}/share $out/share
+          fi
+          exe=$out/bin/${exeName}
+          ${run "--bash-completion-script"} > ${exeName}.bash
+          ${run "--zsh-completion-script"} > ${exeName}.zsh
+          ${run "--fish-completion-script"} > ${exeName}.fish
+          # optparse-applicative's bash script ends `complete ... <exe>`.
+          grep -qE '^complete .* ${lib.escapeRegex exeName}$' ${exeName}.bash || {
+            echo "${exeName} --bash-completion-script did not print a completion script (does it use optparse-applicative?)" >&2
+            exit 1
+          }
+          installShellCompletion --cmd ${exeName} \
+            --bash ${exeName}.bash --zsh ${exeName}.zsh --fish ${exeName}.fish
+        '';
+      result = withCompletions
+        // lib.optionalAttrs (drv ? store) { inherit (drv) store; }
+        // lib.optionalAttrs (drv ? override) {
+          override = args: haskellLib.addOptparseApplicativeCompletions (drv.override args);
+        };
+    in if native || emulated then result else drv;
+
   # Do coverage of a package
   coverageReport = import ./cover.nix {
     inherit stdenv lib haskellLib pkgs;

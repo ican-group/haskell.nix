@@ -138,6 +138,37 @@
       default = false;
     };
 
+    generateOptparseApplicativeCompletions = lib.mkOption {
+      description = ''
+        Install bash, zsh and fish completion scripts for an executable
+        built with `optparse-applicative`, by running it with
+        `--bash-completion-script`, `--zsh-completion-script` and
+        `--fish-completion-script`, and installing them with nixpkgs'
+        `installShellCompletion` (in `share/bash-completion/completions`,
+        `share/zsh/site-functions` and `share/fish/vendor_completions.d`).
+
+        Only applies to `exes` components.  Set it on one exe
+        (`packages.foo.components.exes.foo.generateOptparseApplicativeCompletions = true;`)
+        or on a package to cover all of its exes (each must then use
+        optparse-applicative, or the build fails).  Do not set it for
+        the whole project: that covers every exe in the plan, build tools
+        such as `alex` and `happy` included.
+
+        The scripts are generated in a separate derivation that links to
+        the exe, so turning this on does not rebuild it.  The exe has to
+        run on the build machine: a cross compiled exe is run through the
+        component's `testWrapper` (an emulator), and when there is none
+        (or the host is Windows, JavaScript or WebAssembly) the exe is
+        left as it is, without completions (as nixpkgs'
+        `generateOptparseApplicativeCompletions` does when cross
+        compiling).
+        `haskellLib.addOptparseApplicativeCompletions` adds them to any
+        exe component derivation directly.
+      '';
+      type = lib.types.bool;
+      default = false;
+    };
+
     dontPatchELF = lib.mkOption {
       description = "If set, the patchelf command is not used to remove unnecessary RPATH entries. Only applies to Linux.";
       type = lib.types.bool;

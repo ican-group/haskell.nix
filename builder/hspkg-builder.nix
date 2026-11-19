@@ -218,11 +218,14 @@ let
                 in q != null && q.pkg-name == package.identifier.name;
             in lib.any (p: lib.any isSelfId (exeDepsOf p)) sibs;
         };
-    # `builderVersion` (propagated from the project-level option)
-    # picks the derivation at `hsPkgs.<pkg>.components.<kind>.<n>`.
-    # Switch builders by setting the project-level `builderVersion`
-    # option (1 or 2) — there's no per-component opt-in / opt-out.
-    in if builderVersion == 2 then v2 else v1;
+        # `builderVersion` (propagated from the project-level option)
+        # picks the derivation at `hsPkgs.<pkg>.components.<kind>.<n>`.
+        # Switch builders by setting the project-level `builderVersion`
+        # option (1 or 2) — there's no per-component opt-in / opt-out.
+        drv = if builderVersion == 2 then v2 else v1;
+    in if haskellLib.isExe componentId && (component.generateOptparseApplicativeCompletions or false)
+      then haskellLib.addOptparseApplicativeCompletions drv
+      else drv;
 
   # The source distribution `cabal sdist` would make for this package.
   # It needs no compiler and no dependencies: the prebuilt `cabal` from
