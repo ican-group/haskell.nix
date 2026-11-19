@@ -1,0 +1,17 @@
+cabal-version: 2.2
+name:          cabal-project-imports
+version:       0.1.0.0
+license:       BSD-3-Clause
+build-type:    Simple
+
+flag from-import
+  description: Set only by a file the cabal.project imports
+  default:     False
+  manual:      True
+
+executable cabal-project-imports
+  main-is:          Main.hs
+  build-depends:    base
+  default-language: Haskell2010
+  if flag(from-import)
+    cpp-options: -DFROM_IMPORT

@@ -174,30 +174,111 @@ in let
           else if pkgs.lib.any isCabalFile files || subDirs != []
             then [ dirStr ] ++ subDirs
             else [];
-      root = if builtins.isPath cabalFilesOrigSrc
-        then cabalFilesOrigSrc
-        else toString cabalFilesOrigSrc;
-      # Attribute names cannot carry string context, and `builtins.path` passes
-      # its filter context-free paths anyway, so key the set on the plain string.
-      # `root` (what `readDir` reads) keeps its context.
-      rootStr = builtins.unsafeDiscardStringContext (toString cabalFilesOrigSrc);
-    in pkgs.lib.genAttrs (walk root rootStr) (_: true);
+    in pkgs.lib.genAttrs (walk cabalFilesRoot cabalFilesRootStr) (_: true);
+
+  cabalFilesRoot = if builtins.isPath cabalFilesOrigSrc
+    then cabalFilesOrigSrc
+    else toString cabalFilesOrigSrc;
+  # Attribute names cannot carry string context, and `builtins.path` passes
+  # its filter context-free paths anyway, so key the sets on the plain string.
+  # `cabalFilesRoot` (what `readDir`/`readFile` read) keeps its context.
+  cabalFilesRootStr = builtins.unsafeDiscardStringContext (toString cabalFilesOrigSrc);
 
   # The project's `subDir` (and its parents) must exist even when it holds no
   # `.cabal` files, because the plan-nix build `cd`s into it.
   origSrcSubDir = evalSrc.origSrcSubDir or (toString cabalFilesOrigSrc);
 
+  # Local files the project pulls in with `import:` (#2144).  cabal reads
+  # them while planning, so they must be in `cleanedSource` whatever they are
+  # called.  Only the `import:` fields are looked at (cabal still parses
+  # everything else), and imported files are followed so their own imports
+  # are kept too.  A project with no local imports gets an empty list, so its
+  # `cleanedSource` (and plan-nix) is unchanged.  Like `dirsWithCabalFiles`
+  # this is only forced from the filter below.
+  #
+  # cabal-install has resolved a nested import relative to the project
+  # directory in some versions and relative to the importing file in others,
+  # so both candidates are tried.  Only files that exist and pass the source
+  # filter are kept (and read).  URL imports, absolute paths and paths
+  # outside the source are skipped.
+  #
+  # The files are copied as they are, so `source-repository-package` and
+  # `repository` stanzas in them would not get the `sha256map`/`inputMap`
+  # treatment `fixedProject` gives the project text (and cabal cannot fetch
+  # anything in the sandbox).  Rather than fail later with a fetch error,
+  # say so here.
+  importedFiles =
+    let
+      inherit (pkgs.lib) concatMap filter foldl' hasPrefix init
+        concatStringsSep splitString removePrefix imap0 elemAt length;
+      projectDirStr = builtins.unsafeDiscardStringContext origSrcSubDir;
+      trim = str: let m = builtins.match "[[:space:]]*(.*[^[:space:]])[[:space:]]*" str;
+        in if m == null then "" else builtins.head m;
+      unquote = str: let m = builtins.match "\"(.*)\"" str;
+        in if m == null then str else builtins.head m;
+      # The values of the `import:` fields in `text` (any indentation, so
+      # imports inside `if` blocks count; the value may be on the next line).
+      importsOf = text:
+        let
+          lines = splitString "\n" (builtins.unsafeDiscardStringContext text);
+          nextValue = i: if i + 1 < length lines then trim (elemAt lines (i + 1)) else "";
+        in filter (v: v != "") (concatMap (x: x) (imap0 (i: line:
+          let m = builtins.match "[[:space:]]*import[[:space:]]*:(.*)" line;
+          in if m == null then []
+            else let v = trim (builtins.head m);
+              in [ (unquote (if v == "" then nextValue i else v)) ]) lines));
+      # Collapse `.` and `..` segments of an absolute path string.  (Unlike
+      # `haskellLib.normalizeRelativePath` this does not fail on a `..` above
+      # the root; such a path is dropped by the `hasPrefix` check below.)
+      normalise = p: "/" + concatStringsSep "/" (foldl'
+        (acc: seg:
+          if seg == "" || seg == "." then acc
+          else if seg == ".." then (if acc == [] then acc else init acc)
+          else acc ++ [ seg ])
+        [] (splitString "/" p));
+      local = i: !(hasPrefix "/" i) && builtins.match "[a-zA-Z][a-zA-Z0-9+.-]*://.*" i == null;
+      realPath = pathStr: cabalFilesRoot + removePrefix cabalFilesRootStr pathStr;
+      typeOf = pathStr: let p = realPath pathStr;
+        in if builtins.pathExists p then pkgs.lib.filesystem.pathType p else null;
+      # Existing, unfiltered files (as absolute path strings under the
+      # source) for the imports in `text`, resolved against each of `dirs`.
+      resolve = dirs: text: filter
+        (f: hasPrefix (cabalFilesRootStr + "/") f
+          && builtins.elem (typeOf f) [ "regular" "symlink" ]
+          && parentFilter f (typeOf f))
+        (concatMap (i: map (d: normalise "${d}/${i}") dirs)
+          (filter local (importsOf text)));
+      noRepos = f: text:
+        if builtins.match "(.*\n)?[[:space:]]*(source-repository-package|repository)([[:space:]].*)?" text != null
+          then throw ("${f}, imported by the ${cabalProjectFileName} file, has a `source-repository-package` or `repository` stanza."
+            + " haskell.nix only handles those in the project file itself (or `cabalProjectLocal`), so please move it there.")
+          else text;
+    in map (x: x.key) (builtins.genericClosure {
+      startSet = map (key: { inherit key; })
+        (resolve [ projectDirStr ] rawCabalProject);
+      # A symlink is kept (copied as it is) but not followed, since it might
+      # point at a directory.
+      operator = { key }:
+        if typeOf key != "regular" then []
+        else map (key: { inherit key; })
+          (resolve [ projectDirStr (dirOf key) ]
+            (noRepos key (builtins.readFile (realPath key))));
+    });
+
   cleanedSource = haskellLib.cleanSourceWith {
     name = if name != null then "${name}-root-cabal-files" else "source-root-cabal-files";
     src = cabalFilesOrigSrc;
     # Directories in `dirsWithCabalFiles` have already passed `parentFilter`,
-    # so it is only called here for files we want and for `subDir`'s parents.
+    # so it is only called here for files we want, for `subDir`'s parents
+    # and for the directories of imported files.
     filter = path: type:
       if type == "directory"
         then dirsWithCabalFiles ? ${path}
-          || pkgs.lib.hasPrefix (path + "/") (origSrcSubDir + "/")
+          || (pkgs.lib.hasPrefix (path + "/") (origSrcSubDir + "/")
+              || pkgs.lib.any (pkgs.lib.hasPrefix (path + "/")) importedFiles)
             && parentFilter path type
-        else isCabalFile path && parentFilter path type; };
+        else isCabalFile path && parentFilter path type
+          || builtins.elem path importedFiles; };
 
   # When there is no `cabal.project` file `cabal-install` behaves as if there was
   # one containing `packages: ./*.cabal`.  Even if there is a `cabal.project.local`
