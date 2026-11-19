@@ -25,7 +25,10 @@
 , compiler, composeStore, makeGhcShim, cabalProjectLocal ? null
   # The cabal-install the v2 slice builder used, and its version.  See
   # `toolDrvs` below for why the shell's `cabal` has to be that one.
-, v2CabalInstall, v2CabalInstallVersion, withBuildCompiler ? false }:
+, v2CabalInstall, v2CabalInstallVersion, withBuildCompiler ? false
+  # Unit ids of the project's `extra-packages` (see
+  # `haskellLib.extraPackageUnitIds`).
+, extraPackageUnitIds ? [] }:
 
 { # Same shape as shellFor's `packages`: packages the user works on.
   # Their *dependencies* are composed into the shell's cabal store;
@@ -86,6 +89,10 @@
 , buildInputs ? []
 , nativeBuildInputs ? []
 , shellHook ? ""
+  # Also put the libraries of the project's `extra-packages` in the
+  # composed store.  They are in the plan, but nothing in the project
+  # depends on them, so no selected component pulls them in.
+, includeExtraPackages ? true
 , ...
 }@args:
 
@@ -179,7 +186,16 @@ let
         && (t.passthru.isSlice or false)
         && !(pkgIsSelected (exePkg t)))
     (lib.concatMap (c: c.executableToolDepends or []) selectedAllComps);
-  ownDepSlices = ownLibDepSlices ++ ownBuildToolSlices;
+  # The `extra-packages` libraries.  Looked up by unit id, as in v1:
+  # `hsPkgs.<name>` throws when the plan has more than one version.
+  extraPackageSlices = lib.optionals includeExtraPackages
+    (lib.filter (s: s != null)
+      (map (id:
+          let p = hsPkgs.${id} or null;
+          in if p == null || pkgIsSelected p then null
+             else p.components.library or null)
+        extraPackageUnitIds));
+  ownDepSlices = ownLibDepSlices ++ ownBuildToolSlices ++ extraPackageSlices;
 
   # When the user combines this shell with other v2 shells via
   # `inputsFrom` (notably the cross shells the haskell-nix overlay

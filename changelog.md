@@ -52,7 +52,8 @@ that will impact users.
     in the shell's package db.  They are in the plan, but nothing depends
     on them, so `cabal build` never builds them and an `exactDeps = true`
     shell could not use them at all.  Set `includeExtraPackages = false`
-    to leave them out.  Only for `builderVersion = 1` shells.
+    to leave them out.  Under `builderVersion = 2` they are added to the
+    shell's composed cabal store.
 
 ## November 8, 2026
 

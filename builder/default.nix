@@ -185,7 +185,7 @@ let
   };
   shellForV2 = haskellLib.weakCallPackage pkgs ./shell-for-v2.nix {
     inherit hsPkgs haskellLib ghc compiler composeStore makeGhcShim cabalProjectLocal
-            v2CabalInstall v2CabalInstallVersion withBuildCompiler;
+            v2CabalInstall v2CabalInstallVersion withBuildCompiler extraPackageUnitIds;
     inherit (buildPackages) mkShell;
     haskell-nix = pkgs.haskell-nix;
   };
