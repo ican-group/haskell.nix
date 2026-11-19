@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-55e6a57d.js";
+            window.path_to_searchindex_js = "searchindex-9d388b0d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-924aa984.js"></script>
@@ -185,6 +185,10 @@ all local packages (<code>package.isLocal</code>, which also includes
 <code>modules = [{ projectPackages.ghcOptions = [ "-Werror" ]; }]</code> to use
 <code>-Werror</code> only in Nix builds.  See the Modules section of
 <code>docs/reference/library.md</code>.</li>
+<li>Each package now has an <code>sdist</code> attribute
+(<code>project.hsPkgs.&lt;pkg&gt;.sdist</code>), the tarball <code>cabal sdist</code> makes for
+it.  It needs no compiler and no dependencies, and fails if the
+<code>.cabal</code> file lists a file that is not in the source.</li>
 </ul>
 <h2 id="november-8-2026"><a class="header" href="#november-8-2026">November 8, 2026</a></h2>
 <ul>

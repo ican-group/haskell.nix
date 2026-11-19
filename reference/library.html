@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-55e6a57d.js";
+            window.path_to_searchindex_js = "../searchindex-9d388b0d.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-924aa984.js"></script>
@@ -239,6 +239,21 @@ the package, look within the components structure.</p>
   benchmarks = { NAME = COMPONENT; };
 }
 </code></pre>
+<p>A package also has an <code>sdist</code> attribute: the source distribution
+tarball <code>cabal sdist</code> makes for it, built with no compiler and no
+dependencies.  <code>sdist.tarball</code> is the path of the <code>.tar.gz</code> file, and
+Hydra lists it as a build product.  It fails to build if the <code>.cabal</code>
+file names a file (for example in <code>extra-source-files</code>) that is not in
+the package source, so checking it in CI catches that before an upload
+to Hackage.</p>
+<pre><code class="language-nix">project.hsPkgs.my-package.sdist          # directory holding my-package-1.0.tar.gz
+project.hsPkgs.my-package.sdist.tarball  # the .tar.gz itself
+</code></pre>
+<p>It uses the <code>.cabal</code> file that <code>components</code> are built from (a Hackage
+revision, or the file hpack generates from <code>package.yaml</code>) but not the
+<code>patches</code> or hooks set for the package.  Symlinks in the package
+directory that point outside it (such as <code>LICENSE -&gt; ../LICENSE</code>) are
+packed as the files they point to.</p>
 <h2 id="component"><a class="header" href="#component">Component</a></h2>
 <p>In <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a>, a <em>component</em> is a derivation corresponding to a
 <a href="https://www.haskell.org/cabal/users-guide/developing-packages.html">Cabal component</a>
