@@ -1178,18 +1178,23 @@ final: prev: {
             flake' =
               let
                 combinePrefix = a: b: if a == "default" then b else "${a}-${b}";
-                mkFlake = project: haskellLib.mkFlake project rec {
+                # Only the unprefixed flake gets `packages.default` and
+                # `apps.default`: in a cross or variant flake they would
+                # become `<prefix>:default`, a second name for a component
+                # already there.
+                mkFlake = isMain: project: haskellLib.mkFlake project rec {
                   selectPackages = project.args.flake.packages;
                   coverage = final.lib.optionalAttrs project.args.flake.doCoverage
                     (haskellLib.projectCoverageCiJobs
                       project selectPackages project.args.flake.coverageProjectModule);
                   inherit (project.args.flake) doHaddock;
+                  doDefaults = isMain && project.args.flake.doDefaults;
                 };
                 forAllCrossCompilers = prefix: project: (
-                    [{ ${prefix} = mkFlake project; }]
+                    [{ ${prefix} = mkFlake (prefix == "default") project; }]
                   ++ (map (project: {
                        ${combinePrefix prefix project.pkgs.stdenv.hostPlatform.config} =
-                         mkFlake project;
+                         mkFlake false project;
                       })
                      (project.args.flake.crossPlatforms project.projectCross)
                   ));
