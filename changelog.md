@@ -36,6 +36,18 @@ that will impact users.
     used as they are, so a `source-repository-package` or `repository`
     stanza in one is reported as an error (move it to the project file or
     `cabalProjectLocal`, where `sha256map`/`inputMap` apply).
+  * New component option `generateOptparseApplicativeCompletions` (and
+    `haskellLib.addOptparseApplicativeCompletions`) installs bash, zsh and
+    fish completion scripts for an exe built with optparse-applicative:
+
+        packages.my-pkg.components.exes.my-exe.generateOptparseApplicativeCompletions = true;
+
+    The scripts are made in a separate derivation that links to the exe,
+    so this does not rebuild it, and are installed with nixpkgs'
+    `installShellCompletion`.  When cross compiling the exe runs under
+    the component's `testWrapper` (emulator); without one the exe is left
+    without completions.  Set it per exe or per package, not project-wide
+    (that would include build tools such as `alex`).
 
 ## November 8, 2026
 

@@ -247,6 +247,7 @@ let
   # All tests.
   allTests = {
     cabal-simple = callTest ./cabal-simple { inherit util; };
+    optparse-completions = callTest ./optparse-completions {};
     cabal-files-filter = callTest ./cabal-files-filter {};
     sdist = callTest ./sdist {};
     cabal-project-imports = callTest ./cabal-project-imports {};
