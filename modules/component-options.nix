@@ -60,6 +60,11 @@
     };
 
     testFlags = lib.mkOption {
+      description = ''
+        Extra command-line arguments passed to the test executable when its
+        check (`hsPkgs.<pkg>.checks.<name>`) runs it.
+        See docs/tutorials/testing.md.
+      '';
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [];
     };
@@ -80,12 +85,25 @@
     };
 
     doCheck = lib.mkOption {
+      description = ''
+        Whether this test suite gets a check (`hsPkgs.<pkg>.checks.<name>`),
+        the derivation that runs it.  Tests with `doCheck = false` are left out
+        of `checks`, `collectChecks` and the flake `checks`; the test component
+        itself is still built by `components.tests.<name>`.
+        See docs/tutorials/testing.md.
+      '';
       type = lib.types.bool;
       default = true;
     };
 
     doCrossCheck = lib.mkOption {
-      description = "Run doCheck also in cross compilation settings. This can be tricky as the test logic must know how to run the tests on the target.";
+      description = ''
+        Set to true by haskell.nix's Windows and Linux cross overlays.  It does
+        not currently decide which checks exist or whether they run:
+        cross-compiled projects get a check for every test with `doCheck` set,
+        and whether it can run depends on `testWrapper`.
+        See docs/tutorials/testing.md.
+      '';
       type = lib.types.bool;
       default = false;
     };
