@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-3909441b.js";
+            window.path_to_searchindex_js = "searchindex-9942da08.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-924aa984.js"></script>
@@ -178,18 +178,23 @@
 that will impact users.</p>
 <h2 id="november-19-2026"><a class="header" href="#november-19-2026">November 19, 2026</a></h2>
 <ul>
-<li>New <code>projectPackages</code> and <code>localPackages</code> module options set package
+<li>
+<p>New <code>projectPackages</code> and <code>localPackages</code> module options set package
 options for all of the project’s own packages (<code>package.isProject</code>) or
 all local packages (<code>package.isLocal</code>, which also includes
 <code>source-repository-package</code>s) without listing them, for instance
 <code>modules = [{ projectPackages.ghcOptions = [ "-Werror" ]; }]</code> to use
 <code>-Werror</code> only in Nix builds.  See the Modules section of
-<code>docs/reference/library.md</code>.</li>
-<li>Each package now has an <code>sdist</code> attribute
+<code>docs/reference/library.md</code>.</p>
+</li>
+<li>
+<p>Each package now has an <code>sdist</code> attribute
 (<code>project.hsPkgs.&lt;pkg&gt;.sdist</code>), the tarball <code>cabal sdist</code> makes for
 it.  It needs no compiler and no dependencies, and fails if the
-<code>.cabal</code> file lists a file that is not in the source.</li>
-<li><code>project.flake</code> (and <code>haskellLib.mkFlake</code>) now adds <code>packages.default</code>
+<code>.cabal</code> file lists a file that is not in the source.</p>
+</li>
+<li>
+<p><code>project.flake</code> (and <code>haskellLib.mkFlake</code>) now adds <code>packages.default</code>
 and <code>apps.default</code> when the project directory (the one holding
 <code>cabal.project</code> or <code>stack.yaml</code>) is itself a package’s directory, so
 a bare <code>nix build</code> or <code>nix run</code> works, taking its target from the
@@ -200,8 +205,10 @@ Nothing is added when there is no such package or no single choice,
 nor to cross or variant (prefixed) flakes.  A <code>default</code> passed in
 <code>packages</code> or <code>apps</code> wins.  To turn it off set <code>flake.doDefaults = false</code> (or pass <code>doDefaults = false</code>, <code>defaultPackage = null</code> or
 <code>defaultApp = null</code> to <code>haskellLib.mkFlake</code>).  <code>ciJobs</code> and
-<code>hydraJobs</code> do not get a second copy of the component.</li>
-<li>Local files a <code>cabal.project</code> (or <code>cabalProjectLocal</code>) pulls in with
+<code>hydraJobs</code> do not get a second copy of the component.</p>
+</li>
+<li>
+<p>Local files a <code>cabal.project</code> (or <code>cabalProjectLocal</code>) pulls in with
 <code>import:</code> are now kept in the source used to compute the plan, whatever
 their names, and so are the files they import in turn.  Before only
 <code>.cabal</code> and <code>package.yaml</code> files were kept, so cabal failed with
@@ -209,7 +216,21 @@ their names, and so are the files they import in turn.  Before only
 without local imports get the same plan as before.  Imported files are
 used as they are, so a <code>source-repository-package</code> or <code>repository</code>
 stanza in one is reported as an error (move it to the project file or
-<code>cabalProjectLocal</code>, where <code>sha256map</code>/<code>inputMap</code> apply).</li>
+<code>cabalProjectLocal</code>, where <code>sha256map</code>/<code>inputMap</code> apply).</p>
+</li>
+<li>
+<p>New component option <code>generateOptparseApplicativeCompletions</code> (and
+<code>haskellLib.addOptparseApplicativeCompletions</code>) installs bash, zsh and
+fish completion scripts for an exe built with optparse-applicative:</p>
+<pre><code>packages.my-pkg.components.exes.my-exe.generateOptparseApplicativeCompletions = true;
+</code></pre>
+<p>The scripts are made in a separate derivation that links to the exe,
+so this does not rebuild it, and are installed with nixpkgs’
+<code>installShellCompletion</code>.  When cross compiling the exe runs under
+the component’s <code>testWrapper</code> (emulator); without one the exe is left
+without completions.  Set it per exe or per package, not project-wide
+(that would include build tools such as <code>alex</code>).</p>
+</li>
 </ul>
 <h2 id="november-8-2026"><a class="header" href="#november-8-2026">November 8, 2026</a></h2>
 <ul>
