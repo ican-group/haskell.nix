@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-4df9cfbc.js";
+            window.path_to_searchindex_js = "../searchindex-55e6a57d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-5b1b9093.js"></script>
+        <script src="../toc-924aa984.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -549,7 +549,8 @@ to <code>tests.mypackage.unit-tests</code>.</p>
 <h3 id="collectchecks-collectchecks"><a class="header" href="#collectchecks-collectchecks">collectChecks, collectChecks’</a></h3>
 <p>These are just like <code>collectComponents</code> and <code>collectComponents'</code>, except that they collect
 the <code>checks</code> attributes of packages (which aren’t components, and so can’t be collected
-by the other functions.</p>
+by the other functions). Only tests with <code>doCheck</code> enabled have a check; see
+<a href="../tutorials/testing.html">Running tests</a>.</p>
 <h4 id="check"><a class="header" href="#check">check</a></h4>
 <p>This function turns a derivation that builds a test into one to run it.</p>
 <div class="table-wrapper">
@@ -563,7 +564,8 @@ by the other functions.</p>
 </table>
 </div>
 <p>For convenience <code>$pkg.components.tests</code> are mapped with this function
-to <code>$pkg.checks</code>.</p>
+to <code>$pkg.checks</code> (only the tests with <code>doCheck</code> enabled; see
+<a href="../tutorials/testing.html">Running tests</a>).</p>
 <p>This function is intended for use with <code>tests</code> but it should also work
 for <code>exes</code> and <code>benchmarks</code> if you just want to run them to make sure
 they execute.</p>

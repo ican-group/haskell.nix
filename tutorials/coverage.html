@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-4df9cfbc.js";
+            window.path_to_searchindex_js = "../searchindex-55e6a57d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-5b1b9093.js"></script>
+        <script src="../toc-924aa984.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -212,7 +212,8 @@ pkgs.haskell-nix.project {
 </code></pre>
 <p>This will generate a coverage report for the package you requested.
 All tests that are enabled (configured with <code>doCheck == true</code>) are
-included in the coverage report.</p>
+included in the coverage report. See <a href="./testing.html">Running tests</a> for
+how <code>doCheck</code> selects tests.</p>
 <p>See the <a href="../dev/coverage.html#package-reports">developer coverage docs</a> for more information.</p>
 <h2 id="project-wide"><a class="header" href="#project-wide">Project-wide</a></h2>
 <pre><code class="language-shell">nix-build default.nix -A "projectWithCoverage.projectCoverageReport"
@@ -234,7 +235,7 @@ packages in the project.</p>
 let
   inherit (pkgs.haskell-nix) haskellLib;
 
-  project = haskellLib.project {
+  project = pkgs.haskell-nix.project {
     src = pkgs.haskell-nix.haskellLib.cleanGit {
       name = "haskell-nix-project";
       src = ./.;
@@ -251,26 +252,24 @@ let
   # unit-test check and only shows coverage information for $pkgA, not
   # $pkgB.
   custom$pkgACoverageReport = haskellLib.coverageReport rec {
-    name = "$pkgA-unit-tests-only"
-    inherit (project.$pkgA.components) library;
-    checks = [project.$pkgA.components.checks.unit-test];
+    name = "$pkgA-unit-tests-only";
+    checks = [project.hsPkgs.$pkgA.checks.unit-test];
     # Note that this is the default value of the "mixLibraries"
     # argument and so this line isn't really necessary.
-    mixLibraries = [project.$pkgA.components.library];
+    mixLibraries = [project.hsPkgs.$pkgA.components.library];
   };
 
   custom$pkgBCoverageReport = haskellLib.coverageReport rec {
-    name = "$pkgB-unit-tests-only"
-    inherit (project.$pkgB.components) library;
-    checks = [project.$pkgB.components.checks.unit-test];
-    mixLibraries = [project.$pkgB.components.library];
+    name = "$pkgB-unit-tests-only";
+    checks = [project.hsPkgs.$pkgB.checks.unit-test];
+    mixLibraries = [project.hsPkgs.$pkgB.components.library];
   };
  
   # Generate a project coverage report that only includes the unit
   # tests of the project, and only shows how each unit test effects
   # the coverage of it's package, and not other packages in the
   # project.
-  allUnitTestsProjectReport = haskellLib.projectCoverageReport [custom$pkgACoverageReport custom$pkgBCoverageReport];
+  allUnitTestsProjectCoverageReport = haskellLib.projectCoverageReport project [custom$pkgACoverageReport custom$pkgBCoverageReport];
 in {
   inherit project custom$pkgACoverageReport custom$pkgBCoverageReport allUnitTestsProjectCoverageReport;
 }
@@ -280,7 +279,7 @@ in {
 
                     <nav class="nav-wrapper" aria-label="Page navigation">
                         <!-- Mobile navigation buttons -->
-                            <a rel="prev" href="../tutorials/wasm.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                            <a rel="prev" href="../tutorials/testing.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
@@ -294,7 +293,7 @@ in {
             </div>
 
             <nav class="nav-wide-wrapper" aria-label="Page navigation">
-                    <a rel="prev" href="../tutorials/wasm.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                    <a rel="prev" href="../tutorials/testing.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 

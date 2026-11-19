@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-4df9cfbc.js";
+            window.path_to_searchindex_js = "../searchindex-55e6a57d.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-5b1b9093.js"></script>
+        <script src="../toc-924aa984.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -286,6 +286,12 @@ cabal build
 <p>There are also other components such as <code>exes</code>, <code>tests</code>, <code>benchmarks</code> and <code>all</code>.
 To build an executable:</p>
 <pre><code class="language-shell">nix build .#your-package-name:exe:your-exe-name
+</code></pre>
+<p>Building a test component (<code>your-package-name:test:your-test-name</code>) only
+compiles the test. To run it, build its check, or run all of them with
+<code>nix flake check</code>
+(see <a href="./testing.html">Running tests</a>). Replace <code>x86_64-linux</code> with your system:</p>
+<pre><code class="language-shell">nix build '.#checks.x86_64-linux."your-package-name:test:your-test-name"'
 </code></pre>
 <p>Flakes provide a <code>devShell</code> attribute that allow you to spawn a developer shell, here with <code>cabal</code>, <code>hlint</code> and <code>haskell-language-server</code>:</p>
 <pre><code class="language-shell">nix develop .
