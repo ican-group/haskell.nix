@@ -22,6 +22,7 @@
     - [Command-line tools](./reference/commands.md)
     - [Haskell.nix Library](./reference/library.md)
     - [Module options](./reference/modules.md)
+    - [Tools](./reference/tools.md)
     - [Troubleshooting](./troubleshooting.md)
 - [Templates / Abstraction](./template/index.html)
     - [IOHKs nix library](./template/iohk-nix.md)
