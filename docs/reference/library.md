@@ -509,6 +509,7 @@ shellFor =
 | `packages`     | Function | Package selection function. It takes a list of [Haskell packages](#haskell-package) and returns a subset of these packages. |
 | `components`   | Function | Similar to `packages`, by default all the components of the selected packages are selected. |
 | `additional`   | Function | Similar to `packages`, but the selected packages are built and included in `ghc-pkg list` (not just their dependencies). |
+| `includeExtraPackages` | Boolean | Also build and include the libraries of the project's `extra-packages` (as if they were in `additional`). `cabal build` never builds them, as nothing in the project depends on them. Defaults to `true`. |
 | `withHoogle`   | Boolean  | Whether to build a Hoogle documentation index and provide the `hoogle` command. |
 | `exactDeps`    | Boolean  | Prevents the Cabal solver from choosing any package dependency other than what are in the package set. |
 | `allToolDeps`  | Boolean  | Indicates if the shell should include all the tool dependencies of the haskell packages in the project. |

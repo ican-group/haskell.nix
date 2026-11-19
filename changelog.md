@@ -48,6 +48,15 @@ that will impact users.
     the component's `testWrapper` (emulator); without one the exe is left
     without completions.  Set it per exe or per package, not project-wide
     (that would include build tools such as `alex`).
+  * `shellFor` now includes the libraries of the project's `extra-packages`
+    in the shell's package db.  They are in the plan, but nothing depends
+    on them, so `cabal build` never builds them and an `exactDeps = true`
+    shell could not use them at all.  Set `includeExtraPackages = false`
+    to leave them out.  Under `builderVersion = 2` they are added to the
+    shell's composed cabal store.
+  * A `builderVersion = 2` shell with `exposePackagesVia = "ghc-pkg"` no
+    longer fails to build when every dependency is a boot package (the
+    composed store has no package db; an empty one is used).
 
 ## November 8, 2026
 

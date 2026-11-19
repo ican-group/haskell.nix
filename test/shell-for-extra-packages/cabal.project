@@ -1,0 +1,4 @@
+packages: pkga
+
+-- Nothing in pkga depends on split; shellFor should still provide it.
+extra-packages: split

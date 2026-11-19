@@ -17,6 +17,16 @@
       type = lib.types.unspecified;
       default = _: [];
     };
+    includeExtraPackages = lib.mkOption {
+      type = lib.types.bool;
+      default = true;
+      description = ''
+        Include the libraries of the project's `extra-packages` in the
+        shell's package db, as if they were listed in `additional`.  They are
+        in the plan, but nothing in the project depends on them, so `cabal
+        build` does not build them.
+      '';
+    };
     withHoogle = lib.mkOption {
       type = lib.types.bool;
       default = true;

@@ -12,6 +12,9 @@ in {
     };
   };
   config = {
+    # The package is an `extra-packages` here, but `shellFor` should not
+    # build it for the shell as it would for a project's `extra-packages`.
+    shell.includeExtraPackages = lib.mkDefault false;
     src = lib.mkDefault {
       outPath =
         config.evalPackages.runCommand "from-hackage-${fullName}" {} ''

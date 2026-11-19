@@ -105,6 +105,44 @@ lib.runTests {
     expected = "constraints: pantry <0.9, optparse-applicative <0.18, http-download <0.2.1\n";
   };
 
+  # `extraPackageUnitIds` finds the units only `extra-packages` brought into
+  # a plan (#1955): `lens`, but not its dependency `free` (needed only by
+  # `lens`), `text` (needed by a local library), `alex` (a local build
+  # tool), `Cabal` (a local setup dependency), `happy` (an inplace unit) or
+  # the pre-existing `base`.
+  testExtraPackageUnitIds = {
+    expr = haskellLib.extraPackageUnitIds {
+      install-plan = [
+        { type = "pre-existing"; id = "base-4"; pkg-name = "base"; depends = []; }
+        { type = "configured"; style = "local"; id = "app-0-inplace"; pkg-name = "app";
+          components = {
+            lib = { depends = [ "base-4" "text-2" ]; exe-depends = [ "alex-3" ]; };
+            setup = { depends = [ "Cabal-3" ]; };
+          }; }
+        { type = "configured"; style = "global"; id = "text-2"; pkg-name = "text"; depends = [ "base-4" ]; }
+        { type = "configured"; style = "global"; id = "alex-3"; pkg-name = "alex"; depends = [ "base-4" ]; }
+        { type = "configured"; style = "global"; id = "Cabal-3"; pkg-name = "Cabal"; depends = [ "base-4" ]; }
+        { type = "configured"; style = "inplace"; id = "happy-2-inplace"; pkg-name = "happy"; depends = [ "base-4" ]; }
+        { type = "configured"; style = "global"; id = "lens-5"; pkg-name = "lens"; depends = [ "free-5" "text-2" ]; }
+        { type = "configured"; style = "global"; id = "free-5"; pkg-name = "free";
+          components.lib.depends = [ "base-4" ]; }
+      ];
+    };
+    expected = [ "lens-5" ];
+  };
+
+  # No `extra-packages`, nothing found.
+  testExtraPackageUnitIdsNone = {
+    expr = haskellLib.extraPackageUnitIds {
+      install-plan = [
+        { type = "pre-existing"; id = "base-4"; pkg-name = "base"; depends = []; }
+        { type = "configured"; style = "local"; id = "app-0-inplace"; pkg-name = "app"; depends = [ "text-2" ]; }
+        { type = "configured"; style = "global"; id = "text-2"; pkg-name = "text"; depends = [ "base-4" ]; }
+      ];
+    };
+    expected = [ ];
+  };
+
   # `shadowedNonReinstallablePkgs` flags names in `nonReinstallablePkgs` that the
   # project pins to a version different from the compiler-shipped one (#1657).
 
