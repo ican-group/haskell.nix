@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-d6fa419a.js";
+            window.path_to_searchindex_js = "../searchindex-d76e40db.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a339c369.js"></script>
@@ -614,6 +614,7 @@ packages with <code>ghci</code> or <code>cabal v2-build</code> (but not Stack).<
 <tr><td><code>packages</code></td><td>Function</td><td>Package selection function. It takes a list of <a href="#haskell-package">Haskell packages</a> and returns a subset of these packages.</td></tr>
 <tr><td><code>components</code></td><td>Function</td><td>Similar to <code>packages</code>, by default all the components of the selected packages are selected.</td></tr>
 <tr><td><code>additional</code></td><td>Function</td><td>Similar to <code>packages</code>, but the selected packages are built and included in <code>ghc-pkg list</code> (not just their dependencies).</td></tr>
+<tr><td><code>includeExtraPackages</code></td><td>Boolean</td><td>Also build and include the libraries of the project’s <code>extra-packages</code> (as if they were in <code>additional</code>). <code>cabal build</code> never builds them, as nothing in the project depends on them. Defaults to <code>true</code>.</td></tr>
 <tr><td><code>withHoogle</code></td><td>Boolean</td><td>Whether to build a Hoogle documentation index and provide the <code>hoogle</code> command.</td></tr>
 <tr><td><code>exactDeps</code></td><td>Boolean</td><td>Prevents the Cabal solver from choosing any package dependency other than what are in the package set.</td></tr>
 <tr><td><code>allToolDeps</code></td><td>Boolean</td><td>Indicates if the shell should include all the tool dependencies of the haskell packages in the project.</td></tr>

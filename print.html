@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-d6fa419a.js";
+            window.path_to_searchindex_js = "searchindex-d76e40db.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-a339c369.js"></script>
@@ -3016,6 +3016,7 @@ packages with <code>ghci</code> or <code>cabal v2-build</code> (but not Stack).<
 <tr><td><code>packages</code></td><td>Function</td><td>Package selection function. It takes a list of <a href="#haskell-package">Haskell packages</a> and returns a subset of these packages.</td></tr>
 <tr><td><code>components</code></td><td>Function</td><td>Similar to <code>packages</code>, by default all the components of the selected packages are selected.</td></tr>
 <tr><td><code>additional</code></td><td>Function</td><td>Similar to <code>packages</code>, but the selected packages are built and included in <code>ghc-pkg list</code> (not just their dependencies).</td></tr>
+<tr><td><code>includeExtraPackages</code></td><td>Boolean</td><td>Also build and include the libraries of the project’s <code>extra-packages</code> (as if they were in <code>additional</code>). <code>cabal build</code> never builds them, as nothing in the project depends on them. Defaults to <code>true</code>.</td></tr>
 <tr><td><code>withHoogle</code></td><td>Boolean</td><td>Whether to build a Hoogle documentation index and provide the <code>hoogle</code> command.</td></tr>
 <tr><td><code>exactDeps</code></td><td>Boolean</td><td>Prevents the Cabal solver from choosing any package dependency other than what are in the package set.</td></tr>
 <tr><td><code>allToolDeps</code></td><td>Boolean</td><td>Indicates if the shell should include all the tool dependencies of the haskell packages in the project.</td></tr>
@@ -138391,6 +138392,19 @@ so this does not rebuild it, and are installed with nixpkgs’
 the component’s <code>testWrapper</code> (emulator); without one the exe is left
 without completions.  Set it per exe or per package, not project-wide
 (that would include build tools such as <code>alex</code>).</p>
+</li>
+<li>
+<p><code>shellFor</code> now includes the libraries of the project’s <code>extra-packages</code>
+in the shell’s package db.  They are in the plan, but nothing depends
+on them, so <code>cabal build</code> never builds them and an <code>exactDeps = true</code>
+shell could not use them at all.  Set <code>includeExtraPackages = false</code>
+to leave them out.  Under <code>builderVersion = 2</code> they are added to the
+shell’s composed cabal store.</p>
+</li>
+<li>
+<p>A <code>builderVersion = 2</code> shell with <code>exposePackagesVia = "ghc-pkg"</code> no
+longer fails to build when every dependency is a boot package (the
+composed store has no package db; an empty one is used).</p>
 </li>
 </ul>
 <h2 id="november-8-2026"><a class="header" href="#november-8-2026">November 8, 2026</a></h2>
