@@ -161,18 +161,42 @@ in {
 
   # Is this `source-repository-package` location fetched over ssh?
   # `ssh://...`, `git+ssh://...`, `ssh+git://...` (any case), or git's
-  # scp-like `[user@]host:path` (no `://`, and a host of more than one
-  # character so a Windows drive letter is not taken for one).  Those are
-  # fetched with `builtins.fetchGit` (which uses the user's ssh agent)
-  # rather than `fetchgit`, whose sandbox has no ssh (#1996).
+  # scp-like `[user@]host:path` (see `scpLikeGitUrl`).  Those are fetched
+  # with `builtins.fetchGit` (which uses the user's ssh agent) rather than
+  # `fetchgit`, whose sandbox has no ssh (#1996).
   isSshGitUrl = url:
     builtins.match "(git\\+)?ssh(\\+git)?://.*" (normaliseGitUrlScheme url) != null
-    || (!(lib.hasInfix "://" url)
-        && !(lib.hasPrefix "file:" url)
-        && builtins.match "([^/:@]+@)?[^/:@][^/:@]+:.*" url != null);
+    || scpLikeGitUrl url != null;
 
-  # Lower-case the scheme of a `scheme://...` URL (git accepts `SSH://`,
-  # `builtins.fetchGit` does not); anything else is returned unchanged.
+  # git's scp-like `[user@]host:path` as `[ "user@" host path ]` (the
+  # first is null without a user), or null for anything else.  No `://`,
+  # not `file:`, and a host of more than one character (so a Windows
+  # drive letter is not taken for one) or a bracketed IPv6 address.
+  scpLikeGitUrl = url:
+    if lib.hasInfix "://" url || lib.hasPrefix "file:" url
+      then null
+      else builtins.match "([^/:@]+@)?(\\[[0-9A-Za-z:.%]+]|[^/:@][^/:@]+):(.*)" url;
+
+  # The URL `builtins.fetchGit` is given for an ssh location: the scheme
+  # lower-cased (git accepts `SSH://`, `builtins.fetchGit` does not), and
+  # an scp-like `[user@]host:path` written as `ssh://[user@]host/path`
+  # (`builtins.fetchGit` only converts it itself when there is a user).
+  # Like Nix's own conversion, a relative `path` ends up relative to `/`,
+  # which is what the git forges expect; `host:~/path` keeps a path
+  # relative to the home directory.
+  sshGitUrl = url:
+    let m = scpLikeGitUrl url;
+    in if m == null
+      then normaliseGitUrlScheme url
+      else
+        let
+          user = if builtins.head m == null then "" else builtins.head m;
+          host = builtins.elemAt m 1;
+          path = builtins.elemAt m 2;
+        in "ssh://${user}${host}${if lib.hasPrefix "/" path then "" else "/"}${path}";
+
+  # Lower-case the scheme of a `scheme://...` URL; anything else is
+  # returned unchanged.
   normaliseGitUrlScheme = url:
     let m = builtins.match "([A-Za-z][A-Za-z0-9+.-]*)(://.*)" url;
     in if m == null then url

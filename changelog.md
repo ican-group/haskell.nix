@@ -10,10 +10,12 @@ that will impact users.
     `fetchgit` whenever a `--sha256` was given, and its build sandbox has
     no `ssh` ("error: cannot run ssh").  Submodules are included.  A
     `--sha256` is optional; one that is given is checked and gives the
-    source `fetchgit`'s store path, so a copy already in the store is used
-    without ssh.  `tag` may also be a tag, branch or abbreviated hash
-    (outside pure evaluation).  Restricted evaluation (Hydra, non-flake)
-    refuses ssh fetches; use `inputMap` there.  See
+    source `fetchgit`'s store path.  `tag` may also be a tag, branch or
+    abbreviated hash (outside pure evaluation).  An scp-like location is
+    fetched as `ssh://[user@]host/path`.  Evaluation needs ssh access (or
+    Nix's fetcher cache): the source is no longer a fixed-output derivation
+    a binary cache could provide, and restricted evaluation (Hydra,
+    non-flake) refuses ssh fetches.  Use `inputMap` for those.  See
     `docs/tutorials/source-repository-hashes.md`.
 
 ## November 19, 2026

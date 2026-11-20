@@ -80,28 +80,46 @@ source-repository-package
 ```
 
 The locations treated this way are `ssh://...`, `git+ssh://...`,
-`ssh+git://...` and git's scp-like `[user@]host:path`.  Submodules are
-fetched too, as `fetchgit` does.
+`ssh+git://...` (in any case) and git's scp-like `[user@]host:path`
+(`host` may be a bracketed IPv6 address).  An scp-like location is
+fetched as `ssh://[user@]host/path`, the way Nix itself reads
+`user@host:path`: a relative `path` is taken from `/`, which is what
+GitHub, GitLab and other forges expect.  For a path relative to your home
+directory on your own server, write `host:~/path`.  Submodules are fetched
+too, as `fetchgit` does.
 
 `tag` can be a full commit hash, a tag name, a branch name or an
 abbreviated commit hash; the last three are resolved by fetching all of the
 repository's refs.  Use the full commit hash where you can: a name can move,
-so the fetch is not reproducible, and pure (flake) evaluation refuses
-anything but a full hash.
+so the fetch is not reproducible; pure (flake) evaluation refuses anything
+but a full hash; and Nix looks a name up again (over ssh, fetching all the
+refs) once its cached answer is older than `tarball-ttl` (an hour by
+default), so evaluation then needs the network again.
 
 A `--sha256` is optional for these, since the commit hash already pins the
 content.  If one is given it is checked (a wrong one fails with "NAR hash
 mismatch"), and the source gets the same store path `fetchgit` would have
-given it.  A copy already in the Nix store is then used without contacting
-the repository, so later evaluations do not need ssh.
+given it.  The hash is of the files as `nix-prefetch-git` checks them out;
+`builtins.fetchGit` takes them straight from the repository, without the
+checkout conversions a `.gitattributes` file can ask for (`eol`, `ident`,
+`filter`), so for a repository that uses those the two differ and the
+`--sha256` will not match.  Leave the `--sha256` out for such a repository.
+
+Nix keeps what it has fetched in its own cache (`~/.cache/nix`), and
+evaluating the project again uses that rather than ssh.  A copy that is
+only in the Nix store, or in a binary cache, is not used: unlike
+`fetchgit`'s fixed-output derivation, the source cannot be substituted,
+so a machine without access to the repository (a CI runner without your
+keys, for instance) cannot evaluate the project even if your binary cache
+has the source.  Use `inputMap` there, as below.
 
 Restricted evaluation (`restrict-eval`, as used by Hydra for non-flake
 jobsets) refuses `builtins.fetchGit` of an ssh URL outright ("access to URI
 ... is forbidden in restricted mode"), even when the source is already in
-the store.  There, and for private https repositories, the repository has
-to come from somewhere Nix can already read.  With flakes, add it as an
-input and pass it in `inputMap`, keyed by the `location` from the
-`cabal.project` file.  Lock the input to the same commit as the `tag`
+the store.  There, for machines without access to the repository, and for
+private https repositories, the repository has to come from somewhere Nix
+can already read.  With flakes, add it as an input and pass it in
+`inputMap`, keyed by the `location` from the `cabal.project` file.  Lock the input to the same commit as the `tag`
 (haskell.nix checks this, and stops with "may not match" otherwise), or key
 the entry by `"<location>/<tag>"` when `tag` is a name that points to the
 locked commit:

@@ -77,6 +77,8 @@ lib.runTests {
       "ssh+git://git@github.com/owner/repo.git"
       "SSH://git@github.com/owner/repo.git"
       "github.com:owner/repo.git"
+      "git@[fd00::5]:org/repo.git"
+      "[fd00::5]:org/repo.git"
       "https://github.com/ican-group/haskell.nix.git"
       "http://example.com/repo.git"
       "git://example.com/repo.git"
@@ -87,19 +89,33 @@ lib.runTests {
       "C:/src/repo.git"
       "https://user@example.com:8443/repo.git"
     ];
-    expected = [ true true true true true true true false false false false false false false false false ];
+    expected = [ true true true true true true true true true false false false false false false false false false ];
   };
 
-  testNormaliseGitUrlScheme = {
-    expr = map haskellLib.normaliseGitUrlScheme [
+  # The URL `builtins.fetchGit` gets for an ssh location: it rejects an
+  # upper-case scheme and an scp-like URL without a user.
+  testSshGitUrl = {
+    expr = map haskellLib.sshGitUrl [
       "SSH://git@github.com/Owner/Repo.git"
       "Git+SSH://git@github.com/Owner/Repo.git"
+      "ssh://git@github.com/owner/repo.git"
       "git@github.com:Owner/Repo.git"
+      "github.com:owner/repo.git"
+      "git@example.com:/srv/git/repo.git"
+      "example.com:~/repo.git"
+      "git@[fd00::5]:org/repo.git"
+      "[fd00::5]:org/repo.git"
     ];
     expected = [
       "ssh://git@github.com/Owner/Repo.git"
       "git+ssh://git@github.com/Owner/Repo.git"
-      "git@github.com:Owner/Repo.git"
+      "ssh://git@github.com/owner/repo.git"
+      "ssh://git@github.com/Owner/Repo.git"
+      "ssh://github.com/owner/repo.git"
+      "ssh://git@example.com/srv/git/repo.git"
+      "ssh://example.com/~/repo.git"
+      "ssh://git@[fd00::5]/org/repo.git"
+      "ssh://[fd00::5]/org/repo.git"
     ];
   };
 
