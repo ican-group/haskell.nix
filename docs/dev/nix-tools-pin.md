@@ -24,14 +24,16 @@ release is made and the pin is bumped:
 3. The `upload-artifacts` workflow ("Update Static Nix Tools") runs once
    Hydra has finished that commit: either straight away, if Hydra already
    had when the tag was pushed, or when hydra-github-bridge sets the
-   commit's `hydra` status to `success`.  It downloads the zips from Hydra,
-   publishes the GitHub release, and pushes a branch
-   `update-nix-tools-static/<tag>` (`update-nix-tools-static-sh/<tag>`)
-   that updates the pin file.  If the workflow cannot open the pull request
-   itself, open it by hand from that branch.  If a Hydra build failed,
-   restart it on Hydra: when the `hydra` status turns green the workflow
-   runs again by itself.  "Run workflow" with the tag as input re-runs it by
-   hand.
+   commit's `hydra` status to `success` or `failure`.  Failures elsewhere
+   in the eval do not matter; only the nix-tools zip jobs have to succeed.
+   It downloads the zips from Hydra, publishes the GitHub release, and
+   pushes a branch `update-nix-tools-static/<tag>`
+   (`update-nix-tools-static-sh/<tag>`) that updates the pin file.  If the
+   workflow cannot open the pull request itself, open it by hand from that
+   branch.  If a zip job failed, restart it on Hydra and, once it succeeds,
+   re-run the workflow with "Run workflow" and the tag as input.  (It only
+   runs again by itself if that was the eval's last failure, so the
+   `hydra` status turns green.)
 
 4. Merge the pin pull request once CI is green.
 

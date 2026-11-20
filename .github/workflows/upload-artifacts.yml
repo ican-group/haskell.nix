@@ -12,12 +12,15 @@ name: Update Static Nix Tools
 #                        must keep the Cabal 3.16 tools.
 #
 # Nothing here waits for Hydra.  hydra-github-bridge posts a `hydra` commit
-# status on every commit Hydra evaluates, and sets it to `success` once Hydra
-# has evaluated the commit and finished every build.  That status change
-# starts this workflow, which then releases whatever tags point at the
-# commit.  A tag pushed after Hydra has already finished its commit is
-# released by the tag push itself; a tag pushed earlier is left to the later
-# status event.
+# status on every commit Hydra evaluates: `pending` while it works, then
+# `success` once every build succeeded, or `failure` once every build
+# finished and some failed (or straight away if the evaluation has errors).
+# A finished `hydra` status starts this workflow, which releases whatever
+# tags point at the commit.  `failure` counts too: master's eval is rarely
+# all green, and what matters is only that the nix-tools zip jobs succeeded,
+# which `release` checks job by job.  A tag pushed after Hydra has already
+# finished its commit is released by the tag push itself; a tag pushed
+# earlier is left to the later status event.
 #
 # Release tags are cut from master commits, which Hydra evaluates in the
 # `master` jobset.
@@ -27,7 +30,9 @@ on:
   push:
     tags:
       - "nix-tools-*"
-  # Re-release a tag by hand, e.g. after restarting a failed Hydra build.
+  # Re-release a tag by hand, e.g. after restarting a failed Hydra build (a
+  # `hydra` status that is already `failure` is not posted again when a
+  # restarted build of a still-failing eval succeeds).
   workflow_dispatch:
     inputs:
       tag:
@@ -45,13 +50,13 @@ env:
 
 jobs:
   find-releases:
-    # Every commit status starts this workflow.  Only a successful `hydra`
-    # one needs a look; the rest are skipped here without a runner.  (The
+    # Every commit status starts this workflow.  Only a finished `hydra` one
+    # needs a look; the rest are skipped here without a runner.  (The
     # event's `branches` cannot narrow this to master commits: it lists at
     # most 10 branches that merely contain the commit.)
     if: >-
       github.event_name != 'status' ||
-      (github.event.context == 'hydra' && github.event.state == 'success')
+      (github.event.context == 'hydra' && github.event.state != 'pending')
     runs-on: ubuntu-latest
     outputs:
       releases: ${{ steps.find.outputs.releases }}
@@ -89,11 +94,10 @@ jobs:
                       --jq 'map(select(.context == "hydra")) | first // {}')
             state=$(jq -r '.state // "none"' <<<"$hydra")
             url=$(jq -r '.target_url // ""' <<<"$hydra")
+            # `failure` may only be unrelated jobs; `release` checks the ones
+            # it needs.
             case "$state" in
-              success) ;;
-              failure|error)
-                echo "::error::Hydra failed for $commit ($url); restart the failed builds there and $tag is released when the hydra status turns green"
-                exit 1 ;;
+              success|failure|error) ;;
               *)
                 echo "::notice::Hydra has not finished $commit yet (hydra status: $state); $tag will be released when it does"
                 tags="" ;;
@@ -174,12 +178,14 @@ jobs:
             # testing this); a job missing from the eval still fails fast.
             meta=$(curl -sfL --retry 3 --retry-delay 5 --max-time 120 -H 'Accept: application/json' "$hydra/eval/$EVAL/job/$job") \
               || { echo "::error::$job is not in eval $EVAL"; exit 1; }
-            # The `hydra` status only goes green once every build of the eval
-            # finished and succeeded, so anything else is an error.
-            [ "$(jq -r '.finished' <<<"$meta")" = 1 ] && [ "$(jq -r '.buildstatus' <<<"$meta")" = 0 ] \
-              || { echo "::error::$job (build $(jq -r '.id' <<<"$meta")) did not succeed"; exit 1; }
-
+            # A finished `hydra` status means every build finished, except
+            # after an evaluation error, which fails the status early.
             bid=$(jq -er '.id' <<<"$meta")
+            [ "$(jq -r '.finished' <<<"$meta")" = 1 ] \
+              || { echo "::error::$job (build $bid) has not finished (the eval has errors, so the hydra status failed early); once it succeeds, run this workflow by hand for $TAG"; exit 1; }
+            [ "$(jq -r '.buildstatus' <<<"$meta")" = 0 ] \
+              || { echo "::error::$job (build $bid) failed; restart it on Hydra, then run this workflow by hand for $TAG"; exit 1; }
+
             prod=$(jq -er --arg z "-$zip.zip" \
                      '[.buildproducts | to_entries[] | select(.value.type == "file" and (.value.name | endswith($z)))] | first' <<<"$meta")
             nr=$(jq -er '.key' <<<"$prod")
