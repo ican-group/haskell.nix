@@ -8,12 +8,12 @@ let
       name = "haskell-nix-project";
       src = ./.;
     };
-    compiler-nix-name = "ghc884";
+    compiler-nix-name = "ghc9103";
 
-    modules = [{
-      packages.$pkgA.components.library.doCoverage = true;
-      packages.$pkgB.components.library.doCoverage = true;
-    }];
+    # Coverage for the local packages (see "Prerequisites" above).
+    cabalProjectLocal = ''
+      coverage: True
+    '';
   };
 
   # Generate a coverage report for $pkgA that only includes the

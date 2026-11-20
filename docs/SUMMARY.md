@@ -14,6 +14,7 @@
     - [Building WebAssembly packages](./tutorials/wasm.md)
     - [Running tests](./tutorials/testing.md)
     - [Generating coverage information](./tutorials/coverage.md)
+    - [Building documentation (Haddock)](./tutorials/haddock.md)
     - [Build a specific package from Hackage or Stackage](./tutorials/building-package-from-stackage-hackage.md)
     - [Content addressed derivations](./tutorials/ca-derivations.md)
     - [Reducing closure size (removing the gcc dependency)](./tutorials/reducing-closure-size.md)
