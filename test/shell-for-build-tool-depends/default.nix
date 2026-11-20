@@ -75,8 +75,9 @@ in recurseIntoAttrs {
     meta = {
       platforms = platforms.unix;
       # The tool has to run on the build machine; this test is about the
-      # native shell.
-      disabled = haskellLib.isCrossHost;
+      # native shell.  musl (`musl64`, `static`) is not `isCrossHost`, but
+      # its shell is a cross shell whose cabal plans the tool from source.
+      disabled = haskellLib.isCrossHost || stdenv.hostPlatform.isMusl;
     };
   };
 }

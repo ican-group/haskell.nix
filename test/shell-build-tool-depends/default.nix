@@ -38,8 +38,10 @@ let
   envV2 = projectV2.shellFor { packages = ps: [ ps.btd ]; withHoogle = false; };
 
 in lib.recurseIntoAttrs ({
-  # Native only: the run drives the shell's cabal directly.
-  meta.disabled = haskellLib.isCrossHost;
+  # Native only: the run drives the shell's cabal directly.  musl
+  # (`musl64`, `static`) is not `isCrossHost`, but its shell is a cross
+  # shell whose cabal plans the tool from source.
+  meta.disabled = haskellLib.isCrossHost || stdenv.hostPlatform.isMusl;
 
   ifdInputs = { plan-nix-v2 = projectV2.plan-nix; }
     // lib.optionalAttrs (!onlyV2) { plan-nix-v1 = projectV1.plan-nix; };
