@@ -110,31 +110,30 @@ rejecting: provider-0.1.0.0/installed-... (does not contain library 'slib', whic
 
 haskell.nix's own cabal-install (the one the v2 builder uses,
 `project.v2-cabal-install`) lets installed units satisfy sub-library
-dependencies.  Give the shell that cabal instead:
+dependencies.  Give the shell that cabal instead, in a project's
+`shell` argument:
 
 ```nix
-project.shellFor {
-  tools.cabal = project.v2-cabal-install;
+pkgs.haskell-nix.cabalProject' {
+  src = ./.;
+  compiler-nix-name = "ghc9103";
+  shell.tools.cabal = "v2-cabal-install";
 }
 ```
 
-(`tools` takes a derivation as well as a version.  A derivation wins
-over a version from elsewhere, so this works even when the project sets
-`shell.tools.cabal = "latest"`, as the templates do.)
-
-In a project's `shell` argument, where `project` is not available, pick
-the same cabal-install from the project's `evalSystem` by writing the
-project arguments as a module function (as `nix/hix.nix` is):
+or in a `shellFor`:
 
 ```nix
-pkgs.haskell-nix.cabalProject' ({ pkgs, config, ... }: {
-  src = ./.;
-  compiler-nix-name = "ghc9103";
-  shell.tools.cabal =
-    let v2ci = pkgs.pkgsBuildBuild.haskell-nix.v2-cabal-install;
-    in v2ci.evalWith.${config.evalSystem} or v2ci;
-})
+project.shellFor {
+  tools.cabal = "v2-cabal-install";
+}
 ```
+
+`"v2-cabal-install"` picks the build of it for the project's
+`evalSystem`, the same derivation as `project.v2-cabal-install` (which
+`tools` also accepts, since a tool can be a derivation).  It wins over a
+`shell.tools.cabal = "latest"` from elsewhere, as the templates set; see
+"Tools given in more than one place" in [Tools](reference/tools.md).
 
 This cabal is a 3.19 pre-release build and keeps its `~/.cabal/store` in
 its own layout, so it will not reuse what another cabal-install built

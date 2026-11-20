@@ -22,8 +22,8 @@ with lib;
 #     `shell.tools.cabal = {}` resolves to; see `builder/shell-for-v2.nix`'s
 #     `cabalTool`), reusing the shell's composed cabal store.
 #   - v1 (`builderVersion = 1`, native, non-stable-haskell compilers only):
-#     the shell's GHC package db, with `tools.cabal` pinned to
-#     `project.v2-cabal-install`, because Hackage cabal-install cannot let
+#     the shell's GHC package db, with `tools.cabal = "v2-cabal-install"`
+#     (`project.v2-cabal-install`), because Hackage cabal-install cannot let
 #     an installed package satisfy a sublib dependency (haskell/cabal#6039).
 #     There is no composed store; the shared build script's comments about
 #     one only apply to v2.  (They stay as they are so the v2 case's
@@ -63,9 +63,10 @@ let
     # sublibraries (haskell/cabal#6039): with the hackage cabal a v1
     # shell's pre-built `provider` is rejected for lacking `slib`, and
     # `provider` is rebuilt from source.  haskell.nix's cabal-install
-    # (`project.v2-cabal-install`) lets installed units satisfy sublib
+    # (`"v2-cabal-install"`, the same derivation as
+    # `project.v2-cabal-install`) lets installed units satisfy sublib
     # dependencies, so the v1 shell's package db is reused.
-    tools.cabal = project.v2-cabal-install;
+    tools.cabal = "v2-cabal-install";
   });
 
   # v1 has no slice tarball; an sdist-shaped tarball of the same source
@@ -162,7 +163,20 @@ let
         echo "FAIL: cabal rebuilt provider's 'slib' sublibrary instead of reusing the shell's" >&2
         exit 1
       fi
-
+      ${lib.optionalString (builderVersion == 1) ''
+        # The log checks above pass vacuously if cabal words its output
+        # differently.  So also check the plan itself: every `provider`
+        # unit (the library and `slib`) must come from the shell's
+        # package db (`pre-existing`), not be configured for a build.
+        ${buildPackages.jq}/bin/jq -r \
+          '."install-plan"[] | select(."pkg-name" == "provider") | "\(.type) \(.id)"' \
+          dist-newstyle/cache/plan.json | tee provider-units
+        if [ "$(grep -c '^pre-existing ' provider-units || true)" -lt 2 ] \
+           || grep -qv '^pre-existing ' provider-units; then
+          echo "FAIL: plan.json does not take provider and its slib from the shell's package db" >&2
+          exit 1
+        fi
+      ''}
       touch $out
     '';
 

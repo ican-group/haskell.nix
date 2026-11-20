@@ -228,10 +228,10 @@ cabal-install (`haskell-nix.v2-cabal-install`, also available as
 different unit IDs, misses every unit in that store and rebuilds all of
 them.  So in a v2 shell:
 
-* `tools.cabal = "latest"`, `{}`, or any argument set without a
-  `version` gives you `v2-cabal-install`, not a cabal-install from
-  Hackage.  Its other arguments (`src`, `index-state`,
-  `cabalProjectLocal`, ...) are not used.
+* `tools.cabal = "latest"`, `{}`, `"v2-cabal-install"`, or any argument
+  set without a `version` gives you `v2-cabal-install`, not a
+  cabal-install from Hackage.  Its other arguments (`src`,
+  `index-state`, `cabalProjectLocal`, ...) are not used.
 * `tools.cabal = "<version>"` (or `{ version = "<version>"; ... }`)
   builds that version from Hackage as usual, with a warning when it is
   not the version that built the store.
@@ -241,12 +241,39 @@ them.  So in a v2 shell:
   compiler such as `ghc914-sh` cannot always build tools itself, so
   build them with a nixpkgs-provided GHC:
   `tools.hlint = pkgs.haskell-nix.tool "ghc912" "hlint" "latest";`.
-  (v1 shells do not accept derivations in `tools`; add them to
-  `nativeBuildInputs` instead.)
+  A `cabal` derivation gets the same warning as a version pin unless it
+  is the cabal-install that built the store.  (v1 shells take
+  derivations in `tools` too.)
 * Tools are built with `haskell-nix.tool`, so their plans are made on
   the build machine's system rather than the project's `evalSystem`.
 * `withHoogle = true` only puts `hoogle` on `PATH` (from `tools.hoogle`
   when given); run `hoogle generate` yourself to make an index.
+
+## haskell.nix's own cabal-install
+
+`tools.cabal = "v2-cabal-install"` asks for the cabal-install the v2
+builder builds slices with, built for the project's `evalSystem` (the
+same derivation as `project.v2-cabal-install`).  It works in shells of
+either builder, and in a project's `shell` argument, where `project` is
+not available.  It is only valid for `cabal`.  See
+[the troubleshooting entry](../troubleshooting.md#why-does-cabal-build-in-my-shell-rebuild-a-dependency-that-has-public-sub-libraries)
+for why a default-builder shell may want it.
+
+## Tools given in more than one place
+
+A project's `shell.tools` and a `shellFor { tools = ...; }` are merged
+tool by tool:
+
+* Module priorities come first: `lib.mkForce` picks a definition
+  outright.
+* `"latest"` and `{}` ask for no particular version, and give way to
+  any other definition.  So a template's `shell.tools.cabal = "latest"`
+  does not get in the way of a `shellFor { tools.cabal = ...; }`.
+* A derivation wins over a version or module spec, with a warning when
+  that throws away an actual pin.
+* Two different derivations, or two different version strings, are an
+  error.  Use `lib.mkForce` on the one you want.
+* Otherwise module specs are merged as before.
 
 ## Alternatives
 

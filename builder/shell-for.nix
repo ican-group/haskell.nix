@@ -169,16 +169,9 @@ let
   in hoogleLocal {
     packages = map docPackage (haskellLib.flatLibDepends component);
 
-    # A `tools.hoogle` derivation is used as it is.
-    hoogle = if lib.isDerivation (args.tools.hoogle or null)
-      then args.tools.hoogle
-      else pkgsBuildBuild.haskell-nix.hackage-tool (
-        lib.optionals (args ? tools && args.tools ? hoogle) (haskellLib.versionOrModToMods args.tools.hoogle)
-      ++ [{
-          name = "hoogle";
-          compiler-nix-name = compiler.nix-name;
-          evalSystem = evalPackages.stdenv.hostPlatform.system;
-        }]);
+    # `tool'` uses a `tools.hoogle` derivation as it is.
+    hoogle = pkgsBuildBuild.haskell-nix.tool' evalPackages.stdenv.hostPlatform.system
+      compiler.nix-name "hoogle" (args.tools.hoogle or {});
     };
 
   mkDrvArgs = builtins.removeAttrs args ["packages" "components" "additional" "withHoogle" "tools" "includeExtraPackages"];
@@ -192,7 +185,8 @@ in
       ++ nativeBuildInputs
       ++ mkDrvArgs.nativeBuildInputs or []
       # `tools'` passes a tool given as a derivation (e.g.
-      # `tools.cabal = project.v2-cabal-install`) through as it is.
+      # `tools.cabal = project.v2-cabal-install`) through as it is, and
+      # resolves `tools.cabal = "v2-cabal-install"`.
       ++ lib.attrValues (pkgsBuildBuild.haskell-nix.tools' evalPackages.stdenv.hostPlatform.system compiler.nix-name tools)
       ++ lib.optional (ghcEnv.baseGhc.useLdLld or false) llvmPackages.bintools
       # If this shell is a cross compilation shell include
