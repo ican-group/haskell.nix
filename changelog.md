@@ -12,6 +12,15 @@ that will impact users.
     hidden; it stays in the package database for the other packages GHC
     ships that depend on it.
 
+    Those packages are hidden too (for instance GHC's `parsec`, `Cabal`,
+    `process` and `directory` once `text` or `bytestring` is rebuilt):
+    exposed, they mixed with the built copy and failed with "Couldn't
+    match type `Text' with `Text'".  Importing one of their modules now
+    reports a hidden package instead.  Add the package to the shell (for
+    `ghcWithPackages`, to the list) to get a copy built against the
+    rebuilt packages, or pass `-package <name>` to use GHC's copy as
+    before.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package

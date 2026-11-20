@@ -36,8 +36,21 @@ in lib.recurseIntoAttrs {
 
       for g in ${ghcWithText} ${env.ghc} ${envExact.ghc}; do
         printf "checking that $g exposes a single text... " >& 2
-        n=$($g/bin/${ghcWithText.targetPrefix}ghc-pkg field text exposed --simple-output | grep -c True)
+        n=$($g/bin/${ghcWithText.targetPrefix}ghc-pkg field text exposed --simple-output | grep -c True || true)
         [ "$n" = 1 ] || { echo "FAIL: $n exposed copies of text" >& 2; exit 1; }
+        echo ok >& 2
+
+        # GHC's parsec, Cabal, ... depend on GHC's text; left exposed they
+        # would mix with the built text ("Couldn't match type `Text' with
+        # `Text'").
+        printf "checking that no exposed package depends on a hidden text... " >& 2
+        for id in $($g/bin/${ghcWithText.targetPrefix}ghc-pkg field text id --simple-output); do
+          if $g/bin/${ghcWithText.targetPrefix}ghc-pkg field "$id" exposed --simple-output --ipid | grep -qx False; then
+            bad=$($g/bin/${ghcWithText.targetPrefix}ghc-pkg dump 2>/dev/null \
+              | awk -v h="$id" 'BEGIN { RS = "\n---\n" } /\nexposed: *True/ { n = split($0, w, /[ \t\n]+/); for (i = 1; i <= n; i++) if (w[i] == h) { print $2; next } }')
+            [ -z "$bad" ] || { echo "FAIL: exposed packages depend on the hidden $id:" $bad >& 2; exit 1; }
+          fi
+        done
         echo ok >& 2
 
         printf "checking that Data.Text imports unambiguously... " >& 2
@@ -53,6 +66,19 @@ in lib.recurseIntoAttrs {
       id=$(sed -n 's/^package-id \(text-[0-9].*\)$/\1/p' ${env.configFiles}/ghc-environment)
       ${env.ghc}/bin/${ghcWithText.targetPrefix}ghc-pkg field "$id" exposed --simple-output --ipid | grep -qx True \
         || { echo "FAIL: $id is not exposed" >& 2; exit 1; }
+      echo ok >& 2
+
+      printf "checking no package in the environment file depends on a hidden text... " >& 2
+      pkg=${env.ghc}/bin/${ghcWithText.targetPrefix}ghc-pkg
+      hidden=$(for t in $($pkg field text id --simple-output); do
+        if $pkg field "$t" exposed --simple-output --ipid | grep -qx False; then echo "$t"; fi; done)
+      for id in $(sed -n 's/^package-id //p' ${env.configFiles}/ghc-environment); do
+        for d in $($pkg field "$id" depends --simple-output --ipid || true); do
+          for h in $hidden; do
+            [ "$d" != "$h" ] || { echo "FAIL: $id is in the environment file but depends on the hidden $h" >& 2; exit 1; }
+          done
+        done
+      done
       echo ok >& 2
 
       touch $out

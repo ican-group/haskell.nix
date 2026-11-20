@@ -8,24 +8,67 @@ let
   nonReinstallablePkgs' = __attrNames (lib.genAttrs (component.pre-existing or [] ++ nonReinstallablePkgs) (x: x));
 
   # `shadowedPkgs` names the packages the caller also gets a built copy of
-  # (`shellFor` passes its whole dependency closure).  GHC's own copy of any
-  # of them is still copied into the db, since other packages GHC ships
+  # (`shellFor` passes its libraries' dependency closure).  GHC's own copy of
+  # any of them is still copied into the db, since other packages GHC ships
   # depend on it, but hidden and left out of the GHC environment file;
   # otherwise both copies are exposed and every import of one of their
-  # modules is ambiguous (#1532).  The built copy's `.conf` is copied in
-  # after GHC's are hidden, so a built copy with the same unit id (and file
-  # name) as GHC's replaces the hidden one and stays exposed.  With nothing
-  # shadowed (every component build) the script is unchanged.
+  # modules is ambiguous (#1532).
+  #
+  # The packages GHC ships that depend on a hidden copy (GHC's `parsec`,
+  # `process`, `Cabal`, ... when `text` or `bytestring` is rebuilt) are
+  # hidden and left out of the environment file too: left exposed, they mix
+  # with the built copy and fail with "Couldn't match type `Text' with
+  # `Text'".  Asking for one of them gets a built copy instead.
+  #
+  # The built copies' `.conf` files are copied in after GHC's are hidden, so
+  # a built copy with the same unit id (and file name) as GHC's replaces the
+  # hidden one and stays exposed.  With nothing shadowed (every component
+  # build) the script is unchanged.
   shadowedSet = lib.genAttrs shadowedPkgs (_: null);
   shadowedPreExisting = lib.filter (p: shadowedSet ? ${p}) nonReinstallablePkgs';
   envPkgs = lib.filter (p: !(shadowedSet ? ${p})) nonReinstallablePkgs';
+  # `shadowConfField <field> <conf>` prints a `.conf` field's value,
+  # including its continuation lines.
   hideShadowedPreExisting = lib.optionalString (shadowedPreExisting != []) ''
+    shadowConfField() {
+      awk -v f="$1:" '$1 == f { p = 1; sub(/^[^:]*:[ \t]*/, ""); print; next } p && /^[ \t]/ { print; next } { p = 0 }' "$2"
+    }
+    shadowHiddenIds=""
     for p in ${lib.concatStringsSep " " shadowedPreExisting}; do
       for f in $configFiles/${packageCfgDir}/$p-[0-9]*.conf; do
         [ -e "$f" ] || continue
         chmod +w "$f"
         sed -i 's/^exposed: *True/exposed: False/' "$f"
+        shadowHiddenIds="$shadowHiddenIds $(shadowConfField id "$f")"
       done
+    done
+    shadowChanged=1
+    while [ "$shadowChanged" = 1 ]; do
+      shadowChanged=0
+      for f in $configFiles/${packageCfgDir}/*.conf; do
+        [ -e "$f" ] || continue
+        grep -q '^exposed: *True' "$f" || continue
+        for d in $(shadowConfField depends "$f"); do
+          case " $shadowHiddenIds " in
+            *" $d "*)
+              chmod +w "$f"
+              sed -i 's/^exposed: *True/exposed: False/' "$f"
+              shadowHiddenIds="$shadowHiddenIds $(shadowConfField id "$f")"
+              shadowChanged=1
+              break;;
+          esac
+        done
+      done
+    done
+  '';
+  # Drops the hidden packages GHC ships from the environment file, unless a
+  # built copy with the same unit id replaced the hidden `.conf`.
+  dropShadowedFromEnv = lib.optionalString (shadowedPreExisting != []) ''
+    for id in $shadowHiddenIds; do
+      if ! grep -q '^exposed: *True' "$configFiles/${packageCfgDir}/$id.conf" 2>/dev/null; then
+        grep -vxF "package-id $id" $configFiles/ghc-environment > $configFiles/ghc-environment.new || true
+        mv $configFiles/ghc-environment.new $configFiles/ghc-environment
+      fi
     done
   '';
 
@@ -199,8 +242,8 @@ let
         cat $ghcDeps/envDeps/$p >> $configFiles/ghc-environment
       fi
     done
-  '' + lib.optionalString component.doExactConfig ''
-    for p in ${lib.concatStringsSep " " envPkgs}; do
+  '' + dropShadowedFromEnv + lib.optionalString component.doExactConfig ''
+    for p in ${lib.concatStringsSep " " nonReinstallablePkgs'}; do
       if [ -e $ghcDeps/exactDeps/$p ]; then
         cat $ghcDeps/exactDeps/$p/configure-flags >> $configFiles/configure-flags
         cat $ghcDeps/exactDeps/$p/cabal.config >> $configFiles/cabal.config
