@@ -201,6 +201,28 @@ output.
 }).shell
 ```
 
+**The `hpack` argument**: packages with a `package.yaml` and no `.cabal`
+file are turned into `.cabal` files by hpack, when planning a cabal
+project with `supportHpack = true` and when building those packages.  By
+default that is the hpack that ships with nix-tools.  `hpack` picks
+another: a version (or `"latest"`) or `haskell-nix.tool` arguments build
+it from Hackage with the project's compiler, and a derivation (with
+`bin/hpack`) is used as it is.  Pinning the version keeps the generated
+`.cabal` files from changing when nix-tools updates its hpack.
+
+```nix
+pkgs.haskell-nix.project' {
+  src = ./.;
+  supportHpack = true;
+  hpack = "0.38.1";
+  # or, to materialize its plan:
+  # hpack = { version = "0.38.1"; materialized = ./materialized/hpack; };
+}
+```
+
+Stack projects are planned by `stack-to-nix`, which has hpack built in, so
+for them `hpack` only changes the builders.
+
 ## stackProject'
 
 A function calling [callStackToNix](#callstacktonix) with all arguments.
@@ -355,7 +377,8 @@ needed for `importAndFilterProject`.
 | `cabalProjectFreeze` | String | Optional cabal project file contents (defaults to readFile "${src}/cabal.project.freeze"). |
 | `ghc`                |        | Deprecated. Use `compiler-nix-name` instead. Optional ghc to use |
 | `nix-tools`          |        | Optional nix-tools to use |
-| `hpack`              |        | Optional hpack to use |
+| `supportHpack`       | Bool   | Run hpack on `package.yaml` files that have no `.cabal` file (default `false`). |
+| `hpack`              | String, attrs or derivation | Optional hpack to use for that: a version or `haskell-nix.tool` arguments, or a derivation with `bin/hpack` (see [`project'`](#project)).  Defaults to the one in nix-tools. |
 | `cabal-install`      |        | Optional cabal-install to use |
 | `configureArgs`      | String | Optional extra arguments to pass to `cabal new-configure` (--enable-tests is included by default, include `--disable-tests` to override that). |
 

@@ -917,7 +917,7 @@ final: prev: {
                         in if ghc.isHaskellNixCompiler or false then (ghc.evalWith.${evalSystem} or (ghc.override { evalSystem = evalSystem; })) else ghc;
                       compiler.nix-name = final.lib.mkForce config.compiler-nix-name;
                       evalPackages = final.lib.mkDefault evalPackages;
-                      inherit (config) prebuilt-depends builderVersion v2LocalPackageSlices v2LocalPackageSliceNames cabalProject withBuildCompiler;
+                      inherit (config) prebuilt-depends builderVersion v2LocalPackageSlices v2LocalPackageSliceNames cabalProject withBuildCompiler hpack;
                       # NOT `config.cabalProjectLocal`: the v2 shell writes
                       # this text out as the user's `cabal.project.local`, so
                       # its `source-repository-package` blocks have to be the
@@ -1235,7 +1235,7 @@ final: prev: {
                     ++ final.lib.optional (config.compiler-nix-name != null)
                         { compiler.nix-name = final.lib.mkForce config.compiler-nix-name; }
                     ++ [ { evalPackages = final.lib.mkDefault evalPackages;
-                           inherit (config) builderVersion;
+                           inherit (config) builderVersion hpack;
                          } ];
                 };
 

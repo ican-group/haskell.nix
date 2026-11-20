@@ -296,6 +296,17 @@ in {
       && !lib.hasPrefix "." name
       && lib.hasPrefix (dirOf path + "/") (pkgDir + "/");
 
+  # The `hpack` for a project's (non-null) `hpack` option, built for the
+  # platform of `pkgs` (see modules/project-common.nix): a derivation as it
+  # is, otherwise a version or `haskell-nix.tool` arguments, planned on
+  # `evalSystem` like the project's other tools.  `null` is left to the
+  # callers, which each keep the nix-tools hpack they always used, so that
+  # projects without the option build exactly what they did.
+  hpackTool = pkgs: evalSystem: compiler-nix-name: hpack:
+    if lib.isDerivation hpack
+      then hpack
+      else pkgs.haskell-nix.tool' evalSystem compiler-nix-name "hpack" hpack;
+
   # Use cleanSourceWith to filter just the files needed for a particular
   # component of a package
   cleanCabalComponent = import ./clean-cabal-component.nix { inherit lib cleanSourceWith normalizeRelativePath isHpackAncestorInclude; };

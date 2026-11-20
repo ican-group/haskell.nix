@@ -1,4 +1,4 @@
-{ pkgs, stdenv, buildPackages, pkgsBuildBuild, ghc, llvmPackages, lib, gobject-introspection ? null, haskellLib, makeConfigFiles, haddockBuilder, ghcForComponent, hsPkgs, compiler, runCommand, libffi, gmp, windows, zlib, ncurses, nodejs, nonReinstallablePkgs }@defaults:
+{ pkgs, stdenv, buildPackages, pkgsBuildBuild, ghc, llvmPackages, lib, gobject-introspection ? null, haskellLib, makeConfigFiles, haddockBuilder, ghcForComponent, hsPkgs, compiler, runCommand, libffi, gmp, windows, zlib, ncurses, nodejs, nonReinstallablePkgs, hpackExe ? buildPackages.haskell-nix.nix-tools-unchecked }@defaults:
 { componentId
 , component
 , package
@@ -533,7 +533,7 @@ let
           then ''cp -v $cabalFilePath ${package.identifier.name}.cabal''
           else
             lib.optionalString (cabal-generator == "hpack") ''
-              ${buildPackages.haskell-nix.nix-tools-unchecked}/bin/hpack
+              ${hpackExe}/bin/hpack
             ''
         ) + lib.optionalString (prePatch != null) "\n${prePatch}";
     }

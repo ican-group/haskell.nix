@@ -1,4 +1,4 @@
-{ pkgs, buildPackages, stdenv, lib, haskellLib, ghc, compiler-nix-name, fetchurl, runCommand, comp-builder, comp-v2-builder, setup-builder, builderVersion ? 1 }:
+{ pkgs, buildPackages, stdenv, lib, haskellLib, ghc, compiler-nix-name, fetchurl, runCommand, comp-builder, comp-v2-builder, setup-builder, builderVersion ? 1, hpackExe ? buildPackages.haskell-nix.nix-tools-unchecked }:
 
 config:
 { flags
@@ -283,7 +283,7 @@ let
           cp $cabalFilePath ${package.identifier.name}.cabal
         ''
         else lib.optionalString (cabal-generator == "hpack") ''
-          ${buildPackages.haskell-nix.nix-tools-unchecked}/bin/hpack
+          ${hpackExe}/bin/hpack
         ''}
       echo 'packages: .' > .haskell-nix-sdist.project
       export HOME=$TMPDIR

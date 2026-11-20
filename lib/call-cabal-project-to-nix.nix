@@ -61,6 +61,7 @@
                             # package.
 , evalPackages
 , supportHpack ? false      # Run hpack on package.yaml files with no .cabal file
+, hpack ? null              # The project's `hpack` option (modules/project-common.nix)
 , ignorePackageYaml ? false # Ignore package.yaml files even if they exist
 , prebuilt-depends ? []
 , prepopulateHackageIndex ? true # When false, prepopulate an *empty* hackage
@@ -613,7 +614,10 @@ let
         nix-tools.exes.plan-to-nix
         nix-tools.exes.cabal
       ]
-      ++ pkgs.lib.optional supportHpack nix-tools.exes.hpack
+      ++ pkgs.lib.optional supportHpack
+           (if hpack == null
+             then nix-tools.exes.hpack
+             else haskellLib.hpackTool evalPackages evalPackages.stdenv.hostPlatform.system compiler-nix-name hpack)
       ++ [dummy-ghc dummy-ghc-pkg evalPackages.rsync evalPackages.gitMinimal evalPackages.allPkgConfigWrapper ]
       # The stable-haskell cabal fork configures a C toolchain during plan
       # elaboration (its cross "stage" system) and does `requireProgram gcc`,
