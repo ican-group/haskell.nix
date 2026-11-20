@@ -10,6 +10,11 @@ import System.Random.SplitMix (mkSMGen, nextWord64)
 #error "built from a .cabal file the project's hpack did not generate"
 #endif
 
+-- `FROM_INCLUDE` comes from ../common.yaml, which package.yaml includes.
+#ifndef FROM_INCLUDE
+#error "hpack did not see the YAML file package.yaml includes"
+#endif
+
 main :: IO ()
 main = do
   putStrLn msg

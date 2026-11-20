@@ -56,22 +56,22 @@ in
       description = ''
         The `hpack` that turns `package.yaml` files into `.cabal` files, for
         the packages of a cabal project (`supportHpack = true`) that have no
-        `.cabal` file.  When it is set, the `.cabal` file it generates while
-        planning is what `plan-to-nix` reads and what the package is built
-        with (the builders do not run hpack again), so the plan and the
-        build always agree.
+        `.cabal` file.  When it is set, it runs on the project source (the
+        whole source, as the source filter leaves it) in a step of its own,
+        and the `.cabal` files it writes are what `plan-to-nix` reads and
+        what the packages are built with (the builders do not run hpack
+        again), so the plan and the build always agree.  Editing a source
+        file re-runs only that hpack step; the project is only planned again
+        when a generated `.cabal` file changes.
 
-        A version string (or `"latest"`), or `haskell-nix.tool` arguments
-        (an attribute set such as `{ version = "0.38.1"; index-state = "...";
-        materialized = ./materialized/hpack; }`, or a module list or
+        A version string (pin it, e.g. `"0.38.1"`), or other
+        `haskell-nix.tool` arguments (an attribute set, a module list or a
         function), builds that hpack with `haskell-nix.tool` and the
-        project's compiler, on `evalSystem`.  Without an `index-state` it is
-        planned against haskell.nix's Hackage snapshot, so a haskell.nix
-        update can bring a different build of hpack (the project's own
-        components only change if the generated `.cabal` files do).  A
-        derivation (or store path) with `bin/hpack` is used as it is; it
-        must run on `evalSystem`.  `null` (the default) uses the hpack that
-        ships with nix-tools, which the builders also run.
+        project's compiler, on `evalSystem` (so each compiler builds its
+        own hpack before the project can be planned).  A derivation with
+        `bin/hpack` is used as it is; it must run on `evalSystem`.  `null`
+        (the default) uses the hpack that ships with nix-tools, which the
+        builders also run.
 
         Stack projects ignore it (with a warning): `stack-to-nix` plans with
         its own built-in hpack.
