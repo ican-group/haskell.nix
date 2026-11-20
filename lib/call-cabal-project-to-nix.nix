@@ -749,7 +749,14 @@ let
     #
     # This is also important as `plan-to-nix` will look for the .cabal files when generating
     # the relevant `pkgs.nix` file with the local .cabal expressions.
-    rsync -a --prune-empty-dirs --chmod=u+w${
+    ${
+      # The list of generated `.cabal` files below is a real file rather than
+      # a `<(...)` process substitution: in some sandboxes (GitHub Actions)
+      # `/dev/fd/63` is a symlink loop and rsync fails with "Too many levels
+      # of symbolic links".  `touch` makes it exist when hpack generated
+      # nothing.  Inline and empty without `supportHpack`, as below.
+      pkgs.lib.optionalString supportHpack
+        "touch $TMPDIR/hpack-generated-cabal-files; "}rsync -a --prune-empty-dirs --chmod=u+w${
           # Leave out the `.cabal` files the hpack step above generated, so
           # `plan-to-nix` finds only their `package.yaml` and still emits
           # `cabal-generator = "hpack"`.  Since nix-tools prefers an existing
@@ -761,7 +768,7 @@ let
           # Inline and empty without `supportHpack`, so other projects'
           # plan-nix hashes are unchanged.
           pkgs.lib.optionalString supportHpack
-            " --exclude-from=<(cat $TMPDIR/hpack-generated-cabal-files 2>/dev/null || true)"} \
+            " --exclude-from=$TMPDIR/hpack-generated-cabal-files"} \
           --include '*/' --include '*.cabal' --include 'package.yaml' \
           --exclude '*' \
           $tmp/ $out/
