@@ -32,6 +32,9 @@
       #     alignment are copied into aligned storage rather than mmapped.
       #   * RTS linker: PEi386 resolves a DLL search path to an absolute path
       #     before AddDllDirectory, so DLLs beside the calling image are found.
+      #   * RTS linker: x86_64 Mach-O TLV. Clang's `_Thread_local` uses
+      #     `X86_64_RELOC_TLV`; without it the compiler aborts in
+      #     barf("unknown relocation") while loading the object.
       #   * X86 NCG: Mach-O info tables stay in the same atom as their entry
       #     code (`.alt_entry`), so the linker cannot pad between them.
       #   * `--abi-hash` does not claim an executable link (it stripped
