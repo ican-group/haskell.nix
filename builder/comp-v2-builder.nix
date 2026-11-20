@@ -3105,13 +3105,24 @@ let
   # when it is instantiated.  Only local packages: a project-wide
   # `doCoverage = true` (as v1 projects use) would otherwise warn for every
   # dependency slice, with advice that does not apply to them, and break
-  # `--abort-on-warn` evaluations.  The warning hangs off `drvPath` and
-  # `outPath` (one shared thunk, so it prints once) rather than the whole
-  # value, so reading `coverageIgnored` or other passthru attributes does
-  # not trigger it.
+  # `--abort-on-warn` evaluations.
+  #
+  # The warning hangs off `drvPath` and `outPath` (one shared thunk, so it
+  # prints once).  Every slice gets those two overrides, whatever
+  # `coverageIgnored` is, and the condition is inside the `seq`: the
+  # attribute set's shape must not depend on `doCoverage`, or reading
+  # `.name` or a passthru attribute would force it (and could recurse if a
+  # module defines `doCoverage` in terms of `hsPkgs`).  Only the slice
+  # itself warns: `.out` and `lib.getLib` reach the underlying derivation
+  # and do not.  The `coverageReport` check below is the one that always
+  # applies.
+  #
+  # Only `--enable-coverage`: cabal-install folds a project's
+  # `library-coverage:` into `coverage` and does not pass
+  # `--enable-library-coverage` on, which is also all that
+  # `modules/install-plan/configure-args.nix` maps to `doCoverage`.
   planCoverage = lib.any (p:
-      let args = p.configure-args or [];
-      in lib.elem "--enable-coverage" args || lib.elem "--enable-library-coverage" args
+      lib.elem "--enable-coverage" (p.configure-args or [])
     ) ourPlanUnits;
   coverageIgnored = (component.doCoverage or false) && !planCoverage;
   coverageIgnoredMessage = ''
@@ -3122,18 +3133,20 @@ let
         package ${pkgName}
           coverage: True
 
-    (or `package *` for project-wide).  The `doCoverage` module option
-    on its own is ignored by v2 slices.  See `docs/tutorials/coverage.md`.
+    or a top-level `coverage: True` for all the project's local packages
+    (not `package *`, which would also rebuild every dependency with
+    HPC).  The `doCoverage` module option on its own is ignored by v2
+    slices.  See `docs/tutorials/coverage.md`.
   '';
 
-  coverageWarning = lib.warn coverageIgnoredMessage null;
-  warnCoverageIgnored = d:
+  coverageWarning =
     if coverageIgnored && (package.isLocal or false)
-      then d // {
-        drvPath = builtins.seq coverageWarning d.drvPath;
-        outPath = builtins.seq coverageWarning d.outPath;
-      }
-      else d;
+      then lib.warn coverageIgnoredMessage null
+      else null;
+  warnCoverageIgnored = d: d // {
+    drvPath = builtins.seq coverageWarning d.drvPath;
+    outPath = builtins.seq coverageWarning d.outPath;
+  };
 
   decorate = base: warnCoverageIgnored (base // exePathAttrs // docAttrs // {
       inherit checkAgainstPlan coverageIgnored coverageIgnoredMessage;

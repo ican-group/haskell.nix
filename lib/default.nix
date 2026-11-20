@@ -729,22 +729,31 @@ in {
         (builtins.attrValues (packages project.hsPkgs)));
       coverageProject = project.appendModule [
         coverageProjectModule
-        ({ config, ... }: let isV2 = config.builderVersion == 2; in {
-          # `mkIf` rather than `optionalAttrs`: the module's shape must not
-          # depend on `builderVersion`, or evaluating it recurses.
-          modules = lib.mkIf (!isV2) [{
-            # `mkOverride 900`: above `mkDefault`, because `modules/plan.nix`
-            # passes the global `doCoverage = false` down to every package
-            # as a `mkDefault` and two `mkDefault`s conflict; below a plain
-            # definition, which therefore turns it off.
-            packages = lib.genAttrs (packageNames project)
-              (_: { doCoverage = lib.mkOverride 900 true; });
-          }];
-          # `mkOrder 700`: after what haskell.nix itself puts first
-          # (`mkBefore`) and before `coverageProjectModule`'s own text, so a
-          # `coverage: False` there wins.
-          cabalProjectLocal = lib.mkIf isV2 (lib.mkOrder 700 (lib.concatMapStrings
-            (n: "\npackage ${n}\n  coverage: True\n") cabalPackageNames));
+        ({ config, options, ... }: let isV2 = config.builderVersion == 2; in {
+          # `mkIf` rather than `optionalAttrs` on `isV2`: the module's shape
+          # must not depend on `builderVersion`, or evaluating it recurses.
+          # An explicit `config`, so the `options ? cabalProjectLocal` test
+          # below does not decide the module's top-level keys.
+          config = {
+            modules = lib.mkIf (!isV2) [{
+              # `mkOverride 900`: above `mkDefault`, because
+              # `modules/plan.nix` passes the global `doCoverage = false`
+              # down to every package as a `mkDefault` and two `mkDefault`s
+              # conflict; below a plain definition, which therefore turns
+              # it off.
+              packages = lib.genAttrs (packageNames project)
+                (_: { doCoverage = lib.mkOverride 900 true; });
+            }];
+          } // lib.optionalAttrs (options ? cabalProjectLocal) {
+            # Only cabal projects have `cabalProjectLocal` (stack projects
+            # are always v1), and defining an undeclared option is an error
+            # even under a false `mkIf`.
+            # `mkOrder 700`: after what haskell.nix itself puts first
+            # (`mkBefore`) and before `coverageProjectModule`'s own text, so
+            # a `coverage: False` there wins.
+            cabalProjectLocal = lib.mkIf isV2 (lib.mkOrder 700 (lib.concatMapStrings
+              (n: "\npackage ${n}\n  coverage: True\n") cabalPackageNames));
+          };
         })
       ];
     in

@@ -25,7 +25,8 @@ that will impact users.
       the global `doCoverage` default ("conflicting definition values").
       To leave a package out, set its `doCoverage = false` with a plain
       definition (or `mkForce`): a `mkDefault` has the same priority as the
-      project-wide default and loses to the jobs' setting.
+      project-wide default and loses to the jobs' setting.  This also makes
+      `projectCoverageCiJobs` work for stack projects.
 
 ## November 19, 2026
 

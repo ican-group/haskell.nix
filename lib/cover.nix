@@ -40,8 +40,9 @@ let
   # having coverage (see `coverageIgnored` in builder/comp-v2-builder.nix)
   # were built without HPC, so the report would silently miss them: the
   # libraries' mix files, or the tix files of the test suites the checks
-  # run (`lib/check.nix` passes the flag on).
-  coverageIgnored = lib.filter (l: l.coverageIgnored or false) (mixLibraries ++ checks);
+  # run (`lib/check.nix` passes the flag on).  `uniqueChecks`, so a test
+  # that v2 exposes under two plan ids is reported once.
+  coverageIgnored = lib.filter (l: l.coverageIgnored or false) (mixLibraries ++ uniqueChecks);
 
 in assert lib.assertMsg (coverageIgnored == [])
   (lib.concatMapStringsSep "\n" (l: l.coverageIgnoredMessage) coverageIgnored);
