@@ -36,7 +36,14 @@ let
     (acc: c: if lib.any (x: x.name == c.name) acc then acc else acc ++ [c])
     [] checks;
 
-in pkgs.runCommand (name + "-coverage-report")
+  # v2 slices whose `doCoverage` module option was set without the plan
+  # having coverage (see `coverageIgnored` in builder/comp-v2-builder.nix)
+  # were built without HPC, so the report would silently miss them.
+  coverageIgnored = lib.filter (l: l.coverageIgnored or false) mixLibraries;
+
+in assert lib.assertMsg (coverageIgnored == [])
+  (lib.concatMapStringsSep "\n" (l: l.coverageIgnoredMessage) coverageIgnored);
+  pkgs.runCommand (name + "-coverage-report")
   ({nativeBuildInputs = [ (ghc.buildGHC or ghc) pkgs.buildPackages.zip ];
     passthru = {
       inherit name checks mixLibraries;

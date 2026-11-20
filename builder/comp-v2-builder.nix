@@ -3094,12 +3094,38 @@ let
     inherit docEnabled;
   };
 
+  # The `doCoverage` module option is evaluated after planning, so it
+  # cannot reach a v2 slice: cabal only builds with HPC when plan-nix
+  # planned the unit with coverage, i.e. when `coverage: True` is in
+  # cabal.project.  (`modules/install-plan/configure-args.nix` sets
+  # `doCoverage` from the plan's `--enable-coverage`, so `doCoverage`
+  # without that flag means a module set it.)  It used to be ignored
+  # silently, leaving an empty coverage report; now the slice warns and
+  # `haskellLib.coverageReport` throws for libraries with
+  # `coverageIgnored`.
+  planCoverage = lib.any (p:
+      let args = p.configure-args or [];
+      in lib.elem "--enable-coverage" args || lib.elem "--enable-library-coverage" args
+    ) ourPlanUnits;
+  coverageIgnored = (component.doCoverage or false) && !planCoverage;
+  coverageIgnoredMessage = ''
+    `doCoverage` is set for ${pkgName} (${ctype} ${cname}), but with
+    `builderVersion = 2` coverage has to be in the plan.  Add to
+    cabal.project (or `cabalProjectLocal`):
+
+        package ${pkgName}
+          coverage: True
+
+    (or `package *` for project-wide).  The `doCoverage` module option
+    on its own is ignored by v2 slices.  See `docs/tutorials/coverage.md`.
+  '';
+
   decorate = base: base // exePathAttrs // docAttrs // {
-      inherit checkAgainstPlan;
+      inherit checkAgainstPlan coverageIgnored coverageIgnoredMessage;
       profiled = profiledThrow;
       dwarf = dwarfThrow;
       passthru = base.passthru // {
-        inherit checkAgainstPlan isBuildStageUnit;
+        inherit checkAgainstPlan isBuildStageUnit coverageIgnored coverageIgnoredMessage;
         isSlice = true;
         profiled = profiledThrow;
         dwarf = dwarfThrow;
@@ -3116,4 +3142,6 @@ let
       # calls (as in the iserv-proxy-interpreter / -prof pair) work.
       override = _: decorate base;
     };
-in decorate slice
+in if coverageIgnored
+  then lib.warn coverageIgnoredMessage (decorate slice)
+  else decorate slice

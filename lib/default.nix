@@ -704,18 +704,31 @@ in {
   # modifying the project settings when running code coverage (just
   # pass `{}` if you do not need to modify anything).
   # By default the `doCoverage` flag will be set for the packages
-  # selected by `packages`.
+  # selected by `packages`.  With `builderVersion = 2` that flag alone is
+  # ignored (coverage has to be in the plan), so those packages also get
+  # `coverage: True` in `cabalProjectLocal`.
   projectCoverageCiJobs = project: packages: coverageProjectModule:
     let
       packageNames = project: builtins.attrNames (packages project.hsPkgs);
+      isV2 = (project.pkg-set.config.builderVersion or 1) == 2;
+      # cabal package names: v2's `hsPkgs` is keyed by plan id.
+      cabalPackageNames = lib.unique (map (p: p.identifier.name)
+        (builtins.attrValues (packages project.hsPkgs)));
       coverageProject = project.appendModule [
         coverageProjectModule
-        {
+        ({
           modules = [{
+            # Above `mkDefault`: `modules/plan.nix` passes the global
+            # `doCoverage = false` down to every package as a `mkDefault`,
+            # and two `mkDefault`s conflict.  Still below a plain
+            # definition, so `coverageProjectModule` can turn it off.
             packages = lib.genAttrs (packageNames project)
-              (_: { doCoverage = lib.mkDefault true; });
+              (_: { doCoverage = lib.mkOverride 900 true; });
           }];
-        }
+        } // lib.optionalAttrs isV2 {
+          cabalProjectLocal = lib.concatMapStrings
+            (n: "\npackage ${n}\n  coverage: True\n") cabalPackageNames;
+        })
       ];
     in
       builtins.listToAttrs (lib.concatMap (packageName: [{

@@ -1,6 +1,23 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * With `builderVersion = 2`, the `doCoverage` module option on its own
+    no longer fails silently.  v2 builds only produce coverage when it is
+    in the plan, i.e. `coverage: True` in `cabal.project` or
+    `cabalProjectLocal`, so a component with `doCoverage` but no
+    `coverage: True` now prints a warning saying what to add, and
+    `coverageReport` / `projectCoverageReport` fail with the same message
+    instead of producing an empty report.
+  * The flake's coverage jobs (`flake.doCoverage`,
+    `haskellLib.projectCoverageCiJobs`) work again.  With
+    `builderVersion = 2` they now add `coverage: True` for the selected
+    packages to `cabalProjectLocal` as well as setting `doCoverage`;
+    before, their reports were empty.  With `builderVersion = 1` their
+    `doCoverage` no longer conflicts with the global `doCoverage` default
+    ("conflicting definition values" for `packages."<pkg>-inplace"`).
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package
