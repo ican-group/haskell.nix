@@ -95,3 +95,57 @@ But `haskell.nix` is very picky about it.
 
 You may want to set the `dontStrip` option to `false` (see https://github.com/ican-group/haskell.nix/issues/829).
 This is not set by default because it can occasionally cause breakage.
+
+### Why does `cabal build` in my shell build `happy` (or another `build-tool-depends` tool) again?
+
+A `shellFor` shell puts the executables named in the selected packages'
+`build-tool-depends` (`happy`, `alex`, `tasty-discover`, ...) on `PATH`,
+pre-built.  Whether `cabal build` inside the shell uses them depends on
+the builder:
+
+* **`builderVersion = 2`**: the shell's cabal store holds the tool, and
+  `cabal build` reuses it; the only things it builds are your own
+  packages.
+* **`builderVersion = 1`** (the default for most compilers): the shell's
+  libraries are in a GHC package database, which records no executables.
+  cabal-install always solves `build-tool-depends` itself, cannot take
+  the tool from `PATH`, and finds no installed package that provides it.
+  So it plans the tool from source and builds it into `~/.cabal/store`
+  (once), or fails if it cannot download it.  Giving a v1 shell
+  haskell.nix's cabal-install (`project.v2-cabal-install`) does not change
+  this.
+
+When the same package is both a library dependency and a tool, as in
+
+```cabal
+  ghc-options:        -pgmL markdown-unlit
+  build-depends:      base, markdown-unlit
+  build-tool-depends: markdown-unlit:markdown-unlit
+```
+
+a v1 shell can instead fail with
+
+```
+rejecting: my-pkg:markdown-unlit:exe.markdown-unlit-0.6.0/installed-...
+(does not contain executable 'markdown-unlit', which is required by my-pkg)
+```
+
+since the solver sees the installed library but will not let it provide
+the executable.
+
+Ways around it:
+
+* Use the v2 builder (`builderVersion = 2`; see
+  [Migrating to builderVersion = 2](./dev/migrating-to-v2.md) and
+  [Shells with `builderVersion = 2`](reference/tools.md#shells-with-builderversion--2)).
+  A v2 shell links the dependencies' library *and* executable units into
+  its cabal store, and `cabal build` reuses both.
+* Let cabal fetch and build the tool from source (needs network access
+  and a Hackage index).  This works, but rebuilds the tool.
+* Use the deprecated `build-tools: markdown-unlit` field instead of
+  `build-tool-depends`.  cabal then only looks for the program on `PATH`,
+  where the shell has put it.
+
+The `test/shell-build-tool-depends` (tool only, both builders) and
+`test/shell-for-build-tool-depends` (library and tool from one package,
+v2) tests show this.
