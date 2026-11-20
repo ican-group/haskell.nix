@@ -1,6 +1,15 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * New `project.projectHaddock`: the haddock docs of all the project's own
+    libraries and sub-libraries in one directory (`share/doc/<name>/html`)
+    with a combined contents page and index, like `cabal haddock-project`.
+    It reuses the components' `.doc` outputs.  Links between the project's
+    packages are relative, so that part can be published as it is; links to
+    dependencies still point at their docs in the store.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package

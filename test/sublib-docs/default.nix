@@ -82,6 +82,28 @@ in lib.recurseIntoAttrs {
       echo yes >& 2
     '' + ''
 
+      # `projectHaddock` (#737): both components' docs in one directory,
+      # with a contents page and an index that cover them.
+      printf "check the combined project docs..." >& 2
+      html=${project.projectHaddock}/share/doc/haskell-project/html
+      test -f $html/index.html
+      test -f $html/doc-index.html
+      grep -q 'Lib' $html/index.html
+      grep -q 'Slib' $html/index.html
+      echo yes >& 2
+    '' + optionalString (project.pkg-set.config.builderVersion == 1) ''
+      # The library's link to the sublib's docs now points at the copy next
+      # to it, not at the sublib's doc output in the store.
+      printf "check the combined docs link between components relatively..." >& 2
+      lib=$(find $html/sublib-docs-0.1.0.0 -name 'Lib.html' -not -path '*/src/*' -print -quit)
+      grep -E 'href="(\.\./)+sublib-docs-0\.1\.0\.0-slib/[^"]*#t:Greeting"' "$lib" > /dev/null
+      if grep -q '${packages.sublib-docs.components.sublibs.slib.doc}' "$lib"; then
+        echo "Lib.html still refers to the sublib's doc output in the store" >& 2
+        exit 1
+      fi
+      echo yes >& 2
+    '' + ''
+
       touch $out
     '';
 
