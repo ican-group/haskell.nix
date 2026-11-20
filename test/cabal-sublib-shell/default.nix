@@ -189,10 +189,12 @@ let
 
   # A stable-haskell compiler only works with the v2 builder (see the
   # `builderVersion` default in modules/cabal-project.nix), so there is no
-  # v1 shell to test there.  The v1 case is native-only.
+  # v1 shell to test there.  The v1 case is native-only: musl (`musl64`,
+  # `static`) is not `isCrossHost`, but its shell's cabal is the cross
+  # wrapper, which wants a `cabal.project.<target>-local` file.
   onlyV2 = buildPackages.haskell-nix.compiler.${compiler-nix-name}.isStableHaskell or false;
 
-  hasV1 = !onlyV2 && !haskellLib.isCrossHost;
+  hasV1 = !onlyV2 && !haskellLib.isCrossHost && !stdenv.hostPlatform.isMusl;
 
 in lib.recurseIntoAttrs ({
   # CI only pre-builds a test's top-level `ifdInputs`, so the v1 case's
