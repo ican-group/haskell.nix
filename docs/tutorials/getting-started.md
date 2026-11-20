@@ -124,7 +124,7 @@ cabal repl your-package-name:lib:your-package-name
 cabal build your-package-name
 ```
 
-To open a shell for use with `stack` see [the following issue](https://github.com/ican-group/haskell.nix/issues/689#issuecomment-643832619).
+To open a shell for use with `stack` and HLS, see [Using Stack and HLS with a Stack project](./development.md#using-stack-and-hls-with-a-stack-project).
 
 ## Getting started with Hix
 
