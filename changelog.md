@@ -1,6 +1,17 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * `shellFor` and `ghcWithPackages` (including on Stackage snapshots,
+    `haskell-nix.snapshots."lts-…".ghcWithPackages`) no longer expose two
+    copies of a package GHC ships when the plan builds it from source
+    (every snapshot package, or a `constraints: text source`).  GHC's
+    copy used to stay exposed next to the built one, so imports of its
+    modules failed with "Ambiguous module name".  GHC's copy is now
+    hidden; it stays in the package database for the other packages GHC
+    ships that depend on it.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package
