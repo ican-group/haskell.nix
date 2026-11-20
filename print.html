@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-150ed21f.js";
+            window.path_to_searchindex_js = "searchindex-7fcf28db.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-a339c369.js"></script>
@@ -137765,14 +137765,16 @@ release is made and the pin is bumped:</p>
 <p>The <code>upload-artifacts</code> workflow (“Update Static Nix Tools”) runs once
 Hydra has finished that commit: either straight away, if Hydra already
 had when the tag was pushed, or when hydra-github-bridge sets the
-commit’s <code>hydra</code> status to <code>success</code>.  It downloads the zips from Hydra,
-publishes the GitHub release, and pushes a branch
-<code>update-nix-tools-static/&lt;tag&gt;</code> (<code>update-nix-tools-static-sh/&lt;tag&gt;</code>)
-that updates the pin file.  If the workflow cannot open the pull request
-itself, open it by hand from that branch.  If a Hydra build failed,
-restart it on Hydra: when the <code>hydra</code> status turns green the workflow
-runs again by itself.  “Run workflow” with the tag as input re-runs it by
-hand.</p>
+commit’s <code>hydra</code> status to <code>success</code> or <code>failure</code>.  Failures elsewhere
+in the eval do not matter; only the nix-tools zip jobs have to succeed.
+It downloads the zips from Hydra, publishes the GitHub release, and
+pushes a branch <code>update-nix-tools-static/&lt;tag&gt;</code>
+(<code>update-nix-tools-static-sh/&lt;tag&gt;</code>) that updates the pin file.  If the
+workflow cannot open the pull request itself, open it by hand from that
+branch.  If a zip job failed, restart it on Hydra and, once it succeeds,
+re-run the workflow with “Run workflow” and the tag as input.  (It only
+runs again by itself if that was the eval’s last failure, so the
+<code>hydra</code> status turns green.)</p>
 </li>
 <li>
 <p>Merge the pin pull request once CI is green.</p>
