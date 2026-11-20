@@ -825,16 +825,34 @@ final: prev: {
         # never sets `isLocal` (#462).  `extraDeps` is the stack.yaml's own
         # git repos (`genStackCache` with `extraDepsOnly`); `cache` entries
         # from a custom snapshot are not among them and stay non-local.
+        #
+        # Entries match on url, rev and subdir.  The url is compared without
+        # a trailing `/` or `.git`, as a hand-written `cache` may spell it
+        # either way (`stack-repos` turns `github: o/r` into
+        # `https://github.com/o/r.git`); a missing subdir is `.`, as
+        # `stack-repos` writes it.  `mkCacheModule` takes a package's `src`
+        # from the last cache entry with its name, and `stack-repos` lists a
+        # custom snapshot's packages after the stack.yaml's own, so a
+        # package is only marked local when that last entry is an extra-dep.
         mkGitExtraDepsLocalModule = { cache, extraDeps }:
           let
-            key = e: "${e.url} ${e.rev}";
-            extraDepKeys = builtins.listToAttrs
-              (map (e: { name = key e; value = null; }) extraDeps);
+            inherit (final) lib;
+            normUrl = url: lib.removeSuffix ".git" (lib.removeSuffix "/" url);
+            normSubdir = s: if s == null || s == "" then "." else s;
+            key = e: "${normUrl e.url} ${e.rev} ${normSubdir (e.subdir or null)}";
+            extraDepKeys = map key extraDeps;
+            cacheKeys = map key cache;
+            srcEntries = builtins.foldl' (acc: e: acc // { ${e.name} = e; }) {} cache;
+            unmatched = builtins.filter (k: !(builtins.elem k cacheKeys)) extraDepKeys;
+            packages = lib.mapAttrs (_: _: { package.isLocal = lib.mkDefault true; })
+              (lib.filterAttrs (_: e: builtins.elem (key e) extraDepKeys) srcEntries);
           in {
-            packages = builtins.listToAttrs (map (e: {
-                inherit (e) name;
-                value.package.isLocal = final.lib.mkDefault true;
-              }) (builtins.filter (e: extraDepKeys ? ${key e}) cache));
+            packages =
+              if unmatched == []
+                then packages
+                else lib.warn ("gitExtraDepsLocal: no `cache` entry matches the git extra-dep(s) "
+                  + lib.concatStringsSep ", " unmatched + " (url, rev, subdir), so they are not marked local")
+                  packages;
           };
 
         # Takes a haskell src directory runs cabal new-configure and plan-to-nix.

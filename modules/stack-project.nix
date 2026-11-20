@@ -103,7 +103,8 @@ with types;
         local packages (`package.isLocal`, but not `package.isProject`), the
         same as a `cabal.project` `source-repository-package`.  Git packages
         that come from a custom snapshot (a `.yaml` resolver) are not
-        affected.
+        affected, and nor is a package whose name is also given by a later
+        snapshot entry (the snapshot's source is the one used).
 
         Use this when a `cabal.project` next to the stack.yaml builds the
         git dependencies from their source (for instance with
@@ -115,6 +116,9 @@ with types;
           them from the source the `cabal.project` points at.  Without such
           a `cabal.project`, `cabal build` in the shell has nowhere to find
           them.
+        * The shell also provides the dependencies of their test suites and
+          benchmarks (as for any local package), which may pull in test
+          frameworks the project itself does not use.
         * `localPackages` module options (`-Werror` for instance) apply to
           them too.
       '';

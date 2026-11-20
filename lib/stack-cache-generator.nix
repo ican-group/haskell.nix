@@ -29,8 +29,8 @@
                      # Only list the git packages the stack.yaml itself
                      # names (its `extra-deps`), leaving out those that come
                      # from a custom snapshot (a `.yaml` resolver).  Used by
-                     # the `gitExtraDepsLocal` option; only `url` and `rev`
-                     # of the result are meant to be read.
+                     # the `gitExtraDepsLocal` option; only `url`, `rev`
+                     # and `subdir` of the result are meant to be read.
 , nix-tools
 , evalPackages
 , ...
@@ -72,14 +72,17 @@ let
     # All repos served via ssh or git protocols are usually private
     private = url: evalPackages.lib.substring 0 4 url != "http";
 
-    # `stack-repos` merges a snapshot's packages in only when the resolver is
-    # a `.yaml` file, so for `extraDepsOnly` such a resolver is swapped for
-    # a placeholder that names no file (instead of the fetched snapshot).
-    # Without `extraDepsOnly` the script is unchanged.
+    # `stack-repos` merges a custom snapshot's packages in when the resolver
+    # names a `.yaml` file (a path, a URL or pantry's `url:`/`filepath:`
+    # object), so for `extraDepsOnly` the resolver is replaced, whatever it
+    # is, by a placeholder that names no file.  This uses a YAML tool rather
+    # than the text `fetchResolver` matched, which misses quoted values,
+    # trailing comments and CRLF line endings.  Without `extraDepsOnly` the
+    # script is unchanged.
     resolverSubstitution =
       if extraDepsOnly
-        then evalPackages.lib.optionalString (resolver != null && evalPackages.lib.hasSuffix ".yaml" resolver) ''
-          substituteInPlace ${stackYaml} --replace "${resolver}" "lts-0.0"
+        then ''
+          ${evalPackages.yq-go}/bin/yq -i 'del(.snapshot) | .resolver = "lts-0.0"' ${stackYaml}
         ''
         else evalPackages.lib.optionalString (fetchedResolver != null) ''
           substituteInPlace ${stackYaml} --replace "${resolver}" "${fetchedResolver}"
