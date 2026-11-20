@@ -1,7 +1,7 @@
 cabal-version:   2.4
 name:            hello
 version:         0.1.0.0
-license:         NONE
+license:         BSD-3-Clause
 author:          yvan@sraka.xyz
 maintainer:      Yvan Sraka
 build-type:      Simple
