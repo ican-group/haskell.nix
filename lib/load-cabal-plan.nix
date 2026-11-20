@@ -326,8 +326,10 @@ let
   # declares, planned or not, under the plan's flags.  Read like
   # `pkgconfNamesOf`: with an empty `hsPkgs` every dependency falls to
   # `buildDepError`, which returns its Cabal name (`dep`, or `pkg:sublib`).
-  # Keyed by component id (`pkg:lib:pkg`, `pkg:test:t`, ...).  Empty, so
-  # nothing is known, if reading it throws.
+  # Keyed by component id (`pkg:lib:pkg`, `pkg:test:t`, ...).  `null` if
+  # reading it throws, which makes `subLibrariesOnlyForUnbuilt` skip
+  # nothing.  (`tryEval` only catches `throw` and `assert`; the read itself
+  # only uses `or`-guarded lookups, as the real import does.)
   componentDependNamesOf = name: file: args:
     let
       components = (import file (args // {
@@ -343,7 +345,18 @@ let
               (components.${collection} or {}))
           haskellLib.componentPrefix;
       checked = builtins.tryEval (builtins.deepSeq result result);
-    in if checked.success then checked.value else {};
+    in if checked.success then checked.value else null;
+  # `componentDependNames` is the same for every unit of a package in one
+  # stage, so only the first unit of each package and stage reads it; the
+  # others get `{}`, and `subLibrariesOnlyForUnbuilt` takes the union over
+  # all units.  (`listToAttrs` keeps the first occurrence of a name.)
+  dependNamesReaders = pkgs.lib.listToAttrs (map (p: {
+      name = p.id;
+      value = null;
+    }) (pkgs.lib.attrValues (pkgs.lib.listToAttrs (map (p: {
+      name = "${if isTwoStagePlan then haskellLib.planUnitStage p else "host"}/${p.pkg-name}";
+      value = p;
+    }) partitioned.local))));
   # Calculate the packages for a component
   getComponents = cabal2nixComponents: hsPkgs: p:
     let
@@ -538,7 +551,10 @@ in {
                 package = cabal2nix.package // {
                   identifier = { name = p.pkg-name; version = p.pkg-version; id = p.id; };
                   pkgconfNames = pkgconfNamesOf file args;
-                  componentDependNames = componentDependNamesOf p.pkg-name file args;
+                  componentDependNames =
+                    if dependNamesReaders ? ${p.id}
+                      then componentDependNamesOf p.pkg-name file args
+                      else {};
                   isProject = true;
                   setup-depends = []; # The correct setup depends will be in `components.setup.depends`
                 };

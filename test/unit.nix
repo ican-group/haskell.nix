@@ -14,6 +14,33 @@ let
     package.buildable = true;
   };
 
+  # Packages for the `subLibrariesOnlyForUnbuilt` tests.  A v1 plan has an
+  # entry per unit; only one unit per package carries `componentDependNames`.
+  subLibPkgs = {
+    pkgA-unit-lib.componentDependNames = {
+      "pkgA:lib:pkgA" = [ "base" ];
+      "pkgA:lib:testlib" = [ "base" "pkgA" "pkgA:testutil" ];  # only the unbuilt test uses it
+      "pkgA:lib:testutil" = [ "base" ];        # only testlib (left out) uses it
+      "pkgA:lib:api" = [ "base" ];             # nothing uses it (public API?)
+      "pkgA:lib:shared" = [ "base" ];          # built exe and unbuilt test use it
+      "pkgA:lib:unplanned" = [ "base" ];       # used only by the unbuilt test, not built
+      "pkgA:exe:e" = [ "base" "pkgA" "pkgA:shared" "pkgB:util" ];
+      # `pkgA:pkgA` (the main library) is never left out.
+      "pkgA:test:t" = [ "base" "pkgA:pkgA" "pkgA:testlib" "pkgA:shared" "pkgA:unplanned" "pkgB:bench-only" ];
+    };
+    pkgA-unit-e.componentDependNames = { };
+    pkgB.componentDependNames = {
+      "pkgB:lib:util" = [ "base" ];            # another package's built exe uses it
+      "pkgB:lib:bench-only" = [ "base" ];      # another package's unbuilt test uses it
+      "pkgB:bench:b" = [ "base" "pkgB:util" ];
+    };
+  };
+  subLibBuilt = ids: builtins.listToAttrs (map (id: { name = id; value = id; }) ids);
+  subLibBuiltDefault = subLibBuilt [
+    "pkgA:lib:pkgA" "pkgA:lib:testlib" "pkgA:lib:testutil" "pkgA:lib:api"
+    "pkgA:lib:shared" "pkgA:exe:e" "pkgB:lib:util" "pkgB:lib:bench-only"
+  ];
+
   # Project and package sources as `appendSubDir` makes them, for the
   # `defaultFlakeComponents` tests.
   projectSrc = { origSrc = "/repo"; origSubDir = ""; };
@@ -245,33 +272,40 @@ lib.runTests {
 
   # `mkFlake` leaves out of `ciJobs` the sub-libraries only unbuilt
   # components use (#2028).  `packages` holds the built components.
+  # testutil is only used by testlib, which is left out, so it is too.
   testSubLibrariesOnlyForUnbuilt = {
-    expr = haskellLib.subLibrariesOnlyForUnbuilt {
-      # A v1 plan has an entry per unit; each carries the whole package's
-      # `componentDependNames`.
-      pkgA-unit-lib.componentDependNames = {
-        "pkgA:lib:pkgA" = [ "base" ];
-        "pkgA:lib:testlib" = [ "base" "pkgA" ];  # only the unbuilt test uses it
-        "pkgA:lib:api" = [ "base" ];             # nothing uses it (public API?)
-        "pkgA:lib:shared" = [ "base" ];          # built exe and unbuilt test use it
-        "pkgA:lib:unplanned" = [ "base" ];       # used only by the unbuilt test, not built
-        "pkgA:exe:e" = [ "base" "pkgA" "pkgA:shared" "pkgB:util" ];
-        # `pkgA:pkgA` (the main library) is never left out.
-        "pkgA:test:t" = [ "base" "pkgA:pkgA" "pkgA:testlib" "pkgA:shared" "pkgA:unplanned" "pkgB:bench-only" ];
+    expr = haskellLib.subLibrariesOnlyForUnbuilt subLibPkgs subLibBuiltDefault;
+    expected = [ "pkgA:lib:testlib" "pkgA:lib:testutil" "pkgB:lib:bench-only" ];
+  };
+
+  # A second unit (e.g. a two-stage plan's build-machine twin) whose read
+  # adds a dependency keeps that sub-library: units are combined, not
+  # overwritten.
+  testSubLibrariesOnlyForUnbuiltUnion = {
+    expr = haskellLib.subLibrariesOnlyForUnbuilt (subLibPkgs // {
+      pkgA-twin.componentDependNames = {
+        "pkgA:exe:e" = [ "base" "pkgA:testutil" ];
       };
-      pkgA-unit-e.componentDependNames = { };
-      pkgB.componentDependNames = {
-        "pkgB:lib:util" = [ "base" ];            # another package's built exe uses it
-        "pkgB:lib:bench-only" = [ "base" ];      # another package's unbuilt test uses it
-        "pkgB:bench:b" = [ "base" "pkgB:util" ];
-      };
-      # No `componentDependNames` (e.g. a stack project): nothing is known.
-      pkgC = { };
-    } (builtins.listToAttrs (map (id: { name = id; value = id; }) [
-      "pkgA:lib:pkgA" "pkgA:lib:testlib" "pkgA:lib:api" "pkgA:lib:shared" "pkgA:exe:e"
-      "pkgB:lib:util" "pkgB:lib:bench-only" "pkgC:lib:sub"
-    ]));
+    }) subLibBuiltDefault;
     expected = [ "pkgA:lib:testlib" "pkgB:lib:bench-only" ];
+  };
+
+  # Nothing is left out when any dependencies are unknown: a failed read
+  # (`null`) ...
+  testSubLibrariesOnlyForUnbuiltReadFailed = {
+    expr = haskellLib.subLibrariesOnlyForUnbuilt (subLibPkgs // {
+      pkgC.componentDependNames = null;
+    }) subLibBuiltDefault;
+    expected = [ ];
+  };
+
+  # ... or a built component with no entry (e.g. a stack project, which has
+  # no `componentDependNames`).
+  testSubLibrariesOnlyForUnbuiltUnknownComponent = {
+    expr = haskellLib.subLibrariesOnlyForUnbuilt (subLibPkgs // {
+      pkgC = { };
+    }) (subLibBuiltDefault // subLibBuilt [ "pkgC:lib:sub" ]);
+    expected = [ ];
   };
 
   # A project with no haddock-producing components yields an empty group,

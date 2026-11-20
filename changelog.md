@@ -7,11 +7,13 @@ that will impact users.
     and `hydraJobs`, a sub-library that only components left out of the
     build use, such as a private library used only by test suites when the
     plan disables them (`configureArgs = "--disable-tests"`) or by a
-    component that is not buildable.  cabal still plans such a
-    sub-library, but nothing that is built needs it.  It stays in the
-    flake's `packages` (so `nix build .#pkg:lib:sublib` works), and a
-    sub-library that nothing uses at all is still built, since it may be a
-    public one.  Set `flake.ciSkip = [];` in the project (or pass
+    component that is not buildable, or only by another such sub-library.
+    cabal still plans such a sub-library, but nothing that is built needs
+    it.  It stays in the flake's `packages` (so
+    `nix build .#pkg:lib:sublib` works), and a sub-library that nothing
+    uses at all is still built, since it may be a public one.  When any
+    component's dependencies cannot be read (or for stack projects),
+    nothing is left out.  Set `flake.ciSkip = [];` in the project (or pass
     `ciSkip = [];` to `project.flake`) to build them all.
 
 ## November 19, 2026
