@@ -1182,14 +1182,16 @@ final: prev: {
                 # `apps.default`: in a cross or variant flake they would
                 # become `<prefix>:default`, a second name for a component
                 # already there.
-                mkFlake = isMain: project: haskellLib.mkFlake project rec {
+                mkFlake = isMain: project: haskellLib.mkFlake project (rec {
                   selectPackages = project.args.flake.packages;
                   coverage = final.lib.optionalAttrs project.args.flake.doCoverage
                     (haskellLib.projectCoverageCiJobs
                       project selectPackages project.args.flake.coverageProjectModule);
                   inherit (project.args.flake) doHaddock;
                   doDefaults = isMain && project.args.flake.doDefaults;
-                };
+                } // final.lib.optionalAttrs (project.args.flake.ciSkip != null) {
+                  inherit (project.args.flake) ciSkip;
+                });
                 forAllCrossCompilers = prefix: project: (
                     [{ ${prefix} = mkFlake (prefix == "default") project; }]
                   ++ (map (project: {

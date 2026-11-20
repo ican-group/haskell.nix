@@ -243,6 +243,37 @@ lib.runTests {
       };
     };
 
+  # `mkFlake` leaves out of `ciJobs` the sub-libraries only unbuilt
+  # components use (#2028).  `packages` holds the built components.
+  testSubLibrariesOnlyForUnbuilt = {
+    expr = haskellLib.subLibrariesOnlyForUnbuilt {
+      # A v1 plan has an entry per unit; each carries the whole package's
+      # `componentDependNames`.
+      pkgA-unit-lib.componentDependNames = {
+        "pkgA:lib:pkgA" = [ "base" ];
+        "pkgA:lib:testlib" = [ "base" "pkgA" ];  # only the unbuilt test uses it
+        "pkgA:lib:api" = [ "base" ];             # nothing uses it (public API?)
+        "pkgA:lib:shared" = [ "base" ];          # built exe and unbuilt test use it
+        "pkgA:lib:unplanned" = [ "base" ];       # used only by the unbuilt test, not built
+        "pkgA:exe:e" = [ "base" "pkgA" "pkgA:shared" "pkgB:util" ];
+        # `pkgA:pkgA` (the main library) is never left out.
+        "pkgA:test:t" = [ "base" "pkgA:pkgA" "pkgA:testlib" "pkgA:shared" "pkgA:unplanned" "pkgB:bench-only" ];
+      };
+      pkgA-unit-e.componentDependNames = { };
+      pkgB.componentDependNames = {
+        "pkgB:lib:util" = [ "base" ];            # another package's built exe uses it
+        "pkgB:lib:bench-only" = [ "base" ];      # another package's unbuilt test uses it
+        "pkgB:bench:b" = [ "base" "pkgB:util" ];
+      };
+      # No `componentDependNames` (e.g. a stack project): nothing is known.
+      pkgC = { };
+    } (builtins.listToAttrs (map (id: { name = id; value = id; }) [
+      "pkgA:lib:pkgA" "pkgA:lib:testlib" "pkgA:lib:api" "pkgA:lib:shared" "pkgA:exe:e"
+      "pkgB:lib:util" "pkgB:lib:bench-only" "pkgC:lib:sub"
+    ]));
+    expected = [ "pkgA:lib:testlib" "pkgB:lib:bench-only" ];
+  };
+
   # A project with no haddock-producing components yields an empty group,
   # matching what `doHaddock = false` produces.
   testMkFlakeHaddockEmpty = {

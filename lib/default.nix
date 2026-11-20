@@ -723,6 +723,33 @@ in {
         value = coverageProject.hsPkgs.${packageName}.coverageReport;
       }]) (packageNames coverageProject));
 
+  # The sub-libraries `mkFlake` leaves out of `ciJobs` (#2028), as component
+  # ids: those only components that are not built depend on, e.g. a private
+  # library used just by test suites when the plan disables them
+  # (`configureArgs = "--disable-tests"`), or ones made non-buildable.
+  # cabal still plans such a sub-library, but nothing built uses it.  One
+  # that nothing depends on is kept, since it may be a public sub-library
+  # (part of the package's API, which `plan.json` cannot tell apart from a
+  # private one), as is one a built component uses.  `packages` is the
+  # flake's packages, keyed by component id; a component in it is built.
+  # The dependencies come from the packages' `componentDependNames`.
+  subLibrariesOnlyForUnbuilt = haskellPackages: packages:
+    let
+      dependNames = lib.foldr (p: acc: acc // (p.componentDependNames or {}))
+        {} (lib.attrValues haskellPackages);
+      namesOf = pred: lib.concatLists
+        (lib.attrValues (lib.filterAttrs (id: _: pred (packages ? ${id})) dependNames));
+      usedByBuilt = lib.genAttrs (namesOf (built: built)) (_: null);
+      # `pkg:sublib` names the component `pkg:lib:sublib`; a bare `pkg` (or
+      # `pkg:pkg`) is the main library, which is never left out.
+      subLibId = dep:
+        let m = builtins.match "([^:]+):([^:]+)" dep;
+        in if m == null || lib.head m == lib.elemAt m 1 then null
+          else "${lib.head m}:lib:${lib.elemAt m 1}";
+    in lib.unique (lib.filter (id: id != null && packages ? ${id})
+      (map subLibId (lib.filter (dep: !(usedByBuilt ? ${dep}))
+        (namesOf (built: !built)))));
+
   # Flake package names that are flat and match the cabal component names.
   mkFlakePackages =
     foldrAttrVals
@@ -886,7 +913,16 @@ in {
         , devShell ? project.shell
         , devShells ? { default = devShell; }
         , checkedProject ? project.appendModule { checkMaterialization = true; }
-        , ciJobs ? mkFlakeCiJobs project { inherit checks coverage packages haddock devShells checkedProject; }
+        # Component ids left out of `ciJobs` (but kept in `packages`): by
+        # default the sub-libraries only unbuilt components use, see
+        # `subLibrariesOnlyForUnbuilt`.  Pass `[]` to build them in CI too
+        # (the project's `flake.ciSkip` option).
+        , ciSkip ? subLibrariesOnlyForUnbuilt haskellPackages packages
+        , ciJobs ? mkFlakeCiJobs project {
+            inherit checks coverage devShells checkedProject;
+            packages = removeAttrs packages ciSkip;
+            haddock = removeAttrs haddock ciSkip;
+          }
         , hydraJobs ? ciJobs
         # The component for `packages.default` (`nix build`) and
         # `apps.default` (`nix run`).  By default these come from the

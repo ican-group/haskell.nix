@@ -322,6 +322,28 @@ let
         hsPkgs = {}; pkgconfPkgs = {};
         errorHandler = args.errorHandler // { pkgConfDepError = name: [ name ]; };
       }))));
+  # The `build-depends` of every component a package's `.cabal` file
+  # declares, planned or not, under the plan's flags.  Read like
+  # `pkgconfNamesOf`: with an empty `hsPkgs` every dependency falls to
+  # `buildDepError`, which returns its Cabal name (`dep`, or `pkg:sublib`).
+  # Keyed by component id (`pkg:lib:pkg`, `pkg:test:t`, ...).  Empty, so
+  # nothing is known, if reading it throws.
+  componentDependNamesOf = name: file: args:
+    let
+      components = (import file (args // {
+        hsPkgs = {};
+        errorHandler = args.errorHandler // { buildDepError = dep: dep; };
+      })).components or {};
+      namesOf = c: pkgs.lib.filter builtins.isString (c.depends or []);
+      result = pkgs.lib.optionalAttrs ((components.library or null) != null) {
+          "${name}:lib:${name}" = namesOf components.library;
+        }
+        // pkgs.lib.concatMapAttrs (collection: prefix:
+            pkgs.lib.mapAttrs' (n: c: pkgs.lib.nameValuePair "${name}:${prefix}:${n}" (namesOf c))
+              (components.${collection} or {}))
+          haskellLib.componentPrefix;
+      checked = builtins.tryEval (builtins.deepSeq result result);
+    in if checked.success then checked.value else {};
   # Calculate the packages for a component
   getComponents = cabal2nixComponents: hsPkgs: p:
     let
@@ -516,6 +538,7 @@ in {
                 package = cabal2nix.package // {
                   identifier = { name = p.pkg-name; version = p.pkg-version; id = p.id; };
                   pkgconfNames = pkgconfNamesOf file args;
+                  componentDependNames = componentDependNamesOf p.pkg-name file args;
                   isProject = true;
                   setup-depends = []; # The correct setup depends will be in `components.setup.depends`
                 };

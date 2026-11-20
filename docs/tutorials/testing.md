@@ -50,7 +50,10 @@ The flake's `apps` output also has the test executables, so
 `doCheck` is set to.
 
 The `ciJobs` and `hydraJobs` outputs of `project.flake {}` include the
-same checks.
+same checks.  When the plan leaves the test suites out
+(`configureArgs = "--disable-tests"`), they also leave out any
+sub-library that only those test suites use (it is still in the flake's
+`packages`); set `flake.ciSkip = [];` in the project to build those too.
 
 To collect checks yourself, for example for a CI job, use
 [`collectChecks` / `collectChecks'`](../reference/library.md#collectchecks-collectchecks):
