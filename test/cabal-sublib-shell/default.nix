@@ -22,8 +22,7 @@ with lib;
 # the build log.  If cabal built `provider` or the `slib` sublib from
 # source, the sibling bug is present.
 let
-  isTargetCompiler = compiler-nix-name == "ghc9141";
-
+  mkCase = builderVersion: let
   project = cabalProject' {
     inherit compiler-nix-name evalSystem;
     src = testSrc "cabal-sublib-shell";
@@ -40,24 +39,44 @@ let
       lib.optionalString (haskellLib.isCrossHost && stdenv.hostPlatform.isAarch64) ''
         constraints: text -simdutf, text source
       '';
-    shell.tools.cabal = {};
+    # v2: the shell's default cabal (see `cabalTool` in
+    # builder/shell-for-v2.nix).  v1 picks its cabal in `env` below.
+    shell.tools = lib.optionalAttrs (builderVersion == 2) { cabal = {}; };
     modules = [
       { packages.provider.doHaddock = false; }
     ];
-    builderVersion = 2;
+    inherit builderVersion;
   };
 
-  env = project.shellFor {
+  env = project.shellFor ({
     packages = ps: [ ps.consumer ];
     withHoogle = false;
-  };
+  } // lib.optionalAttrs (builderVersion == 1) {
+    # Upstream cabal-install's solver does not consider installed
+    # sublibraries (haskell/cabal#6039): with the hackage cabal a v1
+    # shell's pre-built `provider` is rejected for lacking `slib`, and
+    # `provider` is rebuilt from source.  haskell.nix's cabal-install
+    # (`project.v2-cabal-install`) lets installed units satisfy sublib
+    # dependencies, so the v1 shell's package db is reused.
+    tools.cabal = project.v2-cabal-install;
+  });
 
-in lib.recurseIntoAttrs {
+  # v1 has no slice tarball; an sdist-shaped tarball of the same source
+  # is all the local repository needs.
+  providerTarball =
+    if builderVersion == 2
+      then project.hsPkgs.provider.components.library.passthru.pkgTarball
+      else runCommand "provider-0.1.0.0.tar.gz" {} ''
+        cp -r ${testSrc "cabal-sublib-shell"}/provider provider-0.1.0.0
+        tar -czf $out provider-0.1.0.0
+      '';
+
+  in {
   ifdInputs = { inherit (project) plan-nix; };
   inherit env;
 
   run = stdenv.mkDerivation {
-    name = "cabal-sublib-shell-test";
+    name = "cabal-sublib-shell-test${lib.optionalString (builderVersion == 1) "-v1"}";
     passthru = { inherit project; };
 
     nativeBuildInputs = env.nativeBuildInputs;
@@ -83,6 +102,12 @@ in lib.recurseIntoAttrs {
       mkdir -p "$HOME/.cabal"
       cp -R ${project.dotCabalDir}/. "$HOME/.cabal/"
       chmod -R u+w "$HOME/.cabal"
+      ${lib.optionalString (builderVersion == 1) ''
+        # The v1 shell's cabal-install need not be the one that wrote the
+        # index cache, and the cache is a read-only symlink into the store;
+        # drop it so cabal can regenerate it.
+        rm -f "$HOME"/.cabal/packages/*/01-index.cache
+      ''}
 
       # Stage consumer, point cabal at a local repo containing
       # provider's tarball so the solver can see provider as a
@@ -91,7 +116,7 @@ in lib.recurseIntoAttrs {
       chmod -R +w consumer
       repoDir=$PWD/repo
       mkdir -p "$repoDir"
-      cp ${project.hsPkgs.provider.components.library.passthru.pkgTarball} \
+      cp ${providerTarball} \
          "$repoDir/provider-0.1.0.0.tar.gz"
 
       cd consumer
@@ -136,4 +161,18 @@ in lib.recurseIntoAttrs {
 
     meta = { platforms = platforms.unix; };
   };
-}
+  };
+
+  v2 = mkCase 2;
+  v1 = mkCase 1;
+
+  # A stable-haskell compiler only works with the v2 builder (see the
+  # `builderVersion` default in modules/cabal-project.nix), so there is no
+  # v1 shell to test there.  The v1 case is native-only.
+  onlyV2 = buildPackages.haskell-nix.compiler.${compiler-nix-name}.isStableHaskell or false;
+
+in lib.recurseIntoAttrs ({
+  inherit (v2) ifdInputs env run;
+} // lib.optionalAttrs (!onlyV2 && !haskellLib.isCrossHost) {
+  v1 = lib.recurseIntoAttrs v1;
+})

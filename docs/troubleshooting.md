@@ -91,6 +91,43 @@ So we only include Haskell sources if they appear in a `hs-source-dirs` somewher
 This is good practice anyway: if you do not include such files in `extra-source-files` then they will not be included in `cabal sdist`, which will cause problems if you ever upload your package to Hackage.
 But `haskell.nix` is very picky about it.
 
+### Why does `cabal build` in my shell rebuild a dependency that has public sub-libraries?
+
+Inside a `shellFor` shell, `cabal build` is meant to reuse the
+dependencies the shell already provides.  With the default builder
+(`builderVersion = 1`) those are installed in the shell's GHC package
+database, and the cabal-install from Hackage cannot use an installed
+package for a dependency on one of its public sub-libraries
+(`build-depends: provider:slib`): its solver does not know that an
+installed package can have more than one library
+([haskell/cabal#6039](https://github.com/haskell/cabal/issues/6039)).
+It rejects the installed package and either builds it from source again
+or, when no source is available, fails with an error like:
+
+```
+rejecting: provider-0.1.0.0/installed-... (does not contain library 'slib', which is required by consumer)
+```
+
+haskell.nix's own cabal-install (the one the v2 builder uses,
+`project.v2-cabal-install`) lets installed units satisfy sub-library
+dependencies.  Give the shell that cabal instead:
+
+```nix
+project.shellFor {
+  tools.cabal = project.v2-cabal-install;
+}
+```
+
+(`tools` takes a derivation as well as a version.)  In a project's
+`shell` argument, where `project` is not available, use
+`pkgs.pkgsBuildBuild.haskell-nix.v2-cabal-install`.  This cabal is a
+3.19 pre-release build and keeps its `~/.cabal/store` in its own layout,
+so it will not reuse what another cabal-install built there.
+
+Shells of projects using the v2 builder (`builderVersion = 2`) already
+use this cabal by default and reuse a cabal store, so they are not
+affected.
+
 ### Why does my executable depend on GHC/GCC?
 
 You may want to set the `dontStrip` option to `false` (see https://github.com/ican-group/haskell.nix/issues/829).

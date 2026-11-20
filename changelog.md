@@ -1,6 +1,19 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * `shellFor`'s `tools` now also takes a derivation, which goes on `PATH`
+    as it is, with the default builder as well as with
+    `builderVersion = 2`.  For instance `tools.cabal =
+    project.v2-cabal-install` gives a default-builder shell haskell.nix's
+    own cabal-install, which can reuse the shell's pre-built packages for
+    dependencies on public sub-libraries (`build-depends: pkg:sublib`).
+    The cabal-install from Hackage cannot, and rebuilds such packages
+    from source (haskell/cabal#6039).  See "Why does `cabal build` in my
+    shell rebuild a dependency that has public sub-libraries?" in
+    `docs/troubleshooting.md`.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package

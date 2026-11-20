@@ -188,7 +188,14 @@ in
     nativeBuildInputs = [ ghcEnv.drv ]
       ++ nativeBuildInputs
       ++ mkDrvArgs.nativeBuildInputs or []
-      ++ lib.attrValues (pkgsBuildBuild.haskell-nix.tools' evalPackages.stdenv.hostPlatform.system compiler.nix-name tools)
+      # A tool given as a derivation goes on PATH as-is (as in
+      # builder/shell-for-v2.nix), e.g. `tools.cabal = project.v2-cabal-install`;
+      # anything else is a version or module spec for `haskell-nix.tool'`.
+      ++ lib.mapAttrsToList (name: versionOrMod:
+           if lib.isDerivation versionOrMod
+             then versionOrMod
+             else pkgsBuildBuild.haskell-nix.tool' evalPackages.stdenv.hostPlatform.system compiler.nix-name name versionOrMod)
+         tools
       ++ lib.optional (ghcEnv.baseGhc.useLdLld or false) llvmPackages.bintools
       # If this shell is a cross compilation shell include
       # wrapper script for running cabal build with appropriate args.
