@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-d76e40db.js";
+            window.path_to_searchindex_js = "../searchindex-150ed21f.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a339c369.js"></script>
@@ -199,11 +199,17 @@ release is made and the pin is bumped:</p>
 (<code>&lt;system&gt;.nix-tools-sh.static.zipped.*</code> for <code>nix-tools-sh</code>).</p>
 </li>
 <li>
-<p>The <code>upload-artifacts</code> (or <code>upload-artifacts-sh</code>) workflow waits for
-those Hydra jobs to finish, downloads the zips, publishes the GitHub release, and pushes a branch
+<p>The <code>upload-artifacts</code> workflow (“Update Static Nix Tools”) runs once
+Hydra has finished that commit: either straight away, if Hydra already
+had when the tag was pushed, or when hydra-github-bridge sets the
+commit’s <code>hydra</code> status to <code>success</code>.  It downloads the zips from Hydra,
+publishes the GitHub release, and pushes a branch
 <code>update-nix-tools-static/&lt;tag&gt;</code> (<code>update-nix-tools-static-sh/&lt;tag&gt;</code>)
 that updates the pin file.  If the workflow cannot open the pull request
-itself, open it by hand from that branch.</p>
+itself, open it by hand from that branch.  If a Hydra build failed,
+restart it on Hydra: when the <code>hydra</code> status turns green the workflow
+runs again by itself.  “Run workflow” with the tag as input re-runs it by
+hand.</p>
 </li>
 <li>
 <p>Merge the pin pull request once CI is green.</p>
