@@ -3100,9 +3100,15 @@ let
   # cabal.project.  (`modules/install-plan/configure-args.nix` sets
   # `doCoverage` from the plan's `--enable-coverage`, so `doCoverage`
   # without that flag means a module set it.)  It used to be ignored
-  # silently, leaving an empty coverage report; now the slice warns and
-  # `haskellLib.coverageReport` throws for libraries with
-  # `coverageIgnored`.
+  # silently, leaving an empty coverage report; now `coverageReport` throws
+  # for slices with `coverageIgnored`, and a local package's slice warns
+  # when it is instantiated.  Only local packages: a project-wide
+  # `doCoverage = true` (as v1 projects use) would otherwise warn for every
+  # dependency slice, with advice that does not apply to them, and break
+  # `--abort-on-warn` evaluations.  The warning hangs off `drvPath` and
+  # `outPath` (one shared thunk, so it prints once) rather than the whole
+  # value, so reading `coverageIgnored` or other passthru attributes does
+  # not trigger it.
   planCoverage = lib.any (p:
       let args = p.configure-args or [];
       in lib.elem "--enable-coverage" args || lib.elem "--enable-library-coverage" args
@@ -3120,7 +3126,16 @@ let
     on its own is ignored by v2 slices.  See `docs/tutorials/coverage.md`.
   '';
 
-  decorate = base: base // exePathAttrs // docAttrs // {
+  coverageWarning = lib.warn coverageIgnoredMessage null;
+  warnCoverageIgnored = d:
+    if coverageIgnored && (package.isLocal or false)
+      then d // {
+        drvPath = builtins.seq coverageWarning d.drvPath;
+        outPath = builtins.seq coverageWarning d.outPath;
+      }
+      else d;
+
+  decorate = base: warnCoverageIgnored (base // exePathAttrs // docAttrs // {
       inherit checkAgainstPlan coverageIgnored coverageIgnoredMessage;
       profiled = profiledThrow;
       dwarf = dwarfThrow;
@@ -3141,7 +3156,5 @@ let
       # result so back-to-back `drv.override {...}.override {...}`
       # calls (as in the iserv-proxy-interpreter / -prof pair) work.
       override = _: decorate base;
-    };
-in if coverageIgnored
-  then lib.warn coverageIgnoredMessage (decorate slice)
-  else decorate slice
+    });
+in decorate slice

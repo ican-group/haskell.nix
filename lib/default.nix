@@ -703,31 +703,48 @@ in {
   # `coverageProjectModule` is applied to `project` and is useful for
   # modifying the project settings when running code coverage (just
   # pass `{}` if you do not need to modify anything).
-  # By default the `doCoverage` flag will be set for the packages
-  # selected by `packages`.  With `builderVersion = 2` that flag alone is
-  # ignored (coverage has to be in the plan), so those packages also get
-  # `coverage: True` in `cabalProjectLocal`.
+  # The packages selected by `packages` get coverage:
+  #
+  #  * `builderVersion = 1`: their `doCoverage` flag is set.  To leave one
+  #    out, give it a plain definition in `coverageProjectModule`
+  #    (`modules = [{ packages.foo.doCoverage = false; }]`); a `mkDefault`
+  #    is not enough (see below).
+  #  * `builderVersion = 2`: the `doCoverage` flag alone is ignored
+  #    (coverage has to be in the plan), so they get
+  #    `package <name>\n  coverage: True` in `cabalProjectLocal` instead,
+  #    and `doCoverage` follows from the plan.  To leave one out, add
+  #    `package foo\n  coverage: False` to `cabalProjectLocal` in
+  #    `coverageProjectModule` (it comes after these stanzas, so it wins),
+  #    or narrow the `packages` selector.  Setting `doCoverage = false`
+  #    there conflicts with the plan's `true`.
+  #
+  # Whether it is v2 is read from the coverage project itself, so a
+  # `coverageProjectModule` that changes `builderVersion` is honoured.
   projectCoverageCiJobs = project: packages: coverageProjectModule:
     let
       packageNames = project: builtins.attrNames (packages project.hsPkgs);
-      isV2 = (project.pkg-set.config.builderVersion or 1) == 2;
-      # cabal package names: v2's `hsPkgs` is keyed by plan id.
+      # cabal package names (v2's `hsPkgs` is keyed by plan id, and a plan
+      # id can change once coverage is in the plan).
       cabalPackageNames = lib.unique (map (p: p.identifier.name)
         (builtins.attrValues (packages project.hsPkgs)));
       coverageProject = project.appendModule [
         coverageProjectModule
-        ({
-          modules = [{
-            # Above `mkDefault`: `modules/plan.nix` passes the global
-            # `doCoverage = false` down to every package as a `mkDefault`,
-            # and two `mkDefault`s conflict.  Still below a plain
-            # definition, so `coverageProjectModule` can turn it off.
+        ({ config, ... }: let isV2 = config.builderVersion == 2; in {
+          # `mkIf` rather than `optionalAttrs`: the module's shape must not
+          # depend on `builderVersion`, or evaluating it recurses.
+          modules = lib.mkIf (!isV2) [{
+            # `mkOverride 900`: above `mkDefault`, because `modules/plan.nix`
+            # passes the global `doCoverage = false` down to every package
+            # as a `mkDefault` and two `mkDefault`s conflict; below a plain
+            # definition, which therefore turns it off.
             packages = lib.genAttrs (packageNames project)
               (_: { doCoverage = lib.mkOverride 900 true; });
           }];
-        } // lib.optionalAttrs isV2 {
-          cabalProjectLocal = lib.concatMapStrings
-            (n: "\npackage ${n}\n  coverage: True\n") cabalPackageNames;
+          # `mkOrder 700`: after what haskell.nix itself puts first
+          # (`mkBefore`) and before `coverageProjectModule`'s own text, so a
+          # `coverage: False` there wins.
+          cabalProjectLocal = lib.mkIf isV2 (lib.mkOrder 700 (lib.concatMapStrings
+            (n: "\npackage ${n}\n  coverage: True\n") cabalPackageNames));
         })
       ];
     in

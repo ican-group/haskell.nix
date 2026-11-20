@@ -6,17 +6,26 @@ that will impact users.
   * With `builderVersion = 2`, the `doCoverage` module option on its own
     no longer fails silently.  v2 builds only produce coverage when it is
     in the plan, i.e. `coverage: True` in `cabal.project` or
-    `cabalProjectLocal`, so a component with `doCoverage` but no
-    `coverage: True` now prints a warning saying what to add, and
-    `coverageReport` / `projectCoverageReport` fail with the same message
-    instead of producing an empty report.
+    `cabalProjectLocal`, so `coverageReport` / `projectCoverageReport` now
+    fail with a message saying what to add instead of producing an empty
+    report (for libraries and for the test suites whose checks they run),
+    and instantiating such a component of a local package prints the same
+    message as a warning.  Dependencies are flagged
+    (`coverageIgnored`) but not warned about.
   * The flake's coverage jobs (`flake.doCoverage`,
-    `haskellLib.projectCoverageCiJobs`) work again.  With
-    `builderVersion = 2` they now add `coverage: True` for the selected
-    packages to `cabalProjectLocal` as well as setting `doCoverage`;
-    before, their reports were empty.  With `builderVersion = 1` their
-    `doCoverage` no longer conflicts with the global `doCoverage` default
-    ("conflicting definition values" for `packages."<pkg>-inplace"`).
+    `haskellLib.projectCoverageCiJobs`) work again.
+    * With `builderVersion = 2` (read from the coverage project, so a
+      `coverageProjectModule` that sets it counts) they add
+      `package <name>\n  coverage: True` for the selected packages to
+      `cabalProjectLocal`; before, their reports were empty.  To leave a
+      package out, put `package <name>\n  coverage: False` in
+      `coverageProjectModule`'s `cabalProjectLocal`, or narrow the
+      package selector.
+    * With `builderVersion = 1` their `doCoverage` no longer conflicts with
+      the global `doCoverage` default ("conflicting definition values").
+      To leave a package out, set its `doCoverage = false` with a plain
+      definition (or `mkForce`): a `mkDefault` has the same priority as the
+      project-wide default and loses to the jobs' setting.
 
 ## November 19, 2026
 

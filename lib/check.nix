@@ -41,7 +41,11 @@ if drvOrig.passthru.isSlice or false then
     # `emulatorNativeBuilderCheck` in overlays/haskell.nix).
     requiredSystemFeatures = emulatorSystemFeatures;
   } // {
-    passthru = { inherit (drvOrig) identifier config exeName meta; };
+    passthru = { inherit (drvOrig) identifier config exeName meta; }
+      # For `haskellLib.coverageReport`'s check (see lib/cover.nix).
+      // lib.optionalAttrs (drvOrig ? coverageIgnored) {
+        inherit (drvOrig) coverageIgnored coverageIgnoredMessage;
+      };
     inherit (drvOrig) exeName;
     inherit (component) doCheck doCrossCheck;
     # ghcjs binaries start with `#!/usr/bin/env node`.  Put node on
