@@ -3,30 +3,31 @@
 # them, like `cabal haddock-project`, made from the docs the components
 # already built (nothing is rebuilt with haddock here).
 #
-# Each component's doc output is copied whole into `<html>/<component>/`.
-# Links between the project's components (haddock writes the absolute store
-# path of the other component's docs) are rewritten to relative ones, so the
-# project's part of the result can be moved or published as it is.  Links to
-# dependencies keep pointing at the dependencies' docs in the store, which
-# keeps those docs in the closure.
+# Only each component's html directory is copied, into `<html>/<dir>/`.
+# The html directory is the one holding the component's `.haddock`
+# interface: `share/doc/<pkg>/html[/<sublib>]` of a v1 `doc` output, the
+# target unit's `share/doc/html[/<sublib>]` in a v2 doc slice (whose
+# libraries, `.hi` files, package db and `dist-newstyle` stay out).
+#
+# Links between the project's components (haddock writes the absolute
+# store path of the other component's html directory) are rewritten to
+# relative ones, so the project's part of the result can be moved or
+# published as it is.  Links to dependencies keep pointing at the
+# dependencies' docs in the store, which keeps those docs in the closure.
 { stdenv, lib, haskellLib, pkgs }:
 
 # haskell.nix project
 project:
 
 let
-  ghc = project.pkg-set.config.ghc.package;
-
   # A library component's docs, when it has any: v1 components only have
   # `doc` when `doHaddock` is on, v2 slices have it (but it throws) when
   # `documentation: True` is not set for the package.
   hasDoc = c: if c ? docEnabled then c.docEnabled else c ? doc;
 
   # `{ dir, doc }` for every documented library and sub-library of the
-  # project's own packages (keyed on `dir`, since `hsPkgs` can hold a
-  # package under more than one name).
-  components = lib.attrValues (lib.listToAttrs (map (x: lib.nameValuePair x.dir x)
-   (lib.concatLists (lib.mapAttrsToList (pname: pkg:
+  # project's own packages.
+  allComponents = lib.concatLists (lib.mapAttrsToList (pname: pkg:
     let
       # The attribute name can be a unit id, so use the package's own name.
       name = pkg.identifier.name or pname;
@@ -37,7 +38,33 @@ let
         ++ lib.mapAttrsToList (n: c: { dir = "${pkgDir}-${n}"; inherit c; })
              (pkg.components.sublibs or {});
     in map ({ dir, c }: { inherit dir; inherit (c) doc; }) (lib.filter (x: hasDoc x.c) libs)
-  ) (haskellLib.selectProjectPackages project.hsPkgs)))));
+  ) (haskellLib.selectProjectPackages project.hsPkgs));
+
+  # `hsPkgs` can hold the same component under more than one name, so drop
+  # repeats of the same doc output first.  Different doc outputs that would
+  # land in the same directory (v2 can plan one package as several units,
+  # e.g. with different flags or for the build platform) all stay, the
+  # later ones in `<dir>-2`, `<dir>-3`, ... with a warning, rather than one
+  # of them silently replacing the others.
+  uniqueDocs = lib.attrValues (lib.listToAttrs (map (x:
+    lib.nameValuePair (builtins.unsafeDiscardStringContext "${x.doc}") x) allComponents));
+  byDir = lib.groupBy (x: x.dir) uniqueDocs;
+  components = lib.concatLists (lib.mapAttrsToList (dir: xs:
+    let n = builtins.length xs; in
+    lib.warnIf (n > 1)
+      "projectHaddock: ${toString n} different doc outputs for ${dir}; they are kept as ${dir}, ${dir}-2, ..."
+      (lib.imap1 (i: x: x // { dir = if i == 1 then dir else "${dir}-${toString i}"; }) xs)
+  ) byDir);
+
+  # The haddock that reads the interfaces should be the one that wrote
+  # them.  A v2 doc slice carries the compiler it was built with (that can
+  # differ from the package set's `ghc`, e.g. for `-target` cross
+  # compilers); a v1 doc output was made with the package set's `ghc`.
+  ghc =
+    let fromDocs = lib.filter (g: g != null)
+          (map (x: x.doc.passthru.haddockGhc or null) components);
+    in if fromDocs != [] then builtins.head fromDocs
+       else project.pkg-set.config.ghc.package;
 
   name = let n = project.args.name or null; in if n == null then "haskell-project" else n;
 
@@ -48,33 +75,66 @@ in stdenv.mkDerivation {
 
   passthru = { inherit components; };
 
+  # `copyDocs <doc output> <dir>` copies the component's html directory
+  # (found through its single `.haddock` file) to `$html/<dir>` and records
+  # `<original html dir> <dir> <interface file name>` in `$TMPDIR/map`.
+  #
+  # The link rewrite then only touches files that mention one of the
+  # original html directories (`grep -lF`), first replacing each with a
+  # placeholder and then the placeholder with that file's relative path
+  # to `$html`, which is its depth below `$html` in `../`s.
+  #
+  # `-B`: some haddocks (ghc914-sh) insist on a GHC libdir even for
+  # `--gen-contents` ("internal error: No GhcDir found").
   buildCommand = ''
     html=$out/share/doc/${name}/html
     mkdir -p $html
+    : > $TMPDIR/map
+
+    copyDocs() {
+      local doc="$1" dir="$2" ifaces
+      mapfile -t ifaces < <(find "$doc" -name '*.haddock' -type f)
+      case ''${#ifaces[@]} in
+        0) echo "projectHaddock: no haddock interface in $doc, skipping $dir" >&2
+           return ;;
+        1) ;;
+        *) echo "projectHaddock: more than one haddock interface in $doc:" "''${ifaces[@]}" >&2
+           exit 1 ;;
+      esac
+      local src
+      src=$(dirname "''${ifaces[0]}")
+      cp -R "$src" "$html/$dir"
+      printf '%s %s %s\n' "$src" "$dir" "$(basename "''${ifaces[0]}")" >> $TMPDIR/map
+    }
   '' + lib.concatMapStrings ({ dir, doc }: ''
-    cp -R ${doc} $html/${dir}
+    copyDocs ${doc} ${lib.escapeShellArg dir}
   '') components + ''
     chmod -R u+w $html
 
-    # Point links between the project's components at the copies.  The
-    # replacement is relative to each file's own directory.
-    find $html -name '*.html' -o -name '*.json' | while read -r f; do
-      rel=$(realpath --relative-to="$(dirname "$f")" "$html")
-      sed -i ${lib.concatMapStringsSep " " ({ dir, doc }:
-          "-e 's|file://${doc}|'\"$rel\"'/${dir}|g' -e 's|${doc}|'\"$rel\"'/${dir}|g'"
-        ) components} "$f"
-    done
+    sedArgs=()
+    : > $TMPDIR/srcs
+    while read -r src dir iface; do
+      printf '%s\n' "$src" >> $TMPDIR/srcs
+      sedArgs+=(-e "s|file://$src|@PROJECT_HADDOCK_ROOT@/$dir|g" -e "s|$src|@PROJECT_HADDOCK_ROOT@/$dir|g")
+    done < $TMPDIR/map
+    if [ -s $TMPDIR/srcs ]; then
+      { grep -rlF -f $TMPDIR/srcs $html || true; } | while read -r f; do
+        r=''${f#$html/}
+        d=''${r//[^\/]/}
+        rel=.
+        for ((i = 0; i < ''${#d}; i++)); do
+          if [ "$rel" = . ]; then rel=..; else rel=$rel/..; fi
+        done
+        sed -i "''${sedArgs[@]}" -e "s|@PROJECT_HADDOCK_ROOT@|$rel|g" "$f"
+      done
+    fi
 
-    # The contents page and index across all the components.
     readInterfaces=()
-    while read -r iface; do
-      d=$(dirname "$iface")
-      readInterfaces+=("--read-interface=''${d#$html/},$iface")
-    done < <(find $html -name '*.haddock' -not -path '*/src/*' | sort)
+    while read -r src dir iface; do
+      readInterfaces+=("--read-interface=$dir,$html/$dir/$iface")
+    done < $TMPDIR/map
     if [ ''${#readInterfaces[@]} -gt 0 ]; then
       cd $html
-      # `-B`: some haddocks (ghc914-sh) insist on a GHC libdir even here
-      # ("internal error: No GhcDir found").
       ${ghc.targetPrefix}haddock \
         -B"$(${ghc.targetPrefix}ghc --print-libdir)" \
         --gen-contents --gen-index --quickjump \

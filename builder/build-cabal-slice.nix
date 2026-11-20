@@ -2125,7 +2125,7 @@ ${lib.optionalString (metadataSourceFrags != []) ''
               grep -qxF "$(basename "$conf")" $buildRoot/confs-before && continue
               if [ "$(awk '/^name:/ {print $2; exit}' "$conf")" \
                    = "z-$tgt_pkg-z-$tgt_cname" ]; then
-                target_uid=$(awk '/^id:/ {print $2; exit}' "$conf")
+                target_uid=$(awk '/^id:/ {if (NF > 1) print $2; else {getline; print $1}; exit}' "$conf")
                 ghc_dir=$(dirname "$(dirname "$conf")")
                 target_html_dir="$ghc_dir/$target_uid/share/doc/html"
                 mkdir -p "$target_html_dir"
@@ -2519,11 +2519,52 @@ ${lib.optionalString (metadataSourceFrags != []) ''
         [ -L "$conf" ] && continue
         name_in_conf=$(awk '/^name:/ {print $2; exit}' "$conf")
         if [ "$name_in_conf" = "$expected_name" ]; then
-          target_uid=$(awk '/^id:/ {print $2; exit}' "$conf")
+          target_uid=$(awk '/^id:/ {if (NF > 1) print $2; else {getline; print $1}; exit}' "$conf")
           break
         fi
       done
       if [ -n "$target_uid" ]; then
+        ${# haddock wrote the target's links to its dependencies' docs
+          # through this slice's composed store (the deps' confs say
+          # `haddock-html: ''${pkgroot}/...`), i.e. into
+          # `$out/store/.../<dep-uid>/share/doc/`.  Those dirs are lndir
+          # copies of the deps' own `.doc` slices, and the clean-up below
+          # deletes them, so the links would dangle.  Point them at the
+          # dep doc slices' real store paths instead (the same thing the
+          # RPATH rewrite below does for libraries).  A dep unit's real
+          # dir is found through one of the files lndir symlinked into it;
+          # units this slice built itself (no symlinks, or resolving into
+          # $out) keep their links.  Both spellings of the composed store
+          # are rewritten: `$ghcDir` and the `$distDir/store` route.
+          ""}
+        target_dir=
+        for d in "$ghcDir/$target_uid" "$ghcDir/lib/$target_uid"; do
+          if [ -d "$d/share/doc" ]; then target_dir=$d; fi
+        done
+        if [ -n "$target_dir" ]; then
+          docLinkArgs=()
+          for unit_dir in $ghcDir/*/ $ghcDir/lib/*/; do
+            unit_dir=''${unit_dir%/}
+            [ "$unit_dir" = "$target_dir" ] && continue
+            [ -d "$unit_dir/share/doc" ] || continue
+            link=$(find "$unit_dir/share/doc" -type l -print -quit)
+            if [ -n "$link" ]; then
+              real=$(readlink -f "$link")
+              real_unit=''${real%/"''${link#"$unit_dir"/}"}
+            else
+              real_unit=$(readlink -f "$unit_dir")
+            fi
+            case "$real_unit" in "$out"|"$out"/*) continue ;; esac
+            docLinkArgs+=(-e "s|$unit_dir/share/doc/|$real_unit/share/doc/|g")
+            docLinkArgs+=(-e "s|$distDir/store/''${unit_dir#"$out"/store/}/share/doc/|$real_unit/share/doc/|g")
+          done
+          if [ ''${#docLinkArgs[@]} -gt 0 ]; then
+            { grep -rlF "$out/" "$target_dir/share/doc" || true; } | while read -r f; do
+              chmod u+w "$f"
+              sed -i "''${docLinkArgs[@]}" "$f"
+            done
+          fi
+        fi
         for unit_dir in $ghcDir/*/; do
           uid=$(basename "$unit_dir")
           case "$uid" in

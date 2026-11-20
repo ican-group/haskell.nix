@@ -10,6 +10,12 @@ that will impact users.
     packages are relative, so that part can be published as it is; links to
     dependencies still point at their docs in the store.
 
+  * `builderVersion = 2` doc slices (`.doc` with `documentation: True`):
+    links to a dependency's docs now point at the dependency's own `.doc`
+    slice.  They pointed into the slice's own copy of the dependency's docs,
+    which the slice deletes, so every such link was broken.  This rebuilds
+    the doc slices of projects that set `documentation: True`.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package
