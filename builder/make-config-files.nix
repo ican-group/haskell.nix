@@ -1,11 +1,33 @@
 { stdenv, lib, haskellLib, ghc, nonReinstallablePkgs, runCommand, writeText, writeScript }@defaults:
 
-{ identifier, component, fullName, flags ? {}, needsProfiling ? false, enableDWARF ? false, chooseDrv ? drv: drv, nonReinstallablePkgs ? defaults.nonReinstallablePkgs, prebuilt-depends ? [], instantiations ? {}, extraScript ? "" }:
+{ identifier, component, fullName, flags ? {}, needsProfiling ? false, enableDWARF ? false, chooseDrv ? drv: drv, nonReinstallablePkgs ? defaults.nonReinstallablePkgs, prebuilt-depends ? [], instantiations ? {}, extraScript ? "", shadowedPkgs ? [] }:
 
 let
   # Sort and remove duplicates from nonReinstallablePkgs.
   # That way changes to the order of nonReinstallablePkgs does not require rebuilds.
   nonReinstallablePkgs' = __attrNames (lib.genAttrs (component.pre-existing or [] ++ nonReinstallablePkgs) (x: x));
+
+  # `shadowedPkgs` names the packages the caller also gets a built copy of
+  # (`shellFor` passes its whole dependency closure).  GHC's own copy of any
+  # of them is still copied into the db, since other packages GHC ships
+  # depend on it, but hidden and left out of the GHC environment file;
+  # otherwise both copies are exposed and every import of one of their
+  # modules is ambiguous (#1532).  The built copy's `.conf` is copied in
+  # after GHC's are hidden, so a built copy with the same unit id (and file
+  # name) as GHC's replaces the hidden one and stays exposed.  With nothing
+  # shadowed (every component build) the script is unchanged.
+  shadowedSet = lib.genAttrs shadowedPkgs (_: null);
+  shadowedPreExisting = lib.filter (p: shadowedSet ? ${p}) nonReinstallablePkgs';
+  envPkgs = lib.filter (p: !(shadowedSet ? ${p})) nonReinstallablePkgs';
+  hideShadowedPreExisting = lib.optionalString (shadowedPreExisting != []) ''
+    for p in ${lib.concatStringsSep " " shadowedPreExisting}; do
+      for f in $configFiles/${packageCfgDir}/$p-[0-9]*.conf; do
+        [ -e "$f" ] || continue
+        chmod +w "$f"
+        sed -i 's/^exposed: *True/exposed: False/' "$f"
+      done
+    done
+  '';
 
   ghc = if enableDWARF then defaults.ghc.dwarf else defaults.ghc;
 
@@ -110,7 +132,7 @@ let
       for p in ${lib.concatStringsSep " " nonReinstallablePkgs'}; do
         find $unwrappedGhc/${packageCfgDir} -name "$p-[0-9]*.conf" -exec cp -f {} $configFiles/${packageCfgDir} \;
       done
-    ''}
+    '' + hideShadowedPreExisting}
     ${ # From GHC 9.6 the nixpkgs ghc derviations now use ${pkgroot} in their `.conf` files.
        # Use `find -exec … {} +` rather than a bare glob so that this is a no-op
        # (rather than an error) when the package DB is intentionally empty (e.g.
@@ -172,13 +194,13 @@ let
       echo "allow-older: ${identifier.name}:*" >> $configFiles/cabal.config
     ''}
 
-    for p in ${lib.concatStringsSep " " nonReinstallablePkgs'}; do
+    for p in ${lib.concatStringsSep " " envPkgs}; do
       if [ -e $ghcDeps/envDeps/$p ]; then
         cat $ghcDeps/envDeps/$p >> $configFiles/ghc-environment
       fi
     done
   '' + lib.optionalString component.doExactConfig ''
-    for p in ${lib.concatStringsSep " " nonReinstallablePkgs'}; do
+    for p in ${lib.concatStringsSep " " envPkgs}; do
       if [ -e $ghcDeps/exactDeps/$p ]; then
         cat $ghcDeps/exactDeps/$p/configure-flags >> $configFiles/configure-flags
         cat $ghcDeps/exactDeps/$p/cabal.config >> $configFiles/cabal.config

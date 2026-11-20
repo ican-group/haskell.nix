@@ -142,35 +142,16 @@ let
     frameworks   = haskellLib.uniqueWithName (lib.concatMap (x: (haskellLib.dependToLib x).frameworks or []) allConfigs);
     doExactConfig = false;
   };
-  # GHC's own copies of packages the shell also gets a built copy of (#1532).
-  # Without `exactDeps`, `pre-existing` is every package GHC ships, so when
-  # the plan builds one of them from source (a snapshot's `text`, or a
-  # `constraints: text source`) both copies land in the package db and the
-  # GHC environment file, both exposed, and every import of one of their
-  # modules is ambiguous.  GHC's copy stays in the db, hidden, since the
-  # other packages GHC ships still depend on it.
-  builtNames = map (c: c.identifier.name)
-    (haskellLib.flatLibDepends { depends = packageInputs; });
-  shadowedPreExisting = lib.filter (n: lib.elem n builtNames) component.pre-existing;
-  hideShadowedPreExisting = lib.optionalString (shadowedPreExisting != []) ''
-    for p in ${lib.concatStringsSep " " shadowedPreExisting}; do
-      for f in $unwrappedGhc/${configFiles.packageCfgDir}/$p-[0-9]*.conf; do
-        [ -e "$f" ] || continue
-        conf=$configFiles/${configFiles.packageCfgDir}/''${f##*/}
-        [ -e "$conf" ] || continue
-        chmod +w "$conf"
-        sed -i 's/^exposed: *True/exposed: False/' "$conf"
-        id=$(sed -n 's/^id: *//p' "$conf")
-        sed -i "/^package-id $id\$/d" $configFiles/ghc-environment
-      done
-    done
-  '';
+  # Every Haskell library the shell gets a built copy of.  `makeConfigFiles`
+  # hides GHC's own copy of any of them (#1532), and the hoogle index
+  # documents them.
+  depClosure = haskellLib.flatLibDepends component;
   configFiles = makeConfigFiles {
     fullName = name;
     identifier.name = identifierName;
     inherit component enableDWARF;
     chooseDrv = p: if withHaddock && p ? haddock then p.haddock else p;
-    extraScript = hideShadowedPreExisting;
+    shadowedPkgs = map (p: p.identifier.name) depClosure;
   };
   ghcEnv = ghcForComponent {
     inherit configFiles;
@@ -191,7 +172,7 @@ let
       haddockDir = p.haddockDir;
     };
   in hoogleLocal {
-    packages = map docPackage (haskellLib.flatLibDepends component);
+    packages = map docPackage depClosure;
 
     hoogle = pkgsBuildBuild.haskell-nix.hackage-tool (
         lib.optionals (args ? tools && args.tools ? hoogle) (haskellLib.versionOrModToMods args.tools.hoogle)
