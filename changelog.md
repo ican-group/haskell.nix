@@ -10,11 +10,15 @@ that will impact users.
     packages are relative, so that part can be published as it is; links to
     dependencies still point at their docs in the store.
 
-  * `builderVersion = 2` doc slices (`.doc` with `documentation: True`):
-    links to a dependency's docs now point at the dependency's own `.doc`
-    slice.  They pointed into the slice's own copy of the dependency's docs,
-    which the slice deletes, so every such link was broken.  This rebuilds
-    the doc slices of projects that set `documentation: True`.
+  * `builderVersion = 2` doc slices (`.doc` with `documentation: True`)
+    register their docs' real store paths in `haddock-interfaces` and
+    `haddock-html`.  Links to a dependency's docs now point at the
+    dependency's own `.doc` slice; they pointed into the consumer's copy of
+    it, which the consumer deletes, so every such link was broken.  A
+    sub-library's interface is now found too (its fields pointed one
+    directory too high), so a library's docs link to its sub-libraries'
+    docs.  This rebuilds the doc slices of projects that set
+    `documentation: True`; nothing else.
 
 ## November 19, 2026
 

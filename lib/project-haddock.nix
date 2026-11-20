@@ -25,8 +25,10 @@ let
   # `documentation: True` is not set for the package.
   hasDoc = c: if c ? docEnabled then c.docEnabled else c ? doc;
 
-  # `{ dir, doc }` for every documented library and sub-library of the
-  # project's own packages.
+  # `{ dir, doc, primary, key }` for every documented library and
+  # sub-library of the project's own packages.  `key` is the `hsPkgs`
+  # attribute it came from; `primary` says that is the package's own name
+  # (v2 also lists packages under their unit ids).
   allComponents = lib.concatLists (lib.mapAttrsToList (pname: pkg:
     let
       # The attribute name can be a unit id, so use the package's own name.
@@ -37,23 +39,31 @@ let
            lib.optional (pkg.components ? library) { dir = pkgDir; c = pkg.components.library; }
         ++ lib.mapAttrsToList (n: c: { dir = "${pkgDir}-${n}"; inherit c; })
              (pkg.components.sublibs or {});
-    in map ({ dir, c }: { inherit dir; inherit (c) doc; }) (lib.filter (x: hasDoc x.c) libs)
+    in map ({ dir, c }: { inherit dir; inherit (c) doc; primary = pname == name; key = pname; })
+         (lib.filter (x: hasDoc x.c) libs)
   ) (haskellLib.selectProjectPackages project.hsPkgs));
 
+  # Which of two entries comes first: the one under the package's own name,
+  # then by `hsPkgs` attribute name.  Not by store path, which would make
+  # the choice change whenever a hash does.
+  before = a: b: if a.primary != b.primary then a.primary else a.key < b.key;
+
   # `hsPkgs` can hold the same component under more than one name, so drop
-  # repeats of the same doc output first.  Different doc outputs that would
-  # land in the same directory (v2 can plan one package as several units,
-  # e.g. with different flags or for the build platform) all stay, the
-  # later ones in `<dir>-2`, `<dir>-3`, ... with a warning, rather than one
-  # of them silently replacing the others.
-  uniqueDocs = lib.attrValues (lib.listToAttrs (map (x:
-    lib.nameValuePair (builtins.unsafeDiscardStringContext "${x.doc}") x) allComponents));
+  # repeats of the same doc output first (keeping the first by `before`).
+  # Different doc outputs that would land in the same directory (v2 can plan
+  # one package as several units, e.g. with different flags or for the build
+  # platform) all stay, in `before` order: the first in `<dir>`, the others
+  # in `<dir>-2`, `<dir>-3`, ... with a warning, rather than one of them
+  # silently replacing the others.
+  uniqueDocs = lib.mapAttrsToList (_: xs: builtins.head (lib.sort before xs))
+    (lib.groupBy (x: builtins.unsafeDiscardStringContext "${x.doc}") allComponents);
   byDir = lib.groupBy (x: x.dir) uniqueDocs;
   components = lib.concatLists (lib.mapAttrsToList (dir: xs:
     let n = builtins.length xs; in
     lib.warnIf (n > 1)
       "projectHaddock: ${toString n} different doc outputs for ${dir}; they are kept as ${dir}, ${dir}-2, ..."
-      (lib.imap1 (i: x: x // { dir = if i == 1 then dir else "${dir}-${toString i}"; }) xs)
+      (lib.imap1 (i: x: { inherit (x) doc; dir = if i == 1 then dir else "${dir}-${toString i}"; })
+        (lib.sort before xs))
   ) byDir);
 
   # The haddock that reads the interfaces should be the one that wrote
@@ -66,6 +76,9 @@ let
     in if fromDocs != [] then builtins.head fromDocs
        else project.pkg-set.config.ghc.package;
 
+  # Wrapper and two-stage compilers may not have a `targetPrefix`.
+  prefix = ghc.targetPrefix or "";
+
   name = let n = project.args.name or null; in if n == null then "haskell-project" else n;
 
 in stdenv.mkDerivation {
@@ -77,12 +90,16 @@ in stdenv.mkDerivation {
 
   # `copyDocs <doc output> <dir>` copies the component's html directory
   # (found through its single `.haddock` file) to `$html/<dir>` and records
-  # `<original html dir> <dir> <interface file name>` in `$TMPDIR/map`.
+  # `<original html dir> <dir> <interface file name>` in `$TMPDIR/map`.  The
+  # original directory is canonicalised, as the doc slices' package confs
+  # (and so the links haddock wrote) are.
   #
-  # The link rewrite then only touches files that mention one of the
-  # original html directories (`grep -lF`), first replacing each with a
-  # placeholder and then the placeholder with that file's relative path
-  # to `$html`, which is its depth below `$html` in `../`s.
+  # The link rewrite then only touches html, json and js files that mention
+  # one of the original html directories (`grep -lF`; never the binary
+  # `.haddock` interfaces, which a length-changing edit would corrupt),
+  # first replacing each with a placeholder and then the placeholder with
+  # that file's relative path to `$html`, which is its depth below `$html`
+  # in `../`s.
   #
   # `-B`: some haddocks (ghc914-sh) insist on a GHC libdir even for
   # `--gen-contents` ("internal error: No GhcDir found").
@@ -102,7 +119,7 @@ in stdenv.mkDerivation {
            exit 1 ;;
       esac
       local src
-      src=$(dirname "''${ifaces[0]}")
+      src=$(dirname "$(readlink -f "''${ifaces[0]}")")
       cp -R "$src" "$html/$dir"
       printf '%s %s %s\n' "$src" "$dir" "$(basename "''${ifaces[0]}")" >> $TMPDIR/map
     }
@@ -118,7 +135,8 @@ in stdenv.mkDerivation {
       sedArgs+=(-e "s|file://$src|@PROJECT_HADDOCK_ROOT@/$dir|g" -e "s|$src|@PROJECT_HADDOCK_ROOT@/$dir|g")
     done < $TMPDIR/map
     if [ -s $TMPDIR/srcs ]; then
-      { grep -rlF -f $TMPDIR/srcs $html || true; } | while read -r f; do
+      { grep -rlF --include='*.html' --include='*.json' --include='*.js' \
+          -f $TMPDIR/srcs $html || true; } | while read -r f; do
         r=''${f#$html/}
         d=''${r//[^\/]/}
         rel=.
@@ -135,8 +153,8 @@ in stdenv.mkDerivation {
     done < $TMPDIR/map
     if [ ''${#readInterfaces[@]} -gt 0 ]; then
       cd $html
-      ${ghc.targetPrefix}haddock \
-        -B"$(${ghc.targetPrefix}ghc --print-libdir)" \
+      ${prefix}haddock \
+        -B"$(${prefix}ghc --print-libdir)" \
         --gen-contents --gen-index --quickjump \
         --odir=$html \
         --title=${lib.escapeShellArg name} \

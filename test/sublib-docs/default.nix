@@ -88,14 +88,20 @@ in lib.recurseIntoAttrs {
       }
       checkAesonLink "$slib"
       echo yes >& 2
-    '' + optionalString (project.pkg-set.config.builderVersion == 1) ''
-      # The v2 builder's doc slices do not yet link a library's docs to
-      # its own sub-libraries' docs ("could not find link destinations
-      # for: Slib.Greeting").
+
+      # A v2 doc slice used to register the sublib's interface where it was
+      # not ("could not find link destinations for: Slib.Greeting").
       printf "check that the library docs link to the sublib docs..." >& 2
-      grep -E 'href="[^"]*#t:Greeting"' \
-        "$(find ${packages.sublib-docs.components.library.doc} \
-                -name 'Lib.html' -not -path '*/src/*' -print -quit)" > /dev/null
+      libHtml=$(find ${packages.sublib-docs.components.library.doc} \
+                     -name 'Lib.html' -not -path '*/src/*' -print -quit)
+      greeting=$(grep -oE 'href="(file://)?/[^"#]*#t:Greeting' "$libHtml" | head -1)
+      greeting=''${greeting#href=\"}
+      greeting=''${greeting#file://}
+      greeting=''${greeting%#t:Greeting}
+      if [ ! -f "$greeting" ]; then
+        echo "$libHtml links to the sublib's docs at '$greeting', which does not exist" >& 2
+        exit 1
+      fi
       echo yes >& 2
     '' + ''
 
@@ -136,7 +142,7 @@ in lib.recurseIntoAttrs {
       printf "check the combined sublib docs' link to aeson's docs resolves..." >& 2
       checkAesonLink "$(find $html/sublib-docs-0.1.0.0-slib -name 'Slib.html' -not -path '*/src/*' -print -quit)"
       echo yes >& 2
-    '' + optionalString (project.pkg-set.config.builderVersion == 1) ''
+
       # The library's link to the sublib's docs now points at the copy next
       # to it, not at the sublib's doc output in the store.
       printf "check the combined docs link between components relatively..." >& 2
