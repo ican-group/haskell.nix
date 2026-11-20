@@ -365,6 +365,21 @@ let
                 (if inputMap.${repoData.url}.rev != (repoData.rev or repoData.ref)
                   then throw "${inputMap.${repoData.url}.rev} may not match ${repoData.rev or repoData.ref} for ${repoData.url} use \"${repoData.url}/${repoData.rev or repoData.ref}\" as the inputMap key if ${repoData.rev or repoData.ref} is a branch or tag that points to ${inputMap.${repoData.url}.rev}."
                   else inputMap.${repoData.url})
+            # `fetchgit` runs in the build sandbox, which has neither `ssh`
+            # nor the user's keys, so it can never fetch over ssh (#1996).
+            # `builtins.fetchGit` runs as the user at eval time and uses
+            # their ssh agent and config.  A `--sha256` is not needed (or
+            # checked) for these; the commit hash pins the content.  As for
+            # private stack repos, this does not work in restricted eval mode
+            # (Hydra); use `inputMap` there.
+            else if pkgs.haskell-nix.haskellLib.isSshGitUrl repoData.url
+              then builtins.fetchGit
+                ({ inherit (repoData) url; }
+                  // pkgs.lib.optionalAttrs (repoData ? ref) { inherit (repoData) ref; }
+                  // pkgs.lib.optionalAttrs (repoData ? rev) { inherit (repoData) rev; }
+                  # A commit that is only on another branch (or a tag) is not
+                  # fetched with the default refs.
+                  // pkgs.lib.optionalAttrs (!(repoData ? ref)) { allRefs = true; })
             else if repoData.sha256 != null
             then fetchgit { inherit (repoData) url sha256; rev = repoData.rev or repoData.ref; }
             else

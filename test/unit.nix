@@ -66,6 +66,24 @@ let
     } "touch $out").drvPath).success;
 in
 lib.runTests {
+  # Which `source-repository-package` locations are fetched over ssh with
+  # `builtins.fetchGit` instead of `fetchgit` (#1996).
+  testIsSshGitUrl = {
+    expr = map haskellLib.isSshGitUrl [
+      "ssh://git@gitlab.com/macaroni.dev/mayhem-engine.git"
+      "ssh://gitlab.com/macaroni.dev/mayhem-engine.git"
+      "git+ssh://git@github.com/owner/repo.git"
+      "git@github.com:owner/repo.git"
+      "https://github.com/ican-group/haskell.nix.git"
+      "http://example.com/repo.git"
+      "git://example.com/repo.git"
+      "file:///srv/git/repo.git"
+      "/srv/git/repo.git"
+      "https://user@example.com:8443/repo.git"
+    ];
+    expected = [ true true true true false false false false false false ];
+  };
+
   # Free licenses must stay free under nixpkgs' check-meta, which treats a
   # license in a list (what `cabalToNixpkgsLicense` returns) without `free` as
   # unfree.  Cabal turns the legacy unversioned `license: LGPL` into

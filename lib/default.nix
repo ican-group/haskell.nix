@@ -159,6 +159,14 @@ in {
   isProjectPackage = p: p.isProject or false;
   selectProjectPackages = lib.filterAttrs (n: p: p != null && isLocalPackage p && isProjectPackage p && !isRedirectPackage p && !isBuildTwinKey n);
 
+  # Is this `source-repository-package` location fetched over ssh?
+  # `ssh://...`, `git+ssh://...` or scp-like `user@host:path`.  Those are
+  # fetched with `builtins.fetchGit` (which uses the user's ssh agent)
+  # rather than `fetchgit`, whose sandbox has no ssh (#1996).
+  isSshGitUrl = url:
+    builtins.match "(git\\+)?ssh://.*" url != null
+    || builtins.match "[^/:@]+@[^/:]+:.*" url != null;
+
   # Format a componentId as it should appear as a target on the
   # command line of the setup script.
   componentTarget = componentId:"${componentId.ctype}:${componentId.cname}";

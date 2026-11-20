@@ -60,3 +60,45 @@ pandoc includes a `cabal.project` file on hackage which includes a
 ```nix
 {{#include source-repository-hashes/default.nix}}
 ```
+
+## Private repositories
+
+A `--sha256` (or `sha256map`) makes haskell.nix fetch the repository with
+`fetchgit`, which runs inside the Nix build sandbox.  The sandbox has no
+`ssh` and none of your keys, so it can only fetch public repositories.
+
+A `source-repository-package` with an ssh location is fetched with
+`builtins.fetchGit` instead, whether or not it has a `--sha256`.  That
+runs at evaluation time as you, so it uses your ssh agent and
+`~/.ssh/config`:
+
+```
+source-repository-package
+  type: git
+  location: git@github.com:my-org/my-private-repo.git
+  tag: 0123456789abcdef0123456789abcdef01234567
+```
+
+The locations treated this way are `ssh://...`, `git+ssh://...` and
+scp-like `user@host:path`.  The commit hash in `tag` pins the content, so
+no `--sha256` is needed (one that is there is ignored).  Use the full
+commit hash: with only a branch or tag name the fetch is not reproducible,
+and pure (flake) evaluation refuses it.
+
+Private https repositories, and restricted evaluation (Hydra), where
+`builtins.fetchGit` is not allowed to reach the network, need the
+repository to come from somewhere Nix can already read.  With flakes, add
+it as an input and pass it in `inputMap`, keyed by the `location` from the
+`cabal.project` file:
+
+```nix
+inputs.my-private-repo = {
+  url = "git+ssh://git@github.com/my-org/my-private-repo";
+  flake = false;
+};
+
+# in the project arguments
+inputMap = {
+  "git@github.com:my-org/my-private-repo.git" = inputs.my-private-repo;
+};
+```
