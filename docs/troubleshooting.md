@@ -118,11 +118,27 @@ project.shellFor {
 }
 ```
 
-(`tools` takes a derivation as well as a version.)  In a project's
-`shell` argument, where `project` is not available, use
-`pkgs.pkgsBuildBuild.haskell-nix.v2-cabal-install`.  This cabal is a
-3.19 pre-release build and keeps its `~/.cabal/store` in its own layout,
-so it will not reuse what another cabal-install built there.
+(`tools` takes a derivation as well as a version.  A derivation wins
+over a version from elsewhere, so this works even when the project sets
+`shell.tools.cabal = "latest"`, as the templates do.)
+
+In a project's `shell` argument, where `project` is not available, pick
+the same cabal-install from the project's `evalSystem` by writing the
+project arguments as a module function (as `nix/hix.nix` is):
+
+```nix
+pkgs.haskell-nix.cabalProject' ({ pkgs, config, ... }: {
+  src = ./.;
+  compiler-nix-name = "ghc9103";
+  shell.tools.cabal =
+    let v2ci = pkgs.pkgsBuildBuild.haskell-nix.v2-cabal-install;
+    in v2ci.evalWith.${config.evalSystem} or v2ci;
+})
+```
+
+This cabal is a 3.19 pre-release build and keeps its `~/.cabal/store` in
+its own layout, so it will not reuse what another cabal-install built
+there.
 
 Shells of projects using the v2 builder (`builderVersion = 2`) already
 use this cabal by default and reuse a cabal store, so they are not

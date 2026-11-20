@@ -69,7 +69,21 @@
       '';
     };
     tools = lib.mkOption {
-      type = lib.types.attrsOf lib.types.unspecified;
+      # A tool is a version string, a module spec for `haskell-nix.tool`
+      # or a derivation.  The default `unspecified` merge cannot combine a
+      # string with a derivation ("Cannot merge definitions"), and would
+      # `//` a `{ version = ...; }` set into one.  So a derivation
+      # definition wins outright, e.g. a `shellFor { tools.cabal = drv; }`
+      # over a project's `shell.tools.cabal = "latest"`.
+      type = lib.types.attrsOf (lib.mkOptionType {
+        name = "haskell-nix-tool";
+        description = "tool version, module spec or derivation";
+        merge = loc: defs:
+          let drvDefs = lib.filter (d: lib.isDerivation d.value) defs;
+          in if drvDefs == []
+            then lib.mergeDefaultOption loc defs
+            else (lib.last drvDefs).value;
+      });
       default = {};
     };
     packageSetupDeps = lib.mkOption {

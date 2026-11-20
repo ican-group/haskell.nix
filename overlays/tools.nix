@@ -98,8 +98,13 @@ in { haskell-nix = prev.haskell-nix // {
       exeName = final.haskell-nix.packageToolName.${name} or name;
     in package.getComponent "exe:${exeName}";
 
+  # A tool given as a derivation (e.g. `cabal = project.v2-cabal-install`)
+  # is used as it is; anything else is a version or a module spec for
+  # `hackage-tool`.
   tool = compiler-nix-name: name: versionOrMod:
-      final.haskell-nix.hackage-tool (
+    if lib.isDerivation versionOrMod
+      then versionOrMod
+      else final.haskell-nix.hackage-tool (
            final.haskell-nix.haskellLib.versionOrModToMods versionOrMod
         ++ [(lib.mapAttrs (_: lib.mkOverride 1100) { inherit compiler-nix-name name; })]
       );
@@ -109,7 +114,9 @@ in { haskell-nix = prev.haskell-nix // {
   # from it (see modules/project-common.nix).  A nixpkgs (`evalPackages`),
   # which this used to take, is still accepted with a deprecation warning.
   tool' = evalSystemOrPackages: compiler-nix-name: name: versionOrMod:
-      let evalSystem = toEvalSystem "tool'" evalSystemOrPackages;
+    if lib.isDerivation versionOrMod
+      then versionOrMod
+      else let evalSystem = toEvalSystem "tool'" evalSystemOrPackages;
       in final.haskell-nix.hackage-tool (
            final.haskell-nix.haskellLib.versionOrModToMods versionOrMod
         ++ [(lib.mapAttrs (_: lib.mkOverride 1100) { inherit evalSystem compiler-nix-name name; })]

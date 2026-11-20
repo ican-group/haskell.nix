@@ -15,12 +15,19 @@ with lib;
 #   - consumer: an executable that depends on `provider` and `provider:slib`.
 #
 # Test: spin up the project's shell, drop into it, run `cabal v2-build
-# consumer` with the shell's own `cabal` (whatever `shell.tools.cabal`
-# resolves to — that is deliberately not pinned here, so the test also
-# covers the shell handing out a cabal-install that disagrees with the
-# slices; see `builder/shell-for-v2.nix`'s `cabalTool`), and inspect
-# the build log.  If cabal built `provider` or the `slib` sublib from
-# source, the sibling bug is present.
+# consumer` with the shell's own `cabal`, and inspect the build log.  If
+# cabal built `provider` or the `slib` sublib from source, the sibling bug
+# is present.  Two cases:
+#   - v2 (`builderVersion = 2`): the shell's default cabal (whatever
+#     `shell.tools.cabal = {}` resolves to; see `builder/shell-for-v2.nix`'s
+#     `cabalTool`), reusing the shell's composed cabal store.
+#   - v1 (`builderVersion = 1`, native, non-stable-haskell compilers only):
+#     the shell's GHC package db, with `tools.cabal` pinned to
+#     `project.v2-cabal-install`, because Hackage cabal-install cannot let
+#     an installed package satisfy a sublib dependency (haskell/cabal#6039).
+#     There is no composed store; the shared build script's comments about
+#     one only apply to v2.  (They stay as they are so the v2 case's
+#     derivation is unchanged.)
 let
   mkCase = builderVersion: let
   project = cabalProject' {
@@ -143,7 +150,7 @@ let
         url: file+noindex://$repoDir
       EOF
 
-      echo "=== cabal v2-build consumer (unpatched cabal) ==="
+      echo "=== cabal v2-build consumer (${if builderVersion == 1 then "haskell.nix cabal-install" else "unpatched cabal"}) ==="
       ${project.pkg-set.config.ghc.package.targetPrefix}cabal --config-file=$HOME/.cabal/config v2-build -v2 consumer 2>&1 | tee build.log
 
       echo "=== verifying solver reused provider ==="
@@ -171,8 +178,15 @@ let
   # v1 shell to test there.  The v1 case is native-only.
   onlyV2 = buildPackages.haskell-nix.compiler.${compiler-nix-name}.isStableHaskell or false;
 
+  hasV1 = !onlyV2 && !haskellLib.isCrossHost;
+
 in lib.recurseIntoAttrs ({
-  inherit (v2) ifdInputs env run;
-} // lib.optionalAttrs (!onlyV2 && !haskellLib.isCrossHost) {
+  # CI only pre-builds a test's top-level `ifdInputs`, so the v1 case's
+  # plan-nix (a separate IFD) is listed here too.
+  ifdInputs = v2.ifdInputs // lib.optionalAttrs hasV1 {
+    v1-plan-nix = v1.ifdInputs.plan-nix;
+  };
+  inherit (v2) env run;
+} // lib.optionalAttrs hasV1 {
   v1 = lib.recurseIntoAttrs v1;
 })

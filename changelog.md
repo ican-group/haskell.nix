@@ -3,9 +3,12 @@ that will impact users.
 
 ## November 20, 2026
 
-  * `shellFor`'s `tools` now also takes a derivation, which goes on `PATH`
-    as it is, with the default builder as well as with
-    `builderVersion = 2`.  For instance `tools.cabal =
+  * A tool in `shellFor`'s `tools`, a project's `shell.tools`,
+    `project.tools` or `haskell-nix.tool`/`tools` can now be a derivation,
+    which is used as it is (with the default builder as well as with
+    `builderVersion = 2`; `tools.hoogle` too).  A derivation wins over a
+    version given elsewhere, e.g. over a project's
+    `shell.tools.cabal = "latest"`.  For instance `tools.cabal =
     project.v2-cabal-install` gives a default-builder shell haskell.nix's
     own cabal-install, which can reuse the shell's pre-built packages for
     dependencies on public sub-libraries (`build-depends: pkg:sublib`).

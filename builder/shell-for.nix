@@ -169,7 +169,10 @@ let
   in hoogleLocal {
     packages = map docPackage (haskellLib.flatLibDepends component);
 
-    hoogle = pkgsBuildBuild.haskell-nix.hackage-tool (
+    # A `tools.hoogle` derivation is used as it is.
+    hoogle = if lib.isDerivation (args.tools.hoogle or null)
+      then args.tools.hoogle
+      else pkgsBuildBuild.haskell-nix.hackage-tool (
         lib.optionals (args ? tools && args.tools ? hoogle) (haskellLib.versionOrModToMods args.tools.hoogle)
       ++ [{
           name = "hoogle";
@@ -188,14 +191,9 @@ in
     nativeBuildInputs = [ ghcEnv.drv ]
       ++ nativeBuildInputs
       ++ mkDrvArgs.nativeBuildInputs or []
-      # A tool given as a derivation goes on PATH as-is (as in
-      # builder/shell-for-v2.nix), e.g. `tools.cabal = project.v2-cabal-install`;
-      # anything else is a version or module spec for `haskell-nix.tool'`.
-      ++ lib.mapAttrsToList (name: versionOrMod:
-           if lib.isDerivation versionOrMod
-             then versionOrMod
-             else pkgsBuildBuild.haskell-nix.tool' evalPackages.stdenv.hostPlatform.system compiler.nix-name name versionOrMod)
-         tools
+      # `tools'` passes a tool given as a derivation (e.g.
+      # `tools.cabal = project.v2-cabal-install`) through as it is.
+      ++ lib.attrValues (pkgsBuildBuild.haskell-nix.tools' evalPackages.stdenv.hostPlatform.system compiler.nix-name tools)
       ++ lib.optional (ghcEnv.baseGhc.useLdLld or false) llvmPackages.bintools
       # If this shell is a cross compilation shell include
       # wrapper script for running cabal build with appropriate args.
