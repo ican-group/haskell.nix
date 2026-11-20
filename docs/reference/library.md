@@ -201,27 +201,40 @@ output.
 }).shell
 ```
 
-**The `hpack` argument**: packages with a `package.yaml` and no `.cabal`
-file are turned into `.cabal` files by hpack, when planning a cabal
-project with `supportHpack = true` and when building those packages.  By
-default that is the hpack that ships with nix-tools.  `hpack` picks
-another: a version (or `"latest"`) or `haskell-nix.tool` arguments build
-it from Hackage with the project's compiler, and a derivation (with
-`bin/hpack`) is used as it is.  Pinning the version keeps the generated
-`.cabal` files from changing when nix-tools updates its hpack.
+**The `hpack` argument**: with `supportHpack = true`, packages that have a
+`package.yaml` and no `.cabal` file are turned into `.cabal` files by hpack
+while planning.  By default that is the hpack that ships with nix-tools,
+and the builders run it again on the full package source.  `hpack` picks
+another one: a version (or `"latest"`) or `haskell-nix.tool` arguments
+build it with the project's compiler, and a derivation (or store path)
+with `bin/hpack` is used as it is (it runs on `evalSystem`).
+
+With `hpack` set, the `.cabal` file it generates while planning is the one
+`plan-to-nix` reads and the package is built with; the builders do not run
+hpack again, so the plan and the build always agree.  So that hpack can
+infer modules and file lists while planning, the plan-nix step gets the
+names (not the contents) of the files below each such `package.yaml`:
+adding, removing or renaming one of them re-plans the project, editing one
+does not.  Pinning the version keeps the generated `.cabal` files from
+changing when nix-tools updates its hpack.
 
 ```nix
 pkgs.haskell-nix.project' {
   src = ./.;
   supportHpack = true;
   hpack = "0.38.1";
-  # or, to materialize its plan:
-  # hpack = { version = "0.38.1"; materialized = ./materialized/hpack; };
+  # or, to pin what it is built from:
+  # hpack = { version = "0.38.1"; index-state = "2025-08-01T00:00:00Z"; materialized = ./materialized/hpack; };
 }
 ```
 
-Stack projects are planned by `stack-to-nix`, which has hpack built in, so
-for them `hpack` only changes the builders.
+Without an `index-state` (or `materialized`), the hpack itself is planned
+against haskell.nix's Hackage snapshot, so a haskell.nix update can build
+it again (and re-plan the project); the project's components are only
+rebuilt if the generated `.cabal` files change.
+
+Stack projects ignore `hpack` (with a warning): `stack-to-nix` plans with
+its own built-in hpack, and the builders use the matching nix-tools one.
 
 ## stackProject'
 
@@ -378,7 +391,7 @@ needed for `importAndFilterProject`.
 | `ghc`                |        | Deprecated. Use `compiler-nix-name` instead. Optional ghc to use |
 | `nix-tools`          |        | Optional nix-tools to use |
 | `supportHpack`       | Bool   | Run hpack on `package.yaml` files that have no `.cabal` file (default `false`). |
-| `hpack`              | String, attrs or derivation | Optional hpack to use for that: a version or `haskell-nix.tool` arguments, or a derivation with `bin/hpack` (see [`project'`](#project)).  Defaults to the one in nix-tools. |
+| `hpack`              | String, attrs or derivation | Optional hpack to use for that: a version or `haskell-nix.tool` arguments, or a derivation with `bin/hpack` (see [`project'`](#project)).  Defaults to the one in nix-tools.  When set, the `.cabal` files it generates are also what the packages are built with. |
 | `cabal-install`      |        | Optional cabal-install to use |
 | `configureArgs`      | String | Optional extra arguments to pass to `cabal new-configure` (--enable-tests is included by default, include `--disable-tests` to override that). |
 

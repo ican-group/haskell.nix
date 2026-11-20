@@ -495,6 +495,14 @@ in {
                 sha256 = p.pkg-src-sha256;
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local" && cabal2nix ? cabal-generator) {
                 inherit (cabal2nix) cabal-generator;
+              } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local"
+                  && builtins.pathExists (nixFilesDir + "/hpack-cabal-files/${p.pkg-name}.cabal")) {
+                # The `.cabal` file the project's own `hpack` generated while
+                # planning (lib/call-cabal-project-to-nix.nix), which is also
+                # what plan-to-nix read: build with it rather than running
+                # hpack again.
+                package-description-override =
+                  builtins.readFile (nixFilesDir + "/hpack-cabal-files/${p.pkg-name}.cabal");
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local") {
                 # Find the `src` location based on `p.pkg-src.path`
                 src = if pkgs.lib.hasPrefix "/" p.pkg-src.path

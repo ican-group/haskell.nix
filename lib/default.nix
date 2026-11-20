@@ -296,14 +296,14 @@ in {
       && !lib.hasPrefix "." name
       && lib.hasPrefix (dirOf path + "/") (pkgDir + "/");
 
-  # The `hpack` for a project's (non-null) `hpack` option, built for the
-  # platform of `pkgs` (see modules/project-common.nix): a derivation as it
-  # is, otherwise a version or `haskell-nix.tool` arguments, planned on
-  # `evalSystem` like the project's other tools.  `null` is left to the
-  # callers, which each keep the nix-tools hpack they always used, so that
-  # projects without the option build exactly what they did.
+  # The `hpack` for a project's (non-null) `hpack` option (see
+  # modules/project-common.nix), built with `pkgs` (the eval packages: it
+  # only runs in the plan-nix step).  A derivation or store path is used as
+  # it is; anything else (a version, `"latest"`, or `haskell-nix.tool`
+  # arguments) is built like the project's other tools.
   hpackTool = pkgs: evalSystem: compiler-nix-name: hpack:
-    if lib.isDerivation hpack
+    if lib.isDerivation hpack || builtins.isPath hpack
+        || (builtins.isString hpack && lib.hasPrefix "${builtins.storeDir}/" hpack)
       then hpack
       else pkgs.haskell-nix.tool' evalSystem compiler-nix-name "hpack" hpack;
 
