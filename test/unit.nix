@@ -74,14 +74,33 @@ lib.runTests {
       "ssh://gitlab.com/macaroni.dev/mayhem-engine.git"
       "git+ssh://git@github.com/owner/repo.git"
       "git@github.com:owner/repo.git"
+      "ssh+git://git@github.com/owner/repo.git"
+      "SSH://git@github.com/owner/repo.git"
+      "github.com:owner/repo.git"
       "https://github.com/ican-group/haskell.nix.git"
       "http://example.com/repo.git"
       "git://example.com/repo.git"
       "file:///srv/git/repo.git"
+      "file:repo.git"
       "/srv/git/repo.git"
+      "./repo"
+      "C:/src/repo.git"
       "https://user@example.com:8443/repo.git"
     ];
-    expected = [ true true true true false false false false false false ];
+    expected = [ true true true true true true true false false false false false false false false false ];
+  };
+
+  testNormaliseGitUrlScheme = {
+    expr = map haskellLib.normaliseGitUrlScheme [
+      "SSH://git@github.com/Owner/Repo.git"
+      "Git+SSH://git@github.com/Owner/Repo.git"
+      "git@github.com:Owner/Repo.git"
+    ];
+    expected = [
+      "ssh://git@github.com/Owner/Repo.git"
+      "git+ssh://git@github.com/Owner/Repo.git"
+      "git@github.com:Owner/Repo.git"
+    ];
   };
 
   # Free licenses must stay free under nixpkgs' check-meta, which treats a

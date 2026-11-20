@@ -79,17 +79,32 @@ source-repository-package
   tag: 0123456789abcdef0123456789abcdef01234567
 ```
 
-The locations treated this way are `ssh://...`, `git+ssh://...` and
-scp-like `user@host:path`.  The commit hash in `tag` pins the content, so
-no `--sha256` is needed (one that is there is ignored).  Use the full
-commit hash: with only a branch or tag name the fetch is not reproducible,
-and pure (flake) evaluation refuses it.
+The locations treated this way are `ssh://...`, `git+ssh://...`,
+`ssh+git://...` and git's scp-like `[user@]host:path`.  Submodules are
+fetched too, as `fetchgit` does.
 
-Private https repositories, and restricted evaluation (Hydra), where
-`builtins.fetchGit` is not allowed to reach the network, need the
-repository to come from somewhere Nix can already read.  With flakes, add
-it as an input and pass it in `inputMap`, keyed by the `location` from the
-`cabal.project` file:
+`tag` can be a full commit hash, a tag name, a branch name or an
+abbreviated commit hash; the last three are resolved by fetching all of the
+repository's refs.  Use the full commit hash where you can: a name can move,
+so the fetch is not reproducible, and pure (flake) evaluation refuses
+anything but a full hash.
+
+A `--sha256` is optional for these, since the commit hash already pins the
+content.  If one is given it is checked (a wrong one fails with "NAR hash
+mismatch"), and the source gets the same store path `fetchgit` would have
+given it.  A copy already in the Nix store is then used without contacting
+the repository, so later evaluations do not need ssh.
+
+Restricted evaluation (`restrict-eval`, as used by Hydra for non-flake
+jobsets) refuses `builtins.fetchGit` of an ssh URL outright ("access to URI
+... is forbidden in restricted mode"), even when the source is already in
+the store.  There, and for private https repositories, the repository has
+to come from somewhere Nix can already read.  With flakes, add it as an
+input and pass it in `inputMap`, keyed by the `location` from the
+`cabal.project` file.  Lock the input to the same commit as the `tag`
+(haskell.nix checks this, and stops with "may not match" otherwise), or key
+the entry by `"<location>/<tag>"` when `tag` is a name that points to the
+locked commit:
 
 ```nix
 inputs.my-private-repo = {

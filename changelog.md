@@ -4,13 +4,17 @@ that will impact users.
 ## November 20, 2026
 
   * `source-repository-package`s with an ssh location (`ssh://...`,
-    `git+ssh://...` or `git@host:path`) are now fetched with
-    `builtins.fetchGit`, which runs as you and uses your ssh agent and
-    config, so private repositories work.  They used to go to `fetchgit`
-    whenever a `--sha256` was given, and its build sandbox has no `ssh`
-    ("error: cannot run ssh").  A `--sha256` is not needed for these and
-    is ignored.  This does not work in restricted evaluation (Hydra); use
-    `inputMap` there.  See `docs/tutorials/source-repository-hashes.md`.
+    `git+ssh://...`, `ssh+git://...` or `[user@]host:path`) are now
+    fetched with `builtins.fetchGit`, which runs as you and uses your ssh
+    agent and config, so private repositories work.  They used to go to
+    `fetchgit` whenever a `--sha256` was given, and its build sandbox has
+    no `ssh` ("error: cannot run ssh").  Submodules are included.  A
+    `--sha256` is optional; one that is given is checked and gives the
+    source `fetchgit`'s store path, so a copy already in the store is used
+    without ssh.  `tag` may also be a tag, branch or abbreviated hash
+    (outside pure evaluation).  Restricted evaluation (Hydra, non-flake)
+    refuses ssh fetches; use `inputMap` there.  See
+    `docs/tutorials/source-repository-hashes.md`.
 
 ## November 19, 2026
 

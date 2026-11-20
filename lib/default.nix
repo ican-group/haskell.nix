@@ -160,12 +160,23 @@ in {
   selectProjectPackages = lib.filterAttrs (n: p: p != null && isLocalPackage p && isProjectPackage p && !isRedirectPackage p && !isBuildTwinKey n);
 
   # Is this `source-repository-package` location fetched over ssh?
-  # `ssh://...`, `git+ssh://...` or scp-like `user@host:path`.  Those are
+  # `ssh://...`, `git+ssh://...`, `ssh+git://...` (any case), or git's
+  # scp-like `[user@]host:path` (no `://`, and a host of more than one
+  # character so a Windows drive letter is not taken for one).  Those are
   # fetched with `builtins.fetchGit` (which uses the user's ssh agent)
   # rather than `fetchgit`, whose sandbox has no ssh (#1996).
   isSshGitUrl = url:
-    builtins.match "(git\\+)?ssh://.*" url != null
-    || builtins.match "[^/:@]+@[^/:]+:.*" url != null;
+    builtins.match "(git\\+)?ssh(\\+git)?://.*" (normaliseGitUrlScheme url) != null
+    || (!(lib.hasInfix "://" url)
+        && !(lib.hasPrefix "file:" url)
+        && builtins.match "([^/:@]+@)?[^/:@][^/:@]+:.*" url != null);
+
+  # Lower-case the scheme of a `scheme://...` URL (git accepts `SSH://`,
+  # `builtins.fetchGit` does not); anything else is returned unchanged.
+  normaliseGitUrlScheme = url:
+    let m = builtins.match "([A-Za-z][A-Za-z0-9+.-]*)(://.*)" url;
+    in if m == null then url
+       else lib.toLower (builtins.head m) + builtins.elemAt m 1;
 
   # Format a componentId as it should appear as a target on the
   # command line of the setup script.
