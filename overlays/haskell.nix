@@ -764,9 +764,11 @@ final: prev: {
         mkCacheModule = cache:
             # for each item in the `cache`, set
             #   packages.$name.src = fetchgit ...
-            # and
+            # (or `builtins.fetchGit` for a private repo, or the `inputMap`
+            # input) and
             #   packages.$name.postUnpack = ...
-            # if subdir is given.
+            # if subdir is given.  Nothing else: whether these packages are
+            # local is up to `mkGitExtraDepsLocalModule`.
             #
             # We need to do this, as cabal-to-nix will generate
             # src = /nix/store/... paths, and when we build the
@@ -815,6 +817,25 @@ final: prev: {
                 builtins.foldl' (x: y: x // y) {} cacheMap;
 
             };
+
+        # The `gitExtraDepsLocal` stack project option: mark the packages of
+        # the stack.yaml's own git `extra-deps` as local (but not project)
+        # packages, like a cabal.project `source-repository-package`.  The
+        # `.nix` files for cache entries come from `cabal-to-nix`, which
+        # never sets `isLocal` (#462).  `extraDeps` is the stack.yaml's own
+        # git repos (`genStackCache` with `extraDepsOnly`); `cache` entries
+        # from a custom snapshot are not among them and stay non-local.
+        mkGitExtraDepsLocalModule = { cache, extraDeps }:
+          let
+            key = e: "${e.url} ${e.rev}";
+            extraDepKeys = builtins.listToAttrs
+              (map (e: { name = key e; value = null; }) extraDeps);
+          in {
+            packages = builtins.listToAttrs (map (e: {
+                inherit (e) name;
+                value.package.isLocal = final.lib.mkDefault true;
+              }) (builtins.filter (e: extraDepKeys ? ${key e}) cache));
+          };
 
         # Takes a haskell src directory runs cabal new-configure and plan-to-nix.
         # Resulting nix files are added to nix-plan subdirectory.
@@ -1230,6 +1251,10 @@ final: prev: {
                   pkg-def-extras = (config.pkg-def-extras or []);
                   modules = [ { _module.args.buildModules = final.lib.mkForce buildProject.pkg-set; }
                       (mkCacheModule cache) ]
+                    ++ final.lib.optional config.gitExtraDepsLocal (mkGitExtraDepsLocalModule {
+                        inherit cache;
+                        extraDeps = genStackCache (config // { extraDepsOnly = true; });
+                      })
                     ++ (config.modules or [])
                     ++ final.lib.optional (config.ghc != null) { ghc.package = config.ghc.evalWith.${evalSystem} or (config.ghc.override { evalSystem = evalSystem; }); }
                     ++ final.lib.optional (config.compiler-nix-name != null)

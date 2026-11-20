@@ -25,6 +25,12 @@
     then { location, tag, ...}: branchMap."${location}"."${tag}" or null
     else _: null
 , resolverSha256 ? null
+, extraDepsOnly ? false
+                     # Only list the git packages the stack.yaml itself
+                     # names (its `extra-deps`), leaving out those that come
+                     # from a custom snapshot (a `.yaml` resolver).  Used by
+                     # the `gitExtraDepsLocal` option; only `url` and `rev`
+                     # of the result are meant to be read.
 , nix-tools
 , evalPackages
 , ...
@@ -66,6 +72,19 @@ let
     # All repos served via ssh or git protocols are usually private
     private = url: evalPackages.lib.substring 0 4 url != "http";
 
+    # `stack-repos` merges a snapshot's packages in only when the resolver is
+    # a `.yaml` file, so for `extraDepsOnly` such a resolver is swapped for
+    # a placeholder that names no file (instead of the fetched snapshot).
+    # Without `extraDepsOnly` the script is unchanged.
+    resolverSubstitution =
+      if extraDepsOnly
+        then evalPackages.lib.optionalString (resolver != null && evalPackages.lib.hasSuffix ".yaml" resolver) ''
+          substituteInPlace ${stackYaml} --replace "${resolver}" "lts-0.0"
+        ''
+        else evalPackages.lib.optionalString (fetchedResolver != null) ''
+          substituteInPlace ${stackYaml} --replace "${resolver}" "${fetchedResolver}"
+        '';
+
     repos = builtins.fromJSON (builtins.readFile (evalPackages.runCommand "stack-repos" {
         buildInputs = [ nix-tools ];
       } ''
@@ -74,9 +93,7 @@ let
         cp -r "${maybeCleanedSource}/." $TMP
         chmod -R +w $TMP
         substituteInPlace ${stackYaml} --replace "# nix-sha256:" "nix-sha256:"
-        ${evalPackages.lib.optionalString (fetchedResolver != null) ''
-          substituteInPlace ${stackYaml} --replace "${resolver}" "${fetchedResolver}"
-        ''}
+        ${resolverSubstitution}
         stack-repos --stack-yaml ${stackYaml}
         cp repos.json $out
       ''));

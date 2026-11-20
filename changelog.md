@@ -1,6 +1,19 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * New `stackProject` option `gitExtraDepsLocal` (default `false`).  When
+    set, the packages from the stack.yaml's git `extra-deps` get
+    `package.isLocal` (but not `package.isProject`), the same as a
+    `cabal.project` `source-repository-package`; git packages from a custom
+    snapshot do not.  `selectLocalPackages`, and so `shellFor`'s default
+    `packages`, then include them: the shell provides their dependencies
+    and leaves out the packages themselves and the packages that depend on
+    them, for cabal to build from the source a `cabal.project` next to the
+    stack.yaml points at.  `localPackages` module options apply to them
+    too.  Without the option nothing changes.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package

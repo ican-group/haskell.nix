@@ -287,6 +287,7 @@ let
     build-twin-pkgconfig = callTest ./build-twin-pkgconfig {};
     foreign-lib = callTest ./foreign-lib {};
     stack-source-repo = callTest ./stack-source-repo {};
+    stack-git-extra-deps-local = callTest ./stack-git-extra-deps-local {};
     stack-inputMap = callTest ./stack-inputMap { inherit testSrcRoot; };
     ghc-lib-reinstallable-cabal = callTest ./ghc-lib-reinstallable/cabal.nix {};
     ghc-lib-reinstallable-stack = callTest ./ghc-lib-reinstallable/stack.nix {};

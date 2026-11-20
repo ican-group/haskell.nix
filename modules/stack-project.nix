@@ -95,6 +95,30 @@ with types;
         then { location, tag, ...}: config.branchMap.${location}.${tag} or null
         else _: null;
     };
+    gitExtraDepsLocal = mkOption {
+      type = bool;
+      default = false;
+      description = ''
+        Treat the packages from git `extra-deps` in the stack.yaml file as
+        local packages (`package.isLocal`, but not `package.isProject`), the
+        same as a `cabal.project` `source-repository-package`.  Git packages
+        that come from a custom snapshot (a `.yaml` resolver) are not
+        affected.
+
+        Use this when a `cabal.project` next to the stack.yaml builds the
+        git dependencies from their source (for instance with
+        `source-repository-package` stanzas).  Then:
+
+        * `shellFor` (and `selectLocalPackages`) include these packages, so
+          the shell provides their dependencies and leaves out the packages
+          themselves and every package that depends on them; cabal builds
+          them from the source the `cabal.project` points at.  Without such
+          a `cabal.project`, `cabal build` in the shell has nowhere to find
+          them.
+        * `localPackages` module options (`-Werror` for instance) apply to
+          them too.
+      '';
+    };
 
     # Used by stackProject itself
     compiler-nix-name = mkOption {
