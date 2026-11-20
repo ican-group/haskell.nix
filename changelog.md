@@ -1,6 +1,18 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * The flake template (`nix flake init --template github:ican-group/haskell.nix`)
+    and `hix init` now list `https://cache.zw3rk.com` (key
+    `loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=`) next to
+    `https://cache.iog.io` in their `nixConfig`.  It holds every compiler
+    `haskell.nix` CI tests; `cache.iog.io` only has the ones IOG uses.  The
+    getting started guide's binary cache section covers both caches, and a
+    new "Caching your project's builds" page explains how to push a
+    project's evaluation-time builds (`plan-nix`, `roots`) along with its
+    packages.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package
