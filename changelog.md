@@ -1,6 +1,32 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * A tool in `shellFor`'s `tools`, a project's `shell.tools`,
+    `project.tools` or `haskell-nix.tool`/`tools` can now be a derivation,
+    which is used as it is (with the default builder as well as with
+    `builderVersion = 2`; `tools.hoogle` too).  `tools.cabal =
+    "v2-cabal-install"` asks for haskell.nix's own cabal-install (the
+    same derivation as `project.v2-cabal-install`) for the project's
+    `evalSystem`, in shells of either builder and in a project's `shell`
+    argument.  It gives a default-builder shell a cabal-install that can
+    reuse the shell's pre-built packages for dependencies on public
+    sub-libraries (`build-depends: pkg:sublib`).  The cabal-install from
+    Hackage cannot, and rebuilds such packages from source
+    (haskell/cabal#6039).  See "Why does `cabal build` in my shell
+    rebuild a dependency that has public sub-libraries?" in
+    `docs/troubleshooting.md`.
+
+  * A tool given both in a project's `shell.tools` and in `shellFor`'s
+    `tools` is now merged by these rules: `"latest"` and `{}` give way to
+    any other definition; a derivation wins over a version or module
+    spec (with a warning when that discards a pin); two different
+    derivations or two different version strings are an error (use
+    `lib.mkForce` to pick one).  Two version strings used to be
+    concatenated, and a string and a derivation could not be merged at
+    all.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package
