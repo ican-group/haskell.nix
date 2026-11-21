@@ -67,18 +67,91 @@ in lib.recurseIntoAttrs {
       # and renders the name without an `href`.
       # (`-not -path '*/src/*'` skips the hyperlinked source pages.)
       printf "check that the sublib docs link to aeson's docs..." >& 2
-      grep -E 'href="[^"]*aeson[^"]*#t:Value"' \
-        "$(find ${packages.sublib-docs.components.sublibs.slib.doc} \
-                -name 'Slib.html' -not -path '*/src/*' -print -quit)" > /dev/null
+      slib=$(find ${packages.sublib-docs.components.sublibs.slib.doc} \
+                  -name 'Slib.html' -not -path '*/src/*' -print -quit)
+      grep -E 'href="[^"]*aeson[^"]*#t:Value"' "$slib" > /dev/null
       echo yes >& 2
-    '' + optionalString (project.pkg-set.config.builderVersion == 1) ''
-      # The v2 builder's doc slices do not yet link a library's docs to
-      # its own sub-libraries' docs ("could not find link destinations
-      # for: Slib.Greeting").
+
+      # The link has to lead somewhere: a v2 doc slice used to point it into
+      # its own copy of aeson's docs, which the slice then deleted.
+      printf "check that the link to aeson's docs resolves..." >& 2
+      checkAesonLink() {
+        local target
+        target=$(grep -oE 'href="(file://)?/[^"#]*aeson[^"#]*#t:Value' "$1" | head -1)
+        target=''${target#href=\"}
+        target=''${target#file://}
+        target=''${target%#t:Value}
+        if [ ! -f "$target" ]; then
+          echo "$1 links to aeson's docs at $target, which does not exist" >& 2
+          exit 1
+        fi
+      }
+      checkAesonLink "$slib"
+      echo yes >& 2
+
+      # A v2 doc slice used to register the sublib's interface where it was
+      # not ("could not find link destinations for: Slib.Greeting").
       printf "check that the library docs link to the sublib docs..." >& 2
-      grep -E 'href="[^"]*#t:Greeting"' \
-        "$(find ${packages.sublib-docs.components.library.doc} \
-                -name 'Lib.html' -not -path '*/src/*' -print -quit)" > /dev/null
+      libHtml=$(find ${packages.sublib-docs.components.library.doc} \
+                     -name 'Lib.html' -not -path '*/src/*' -print -quit)
+      greeting=$(grep -oE 'href="(file://)?/[^"#]*#t:Greeting' "$libHtml" | head -1)
+      greeting=''${greeting#href=\"}
+      greeting=''${greeting#file://}
+      greeting=''${greeting%#t:Greeting}
+      if [ ! -f "$greeting" ]; then
+        echo "$libHtml links to the sublib's docs at '$greeting', which does not exist" >& 2
+        exit 1
+      fi
+      echo yes >& 2
+    '' + ''
+
+      # `projectHaddock` (#737): both components' docs in one directory,
+      # with a contents page and an index that cover them.
+      printf "check the combined project docs..." >& 2
+      html=${project.projectHaddock}/share/doc/haskell-project/html
+      test -f $html/index.html
+      test -f $html/doc-index.html
+      grep -q 'Lib' $html/index.html
+      grep -q 'Slib' $html/index.html
+      echo yes >& 2
+
+      printf "check the combined docs hold only documentation..." >& 2
+      if find ${project.projectHaddock} \( -name '*.a' -o -name '*.so' -o -name '*.dylib' \
+           -o -name '*.hi' -o -name '*.conf' -o -name dist-newstyle \) | grep -q .; then
+        echo "compiled code or package databases in the combined docs:" >& 2
+        find ${project.projectHaddock} \( -name '*.a' -o -name '*.so' -o -name '*.dylib' \
+           -o -name '*.hi' -o -name '*.conf' -o -name dist-newstyle \) >& 2
+        exit 1
+      fi
+      echo yes >& 2
+
+      printf "check every relative link in the combined docs resolves..." >& 2
+      find $html -name '*.html' | while read -r f; do
+        grep -oE 'href="[^"#]*' "$f" | sed 's/^href="//' | sort -u | while read -r h; do
+          case "$h" in
+            ""|file://*|http://*|https://*|mailto:*|javascript:*|/*) ;;
+            *) if [ ! -e "$(dirname "$f")/$h" ]; then
+                 echo "dangling link in $f: $h" >& 2
+                 exit 1
+               fi ;;
+          esac
+        done
+      done
+      echo yes >& 2
+
+      printf "check the combined sublib docs' link to aeson's docs resolves..." >& 2
+      checkAesonLink "$(find $html/sublib-docs-0.1.0.0-slib -name 'Slib.html' -not -path '*/src/*' -print -quit)"
+      echo yes >& 2
+
+      # The library's link to the sublib's docs now points at the copy next
+      # to it, not at the sublib's doc output in the store.
+      printf "check the combined docs link between components relatively..." >& 2
+      lib=$(find $html/sublib-docs-0.1.0.0 -name 'Lib.html' -not -path '*/src/*' -print -quit)
+      grep -E 'href="(\.\./)+sublib-docs-0\.1\.0\.0-slib/[^"]*#t:Greeting"' "$lib" > /dev/null
+      if grep -q '${packages.sublib-docs.components.sublibs.slib.doc}' "$lib"; then
+        echo "Lib.html still refers to the sublib's doc output in the store" >& 2
+        exit 1
+      fi
       echo yes >& 2
     '' + ''
 
@@ -89,7 +162,7 @@ in lib.recurseIntoAttrs {
 
     passthru = {
       # Used for debugging with nix repl
-      inherit packages;
+      inherit packages project;
     };
   };
 }

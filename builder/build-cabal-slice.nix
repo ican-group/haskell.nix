@@ -265,6 +265,28 @@ let outerGhc = ghc; in
 
 let
   stageCabalFile = import ./stage-cabal-file.nix;
+  # Shell helpers for doc slices (only their scripts include them, so other
+  # slices are unchanged):
+  #
+  # `confField FIELD FILE` prints a field of a package conf.  ghc-pkg moves a
+  # value that does not fit on the field's line to the next, indented line
+  # (long `id:`s and `z-<pkg>-z-<sublib>` names do), so continuation lines are
+  # joined.
+  #
+  # `unitDirOf GHCDIR UID` prints a unit's directory in the composed store:
+  # `<ghcDir>/lib/<uid>` in the cabal 3.19 layout, `<ghcDir>/<uid>` before it.
+  docSliceFns = ''
+    confField() {
+      awk -v f="$1:" '
+        found && /^[ \t]/ { v = v " " $0; next }
+        found { exit }
+        $1 == f { found = 1; v = $0; sub(/^[^:]*:/, "", v) }
+        END { gsub(/^[ \t]+|[ \t]+$/, "", v); print v }' "$2"
+    }
+    unitDirOf() {
+      if [ -d "$1/lib/$2" ]; then echo "$1/lib/$2"; else echo "$1/$2"; fi
+    }
+  '';
   # Cross-aware program names. nixpkgs' cross GHCs prefix every
   # binary with `${ghc.targetPrefix}` (e.g. `javascript-unknown-ghcjs-ghc-pkg`)
   # and don't ship the unprefixed `ghc-pkg`, so plain `ghc-pkg` on
@@ -1253,7 +1275,71 @@ stdenv.mkDerivation ({
         done
         shopt -u nullglob
       fi
-    ''}# Snapshot existing unit filenames so we can identify new ones later.
+    ''}${
+      # Doc slice: evict the composed plain twin of every dep that also came
+      # in as a doc slice.  A doc slice composes both a dep's plain slice and
+      # its `.doc` slice, and the two register the same package version under
+      # different unit ids (documentation is part of the hash).  The solver
+      # takes an installed instance by version, and between two of them the
+      # smaller unit id -- so whether haddock read the dep's real docs, or the
+      # plain twin's `${pkgroot}`-relative fields (pointing into this slice's
+      # own copy of the dep's html, which the install phase deletes), came
+      # down to the hashes, and so to the platform.  The target's own plain
+      # units go too (they are rebuilt here).  A twin stays when a composed
+      # unit with no doc twin depends on it, so the db never has a broken
+      # unit.
+      lib.optionalString doHaddock (docSliceFns + ''
+      discoverStore
+      if [ -n "$ghcDir" ] && [ -d "$ghcDir/$storePkgDb" ]; then
+        tgt_pkg=$(printf '%s' ${lib.escapeShellArg target} | awk -F: '{print $3}')
+        tgt_cname=$(printf '%s' ${lib.escapeShellArg target} | awk -F: '{print $5}')
+        if [ "$tgt_cname" = "$tgt_pkg" ]; then tgt_name=$tgt_pkg; else tgt_name="z-$tgt_pkg-z-$tgt_cname"; fi
+        : > $buildRoot/doc-twin-units
+        for conf in $ghcDir/$storePkgDb/*.conf; do
+          [ -e "$conf" ] || continue
+          if [ -L "$conf" ]; then
+            case "$(readlink -f "$conf" | cut -d/ -f1-4)" in
+              *-doc) kind=doc ;;
+              *) kind=plain ;;
+            esac
+          else
+            kind=own
+          fi
+          name=$(confField name "$conf")
+          printf '%s\t%s\t%s\t%s\t%s\n' "$(confField id "$conf")" "$kind" \
+            "$name" "$name-$(confField version "$conf")" "$(confField depends "$conf")" \
+            >> $buildRoot/doc-twin-units
+        done
+        awk -F'\t' -v tgt="$tgt_name" '
+          { kind[$1] = $2; nm[$1] = $3; key[$1] = $4; deps[$1] = $5
+            if ($2 == "doc") docKey[$4] = 1 }
+          END {
+            for (u in kind) {
+              n = split(deps[u], ds, " ")
+              for (i = 1; i <= n; i++) rev[ds[i]] = rev[ds[i]] " " u
+              if (kind[u] == "plain" && ((key[u] in docKey) || nm[u] == tgt)) cand[u] = 1
+            }
+            do {
+              changed = 0
+              for (u in cand) {
+                n = split(rev[u], rs, " ")
+                for (i = 1; i <= n; i++)
+                  if ((rs[i] in kind) && !(rs[i] in cand)) { delete cand[u]; changed = 1; break }
+              }
+            } while (changed)
+            for (u in cand) print u
+          }' $buildRoot/doc-twin-units | sort > $buildRoot/doc-twins-evicted
+        while IFS= read -r uid; do
+          echo "evicting plain twin of a doc slice: $uid"
+          rm -f "$ghcDir/$storePkgDb/$uid.conf" "$ghcDir/units/$uid"
+          unit_dir=$(unitDirOf "$ghcDir" "$uid")
+          if [ -d "$unit_dir" ]; then
+            chmod -R u+w "$unit_dir" 2>/dev/null || true
+            rm -rf "$unit_dir"
+          fi
+        done < $buildRoot/doc-twins-evicted
+      fi
+    '')}# Snapshot existing unit filenames so we can identify new ones later.
     discoverStore
     if [ -n "$ghcDir" ] && [ -d "$ghcDir/$storePkgDb" ]; then
       # No chmod needed — the db dir is a real dir from lndir,
@@ -2091,7 +2177,7 @@ ${lib.optionalString (metadataSourceFrags != []) ''
         | tee $buildRoot/build.log | sliceStamp; }
       sliceMark "cabal v2-build"
       ''}
-      ${lib.optionalString doHaddock ''
+      ${lib.optionalString doHaddock (docSliceFns + ''
         echo "--- cabal v2-haddock ${target} ---"
         time { cabal $cabalGlobalArgs v2-haddock $cabalCmdArgs \
           --haddock-html --haddock-hyperlink-source --haddock-quickjump \
@@ -2106,7 +2192,9 @@ ${lib.optionalString (metadataSourceFrags != []) ''
         # `installPhase` runs.  Capture the html here (still in the
         # buildPhase) and copy it into the sublib unit's
         # `share/doc/html/` so the doc slice matches the main-lib
-        # layout for downstream consumers.
+        # layout for downstream consumers.  (The 3.19 fork installs
+        # the sublib's html itself, under `share/doc/html/<sublib>/`;
+        # then there is nothing to capture.)
         tgt_pkg=$(printf '%s' ${lib.escapeShellArg target} | awk -F: '{print $3}')
         tgt_cname=$(printf '%s' ${lib.escapeShellArg target} | awk -F: '{print $5}')
         if [ "$tgt_cname" != "$tgt_pkg" ]; then
@@ -2123,20 +2211,21 @@ ${lib.optionalString (metadataSourceFrags != []) ''
             for conf in $ghcDir/$storePkgDb/*.conf; do
               [ -e "$conf" ] || continue
               grep -qxF "$(basename "$conf")" $buildRoot/confs-before && continue
-              if [ "$(awk '/^name:/ {print $2; exit}' "$conf")" \
-                   = "z-$tgt_pkg-z-$tgt_cname" ]; then
-                target_uid=$(awk '/^id:/ {print $2; exit}' "$conf")
-                ghc_dir=$(dirname "$(dirname "$conf")")
-                target_html_dir="$ghc_dir/$target_uid/share/doc/html"
-                mkdir -p "$target_html_dir"
-                chmod -R u+w "$target_html_dir"
-                cp -rL "$sublib_html_src"/. "$target_html_dir/"
+              if [ "$(confField name "$conf")" = "z-$tgt_pkg-z-$tgt_cname" ]; then
+                target_uid=$(confField id "$conf")
+                unit_dir=$(unitDirOf "$(dirname "$(dirname "$conf")")" "$target_uid")
+                if [ -z "$(find "$unit_dir/share/doc" -name '*.haddock' -print -quit 2>/dev/null)" ]; then
+                  target_html_dir="$unit_dir/share/doc/html"
+                  mkdir -p "$target_html_dir"
+                  chmod -R u+w "$target_html_dir"
+                  cp -rL "$sublib_html_src"/. "$target_html_dir/"
+                fi
                 break
               fi
             done
           fi
         fi
-      ''}
+      '')}
     ''}
   '';
 
@@ -2513,18 +2602,54 @@ ${lib.optionalString (metadataSourceFrags != []) ''
       # base-slice's conf — then we'd strip docs from this slice's
       # own --cid unit, which is exactly where cabal v2-haddock
       # installed them.
+      ${docSliceFns}
       target_uid=
+      target_conf=
       for conf in $ghcDir/$storePkgDb/*.conf; do
         [ -e "$conf" ] || continue
         [ -L "$conf" ] && continue
-        name_in_conf=$(awk '/^name:/ {print $2; exit}' "$conf")
-        if [ "$name_in_conf" = "$expected_name" ]; then
-          target_uid=$(awk '/^id:/ {print $2; exit}' "$conf")
+        if [ "$(confField name "$conf")" = "$expected_name" ]; then
+          target_uid=$(confField id "$conf")
+          target_conf=$conf
           break
         fi
       done
       if [ -n "$target_uid" ]; then
-        for unit_dir in $ghcDir/*/; do
+        ${# Point the target's `haddock-interfaces` / `haddock-html` at
+          # where its docs really are, as absolute store paths.
+          #
+          # cabal writes them `''${pkgroot}`-relative.  A consumer composes
+          # this slice into its own store, so there `''${pkgroot}` is the
+          # consumer's copy, and the haddock run there writes its links to
+          # this unit's docs into that copy -- which the consumer's clean-up
+          # (below, in its own run) deletes, leaving the links dangling.
+          # With this slice's own path in the conf they lead here, the doc
+          # slice of the dependency, from every consumer.
+          #
+          # The fields come from the `.haddock` file actually installed,
+          # not from cabal's guess: the 3.19 fork installs a sublib's html
+          # in `share/doc/html/<sublib>/` but registers
+          # `share/doc/html/<sublib>.haddock`, so no consumer could read the
+          # sublib's interface (and a library's docs had no links to its
+          # sublibs' docs).
+          ""}
+        target_dir=$(unitDirOf "$ghcDir" "$target_uid")
+        target_iface=$(find "$target_dir/share/doc" -name '*.haddock' -type f 2>/dev/null | sort | head -1)
+        if [ -n "$target_iface" ]; then
+          target_iface=$(readlink -f "$target_iface")
+          chmod u+w "$target_conf"
+          awk -v iface="$target_iface" -v html="$(dirname "$target_iface")" '
+            /^haddock-(interfaces|html):/ { skip = 1; next }
+            skip && /^[ \t]/ { next }
+            { skip = 0; print }
+            END { print "haddock-interfaces: " iface; print "haddock-html: " html }' \
+            "$target_conf" > "$target_conf.new"
+          mv "$target_conf.new" "$target_conf"
+        fi
+        ${# Units sit in `<ghcDir>/<uid>` before the 3.19 layout and in
+          # `<ghcDir>/lib/<uid>` with it.
+          ""}
+        for unit_dir in $ghcDir/*/ $ghcDir/lib/*/; do
           uid=$(basename "$unit_dir")
           case "$uid" in
             package.db|package.conf.d|incoming|lib|bin|etc|units) continue ;;

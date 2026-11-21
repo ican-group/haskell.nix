@@ -1,6 +1,28 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * New `project.projectHaddock`: the haddock docs of all the project's own
+    libraries and sub-libraries in one directory (`share/doc/<name>/html`)
+    with a combined contents page and index, like `cabal haddock-project`.
+    It reuses the components' `.doc` outputs.  Links between the project's
+    packages are relative, so that part can be published as it is; links to
+    dependencies still point at their docs in the store.
+
+  * `builderVersion = 2` doc slices (`.doc` with `documentation: True`)
+    register their docs' real store paths in `haddock-interfaces` and
+    `haddock-html`.  Links to a dependency's docs now point at the
+    dependency's own `.doc` slice; they pointed into the consumer's copy of
+    it, which the consumer deletes, so every such link was broken.  A
+    sub-library's interface is now found too (its fields pointed one
+    directory too high), so a library's docs link to its sub-libraries'
+    docs.  A doc slice also drops the plain twin of each dependency that
+    comes in with its own `.doc` slice: which of the two the solver took
+    depended on their unit-id hashes, so on some platforms haddock linked
+    to the plain twin's (missing) docs.  This rebuilds the doc slices of
+    projects that set `documentation: True`; nothing else.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package

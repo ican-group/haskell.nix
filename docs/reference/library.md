@@ -218,6 +218,7 @@ Then feeding its result into [mkStackPkgSet](#mkstackpkgset) passing also
 | `shell`           | Derivation                                       | Shell made with the project `shell` argument (see [`shellFor`](#shellfor)) |
 | `ghcWithHoogle`   | Function                                         | [`ghcWithHoogle`](#ghcwithhoogle)                                          |
 | `ghcWithPackages` | Function                                         | [`ghcWithPackages`](#ghcwithpackages)                                      |
+| `projectHaddock` | Derivation | The docs of the project's own libraries and sub-libraries in one directory, `share/doc/<name>/html`, with a combined contents page and index (like `cabal haddock-project`).  Links between them are relative; links to dependencies point at the dependencies' docs in the store.  Includes only components that have docs (`doHaddock`, or `documentation: True` with `builderVersion = 2`). |
 
 
 ## cabalProject'
@@ -238,6 +239,7 @@ Then feeding its result into [mkCabalProjectPkgSet](#mkcabalprojectpkgset) passi
 | `shell`           | Derivation                                       | Shell made with the project `shell` argument (see [`shellFor`](#shellfor))  |
 | `ghcWithHoogle`   | Function                                         | [`ghcWithHoogle`](#ghcwithhoogle)                                           |
 | `ghcWithPackages` | Function                                         | [`ghcWithPackages`](#ghcwithpackages)                                       |
+| `projectHaddock` | Derivation | The docs of the project's own libraries and sub-libraries in one directory, `share/doc/<name>/html`, with a combined contents page and index (like `cabal haddock-project`).  Links between them are relative; links to dependencies point at the dependencies' docs in the store.  Includes only components that have docs (`doHaddock`, or `documentation: True` with `builderVersion = 2`). |
 | `projectCross`    | Attrset                                          | Like `pkgs.pkgsCross.<system>` from nixpkgs `p.projectCross.<system>` returns the project results for cross compilation (where system is a member of nixpkgs lib.systems.examples).  So `p.projectCross.ghcjs.hsPkgs` is the same as `hsPkgs` but compiled with ghcjs |
 | `projectVariants`    | Attrset                                          | Attribute set of variant for the project, mapped from `flake.variants` config values |
 | `appendModule`    | Function                                          |  Re-eval the project with an extra module (or module list). |
