@@ -168,6 +168,23 @@ in {
         `--with-build-compiler` (unchanged behaviour).
       '';
     };
+    stableHaskellBootPackageNames = mkOption {
+      type = listOf str;
+      default = [];
+      internal = true;
+      description = ''
+        Names of the boot packages the stable-haskell boot-package
+        injection (`injectStableHaskellBootPackages`) adds to the project
+        as local `packages:`.  Set by that injection; empty otherwise.
+
+        Being local, these packages count as project packages
+        (`haskellLib.selectProjectPackages`), though they are the
+        compiler's, not the project's.  Code that turns a setting on for
+        "the project's packages" should leave them out
+        (`haskellLib.projectCoverageCiJobs` does): coverage on
+        `ghc-internal`, for example, panics GHC.
+      '';
+    };
     prepopulateHackageIndex = mkOption {
       type = bool;
       default = true;
@@ -745,6 +762,7 @@ in {
       # the BUILD stage against the (fully populated) native compiler — a
       # two-stage plan (the fork's `--with-build-compiler`).
       withBuildCompiler = true;
+      stableHaskellBootPackageNames = bootPkgNames;
       # rts needs per-file Cmm options (`cmm-options:` stanzas) that only
       # the v2 (cabal v2-build slicing) builder applies — v1's standalone
       # Setup.hs links a mainline Cabal that drops them.  Hard-set (not
