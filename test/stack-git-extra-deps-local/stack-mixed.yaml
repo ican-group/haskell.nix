@@ -1,0 +1,12 @@
+# A git extra-dep and a custom snapshot with another git package from the
+# same repository and commit.
+resolver: snapshot-mixed.yaml
+
+packages: []
+
+extra-deps:
+- git: https://github.com/ican-group/haskell.nix.git
+  commit: bc01ebc05a8105035c9449943046b46c8364b932
+  subdirs:
+    - test/cabal-simple
+  # nix-sha256: 003lm3pm024vhbfmii7xcdd9v2rczpflxf7gdl2pyxia7p014i8z
