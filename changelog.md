@@ -27,6 +27,11 @@ that will impact users.
       definition (or `mkForce`): a `mkDefault` has the same priority as the
       project-wide default and loses to the jobs' setting.  This also makes
       `projectCoverageCiJobs` work for stack projects.
+    * They leave out the compiler's boot packages even when the selector
+      picks them.  A stable-haskell cross compiler (ghc914-sh for a cross
+      target) builds `rts`, `ghc-internal`, `base`, ... from source as local
+      packages, so `selectProjectPackages` returns them too, and coverage on
+      `ghc-internal` panics GHC.
 
 ## November 19, 2026
 

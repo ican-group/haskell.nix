@@ -720,13 +720,24 @@ in {
   #
   # Whether it is v2 is read from the coverage project itself, so a
   # `coverageProjectModule` that changes `builderVersion` is honoured.
+  #
+  # The compiler's boot packages are always left out, even when `packages`
+  # selects them.  A stable-haskell `-target` cross compiler (ghc914-sh for
+  # a cross target) ships no boot libraries, so the project builds them
+  # from source as local packages, and `selectProjectPackages` then picks
+  # them up.  Coverage on them is not what anyone asks for here, and on
+  # `ghc-internal` it panics GHC.
   projectCoverageCiJobs = project: packages: coverageProjectModule:
     let
-      packageNames = project: builtins.attrNames (packages project.hsPkgs);
+      bootPackageNames = project.args.stableHaskellBootPackageNames or [];
+      selected = project: lib.filterAttrs
+        (_: p: !(builtins.elem (p.identifier.name or "") bootPackageNames))
+        (packages project.hsPkgs);
+      packageNames = project: builtins.attrNames (selected project);
       # cabal package names (v2's `hsPkgs` is keyed by plan id, and a plan
       # id can change once coverage is in the plan).
       cabalPackageNames = lib.unique (map (p: p.identifier.name)
-        (builtins.attrValues (packages project.hsPkgs)));
+        (builtins.attrValues (selected project)));
       coverageProject = project.appendModule [
         coverageProjectModule
         ({ config, options, ... }: let isV2 = config.builderVersion == 2; in {
