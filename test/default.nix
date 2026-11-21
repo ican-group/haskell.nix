@@ -297,6 +297,7 @@ let
     hls-cabal = callTest ./haskell-language-server/cabal.nix {};
     hls-stack = callTest ./haskell-language-server/stack.nix {};
     cabal-hpack = callTest ./cabal-hpack { inherit util; };
+    cabal-hpack-version = callTest ./cabal-hpack-version {};
     index-state = callTest ./index-state {};
     sha256map = callTest ./sha256map {};
     # fully-static = callTest ./fully-static { inherit (pkgs) buildPackages; };

@@ -1,6 +1,20 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * New project argument `hpack` chooses the hpack that turns
+    `package.yaml` files into `.cabal` files for a cabal project with
+    `supportHpack = true`, instead of the one in nix-tools.  It takes a
+    version, such as `hpack = "0.38.1";`, other `haskell-nix.tool`
+    arguments, or a derivation.  When it is set, it runs on the project
+    source in a step of its own, and the `.cabal` files it writes are what
+    plan-to-nix reads and what the packages are built with (the builders no
+    longer run hpack for them), so plan and build agree.  Editing a source
+    file does not re-plan the project unless a generated `.cabal` file
+    changes.  Stack projects ignore it.  Projects that do not set it build
+    exactly what they did before.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package

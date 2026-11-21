@@ -61,6 +61,7 @@
                             # package.
 , evalPackages
 , supportHpack ? false      # Run hpack on package.yaml files with no .cabal file
+, hpack ? null              # The project's `hpack` option (modules/project-common.nix)
 , ignorePackageYaml ? false # Ignore package.yaml files even if they exist
 , prebuilt-depends ? []
 , prepopulateHackageIndex ? true # When false, prepopulate an *empty* hackage
@@ -175,6 +176,73 @@ in let
             then [ dirStr ] ++ subDirs
             else [];
     in pkgs.lib.genAttrs (walk cabalFilesRoot cabalFilesRootStr) (_: true);
+
+  # With the project's own `hpack` (`useProjectHpack`), it runs on the real
+  # project source in a step of its own (`hpackOutputs`), so it sees what a
+  # builder would: every source file (to infer modules and globbed file
+  # lists), `LICENSE` (to infer `license:`), included YAML files, symlinks
+  # and `source-dirs` outside the package directory.  The `.cabal` files it
+  # writes are read here (`hpackCabalFiles`, keyed by the package directory
+  # relative to the source root, `""` for the root), handed to the plan-nix
+  # step as content-only files, which plan-to-nix then reads like any other
+  # `.cabal` file, and given to the builders by lib/load-cabal-plan.nix as
+  # `package-description-override` (they do not run hpack again).  So the
+  # plan and the build agree, and editing a source file re-runs only the
+  # hpack step: plan-nix changes only when a generated `.cabal` file does.
+  useProjectHpack = supportHpack && hpack != null;
+  hpackExe = haskellLib.hpackTool evalPackages
+    evalPackages.stdenv.hostPlatform.system compiler-nix-name hpack;
+  # The project source as the source filter leaves it (from the root, like
+  # `cleanedSource`, as packages may refer to sibling directories).
+  hpackSource = haskellLib.cleanSourceWith {
+    name = if name != null then "${name}-hpack-source" else "source-hpack-source";
+    src = cabalFilesOrigSrc;
+    filter = parentFilter;
+  };
+  # `hpack` is called by its full path, so a value without `bin/hpack` fails
+  # here rather than quietly falling back to another hpack.  `index` lists
+  # `<package dir><TAB><.cabal file>` for every `package.yaml` that has no
+  # `.cabal` file beside it (the ones the plan-nix step would run hpack on).
+  hpackOutputs = evalPackages.runCommand (nameAndSuffix "hpack-cabal-files") {} ''
+    shopt -s nullglob
+    cp -r --no-preserve=mode ${hpackSource} src
+    cd src
+    mkdir -p $out/files
+    touch $out/index
+    find . -name package.yaml -print0 | sort -z | while IFS= read -r -d "" hpackFile; do
+      dir=$(dirname "$hpackFile")
+      existing=("$dir"/*.cabal)
+      if [ ''${#existing[@]} -gt 0 ]; then
+        continue
+      fi
+      echo "Running hpack on $hpackFile"
+      ${hpackExe}/bin/hpack "$hpackFile"
+      rel=''${dir#.}
+      rel=''${rel#/}
+      mkdir -p "$out/files/$rel"
+      for generated in "$dir"/*.cabal; do
+        cp "$generated" "$out/files/$rel/"
+        printf '%s\t%s\n' "$rel" "$(basename "$generated")" >> $out/index
+      done
+    done
+  '';
+  hpackCabalFiles = if !useProjectHpack then {} else
+    let
+      lines = pkgs.lib.filter (l: l != "")
+        (pkgs.lib.splitString "\n" (builtins.readFile "${hpackOutputs}/index"));
+      entry = l:
+        let parts = pkgs.lib.splitString "\t" l;
+            dir = builtins.elemAt parts 0;
+            file = builtins.elemAt parts 1;
+        in {
+          name = dir;
+          value = {
+            name = file;
+            text = builtins.unsafeDiscardStringContext (builtins.readFile
+              "${hpackOutputs}/files/${if dir == "" then "" else dir + "/"}${file}");
+          };
+        };
+    in builtins.listToAttrs (map entry lines);
 
   cabalFilesRoot = if builtins.isPath cabalFilesOrigSrc
     then cabalFilesOrigSrc
@@ -669,7 +737,15 @@ let
     else
       rsync -a --chmod=u+w ${cleanedSource}/ ./
     fi
-    # Decide what to do for each `package.yaml` file.
+    ${
+      # The `.cabal` files the project's own `hpack` generated
+      # (`hpackCabalFiles`), as content-only files, so the loop below finds
+      # a `.cabal` file beside each such `package.yaml` and leaves it alone.
+      # Prefixed to the next line so that it adds nothing (not even a line)
+      # without the option.
+      pkgs.lib.concatStrings (pkgs.lib.mapAttrsToList (dir: f: ''
+        install -D -m 644 ${evalPackages.writeText f.name f.text} ./${pkgs.lib.escapeShellArg dir}/${pkgs.lib.escapeShellArg f.name}
+      '') hpackCabalFiles)}# Decide what to do for each `package.yaml` file.
     for hpackFile in $(find . -name package.yaml); do (
       # Look to see if a `.cabal` file exists
       shopt -u nullglob
@@ -809,7 +885,13 @@ let
     mv $out${subDir'}/pkgs.nix $out${subDir'}/default.nix
   '');
 in {
-  projectNix = plan-json;
+  # Only for a native project, so that a cross project (which also
+  # evaluates its build-platform twin) does not say it twice.
+  projectNix = pkgs.lib.warnIf (hpack != null && !supportHpack
+      && pkgs.stdenv.hostPlatform == pkgs.stdenv.buildPlatform)
+    "haskell-nix: the `hpack` argument has no effect without `supportHpack = true`."
+    plan-json;
+  inherit hpackCabalFiles;
   inherit index-state-max src;
   inherit (fixedProject) sourceRepos extra-hackages;
   inherit fixedCabalProjectLocal;

@@ -1,0 +1,20 @@
+<<: !include "../common.yaml"
+
+name:    hpack-choice
+version: 0.1.0.0
+# No `license:`: hpack infers it from the LICENSE file.
+
+dependencies:
+- base
+
+# No `exposed-modules`/`other-modules`: hpack infers them from the files in
+# `source-dirs`.
+library:
+  source-dirs: src
+
+executables:
+  hpack-choice:
+    main:        Main.hs
+    source-dirs: app
+    dependencies:
+    - hpack-choice
