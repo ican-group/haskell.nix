@@ -17,8 +17,11 @@ that will impact users.
     it, which the consumer deletes, so every such link was broken.  A
     sub-library's interface is now found too (its fields pointed one
     directory too high), so a library's docs link to its sub-libraries'
-    docs.  This rebuilds the doc slices of projects that set
-    `documentation: True`; nothing else.
+    docs.  A doc slice also drops the plain twin of each dependency that
+    comes in with its own `.doc` slice: which of the two the solver took
+    depended on their unit-id hashes, so on some platforms haddock linked
+    to the plain twin's (missing) docs.  This rebuilds the doc slices of
+    projects that set `documentation: True`; nothing else.
 
 ## November 19, 2026
 

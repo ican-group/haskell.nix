@@ -1275,7 +1275,71 @@ stdenv.mkDerivation ({
         done
         shopt -u nullglob
       fi
-    ''}# Snapshot existing unit filenames so we can identify new ones later.
+    ''}${
+      # Doc slice: evict the composed plain twin of every dep that also came
+      # in as a doc slice.  A doc slice composes both a dep's plain slice and
+      # its `.doc` slice, and the two register the same package version under
+      # different unit ids (documentation is part of the hash).  The solver
+      # takes an installed instance by version, and between two of them the
+      # smaller unit id -- so whether haddock read the dep's real docs, or the
+      # plain twin's `${pkgroot}`-relative fields (pointing into this slice's
+      # own copy of the dep's html, which the install phase deletes), came
+      # down to the hashes, and so to the platform.  The target's own plain
+      # units go too (they are rebuilt here).  A twin stays when a composed
+      # unit with no doc twin depends on it, so the db never has a broken
+      # unit.
+      lib.optionalString doHaddock (docSliceFns + ''
+      discoverStore
+      if [ -n "$ghcDir" ] && [ -d "$ghcDir/$storePkgDb" ]; then
+        tgt_pkg=$(printf '%s' ${lib.escapeShellArg target} | awk -F: '{print $3}')
+        tgt_cname=$(printf '%s' ${lib.escapeShellArg target} | awk -F: '{print $5}')
+        if [ "$tgt_cname" = "$tgt_pkg" ]; then tgt_name=$tgt_pkg; else tgt_name="z-$tgt_pkg-z-$tgt_cname"; fi
+        : > $buildRoot/doc-twin-units
+        for conf in $ghcDir/$storePkgDb/*.conf; do
+          [ -e "$conf" ] || continue
+          if [ -L "$conf" ]; then
+            case "$(readlink -f "$conf" | cut -d/ -f1-4)" in
+              *-doc) kind=doc ;;
+              *) kind=plain ;;
+            esac
+          else
+            kind=own
+          fi
+          name=$(confField name "$conf")
+          printf '%s\t%s\t%s\t%s\t%s\n' "$(confField id "$conf")" "$kind" \
+            "$name" "$name-$(confField version "$conf")" "$(confField depends "$conf")" \
+            >> $buildRoot/doc-twin-units
+        done
+        awk -F'\t' -v tgt="$tgt_name" '
+          { kind[$1] = $2; nm[$1] = $3; key[$1] = $4; deps[$1] = $5
+            if ($2 == "doc") docKey[$4] = 1 }
+          END {
+            for (u in kind) {
+              n = split(deps[u], ds, " ")
+              for (i = 1; i <= n; i++) rev[ds[i]] = rev[ds[i]] " " u
+              if (kind[u] == "plain" && ((key[u] in docKey) || nm[u] == tgt)) cand[u] = 1
+            }
+            do {
+              changed = 0
+              for (u in cand) {
+                n = split(rev[u], rs, " ")
+                for (i = 1; i <= n; i++)
+                  if ((rs[i] in kind) && !(rs[i] in cand)) { delete cand[u]; changed = 1; break }
+              }
+            } while (changed)
+            for (u in cand) print u
+          }' $buildRoot/doc-twin-units | sort > $buildRoot/doc-twins-evicted
+        while IFS= read -r uid; do
+          echo "evicting plain twin of a doc slice: $uid"
+          rm -f "$ghcDir/$storePkgDb/$uid.conf" "$ghcDir/units/$uid"
+          unit_dir=$(unitDirOf "$ghcDir" "$uid")
+          if [ -d "$unit_dir" ]; then
+            chmod -R u+w "$unit_dir" 2>/dev/null || true
+            rm -rf "$unit_dir"
+          fi
+        done < $buildRoot/doc-twins-evicted
+      fi
+    '')}# Snapshot existing unit filenames so we can identify new ones later.
     discoverStore
     if [ -n "$ghcDir" ] && [ -d "$ghcDir/$storePkgDb" ]; then
       # No chmod needed — the db dir is a real dir from lndir,
