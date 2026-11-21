@@ -1,0 +1,208 @@
+diff --git a/compiler/Setup.hs b/compiler/Setup.hs
+index c112aab..4f7ec03 100644
+--- a/compiler/Setup.hs
++++ b/compiler/Setup.hs
+@@ -1,4 +1,5 @@
+ {-# LANGUAGE NamedFieldPuns #-}
++{-# LANGUAGE CPP #-}
+ module Main where
+ 
+ import Distribution.Simple
+@@ -12,6 +13,9 @@ import Distribution.Simple.Program
+ import Distribution.Simple.Utils
+ import Distribution.Simple.Setup
+ import Distribution.Simple.PackageIndex
++#if MIN_VERSION_Cabal(3,14,0)
++import Distribution.Simple.LocalBuildInfo (interpretSymbolicPathLBI)
++#endif
+ 
+ import System.IO
+ import System.Process
+@@ -54,13 +58,21 @@ primopIncls =
+     , ("primop-vector-tycons.hs-incl"     , "--primop-vector-tycons")
+     , ("primop-docs.hs-incl"              , "--wired-in-docs")
+     , ("primop-deprecations.hs-incl"      , "--wired-in-deprecations")
++    , ("primop-wrappers-module.hs-incl"   , "--wrappers-module")
+     ]
+ 
+ ghcAutogen :: Verbosity -> LocalBuildInfo -> IO ()
+ ghcAutogen verbosity lbi@LocalBuildInfo{pkgDescrFile,withPrograms,componentNameMap,installedPkgs}
+   = do
++
++#if MIN_VERSION_Cabal(3,14,0)
++  let fromSymPath = interpretSymbolicPathLBI lbi
++#else
++  let fromSymPath = id
++#endif
++
+   -- Get compiler/ root directory from the cabal file
+-  let Just compilerRoot = takeDirectory <$> pkgDescrFile
++  let Just compilerRoot = (takeDirectory . fromSymPath) <$> pkgDescrFile
+ 
+   -- Require the necessary programs
+   (gcc   ,withPrograms) <- requireProgram normal gccProgram withPrograms
+@@ -80,30 +92,40 @@ ghcAutogen verbosity lbi@LocalBuildInfo{pkgDescrFile,withPrograms,componentNameM
+   -- Call genprimopcode to generate *.hs-incl
+   forM_ primopIncls $ \(file,command) -> do
+     contents <- readProcess "genprimopcode" [command] primopsStr
+-    rewriteFileEx verbosity (buildDir lbi </> file) contents
++    rewriteFileEx verbosity (fromSymPath (buildDir lbi) </> file) contents
+ 
+   -- Write GHC.Platform.Constants
+-  let platformConstantsPath = autogenPackageModulesDir lbi </> "GHC/Platform/Constants.hs"
++  let platformConstantsPath = fromSymPath (autogenPackageModulesDir lbi) </> "GHC/Platform/Constants.hs"
+       targetOS = case lookup "target os" settings of
+         Nothing -> error "no target os in settings"
+         Just os -> os
+   createDirectoryIfMissingVerbose verbosity True (takeDirectory platformConstantsPath)
++#if MIN_VERSION_Cabal(3,15,0)
++  -- temp files are now always created in system temp directory
++  -- (cf 8161f5f99dbe5d6c7564d9e163754935ddde205d)
++  withTempFile "Constants_tmp.hs" $ \tmp h -> do
++#else
+   withTempFile (takeDirectory platformConstantsPath) "Constants_tmp.hs" $ \tmp h -> do
++#endif
+     hClose h
+     callProcess "deriveConstants" ["--gen-haskell-type","-o",tmp,"--target-os",targetOS]
+-    renameFile tmp platformConstantsPath
++    copyFile tmp platformConstantsPath
+ 
+   let cProjectUnitId = case Map.lookup (CLibName LMainLibName) componentNameMap of
+                          Just [LibComponentLocalBuildInfo{componentUnitId}] -> unUnitId componentUnitId
+                          _ -> error "Couldn't find unique cabal library when building ghc"
+ 
+   let cGhcInternalUnitId = case lookupPackageName installedPkgs (mkPackageName "ghc-internal")  of
+-          -- We assume there is exactly one copy of `ghc-internal` in our dependency closure
++        -- We assume there is exactly one copy of `ghc-internal` in our dependency closure for
++        -- ghc >= 9.10 that have the ghc-internal library.
+         [(_,[packageInfo])] -> unUnitId $ installedUnitId packageInfo
++        -- for ghc < 9.10 we expect to find none.
++        [] -> "<unavailable>"
++        -- for anything else this is an issue.
+         _ -> error "Couldn't find unique ghc-internal library when building ghc"
+ 
+   -- Write GHC.Settings.Config
+-      configHsPath = autogenPackageModulesDir lbi </> "GHC/Settings/Config.hs"
++      configHsPath = fromSymPath (autogenPackageModulesDir lbi) </> "GHC/Settings/Config.hs"
+       configHs = generateConfigHs cProjectUnitId cGhcInternalUnitId settings
+   createDirectoryIfMissingVerbose verbosity True (takeDirectory configHsPath)
+   rewriteFileEx verbosity configHsPath configHs
+@@ -119,6 +141,8 @@ generateConfigHs :: String -- ^ ghc's cabal-generated unit-id, which matches its
+                  -> String -- ^ ghc-internal's cabal-generated unit-id, which matches its package-id/key
+                  -> [(String,String)] -> String
+ generateConfigHs cProjectUnitId cGhcInternalUnitId settings = either error id $ do
++    -- cStage = 2 is clearly wrong. As we compile the stage 1 compiler with this
++    -- file as well!
+     let getSetting' = getSetting $ (("cStage","2"):) settings
+     buildPlatform  <- getSetting' "cBuildPlatformString" "Host platform"
+     hostPlatform   <- getSetting' "cHostPlatformString" "Target platform"
+diff --git a/libraries/ghc-boot/Setup.hs b/libraries/ghc-boot/Setup.hs
+index 0995ee3..715b7e5 100644
+--- a/libraries/ghc-boot/Setup.hs
++++ b/libraries/ghc-boot/Setup.hs
+@@ -1,6 +1,6 @@
+ {-# LANGUAGE RecordWildCards #-}
+ {-# LANGUAGE LambdaCase #-}
+-{-# LANGUAGE LambdaCase #-}
++{-# LANGUAGE CPP #-}
+ module Main where
+ 
+ import Distribution.Simple
+@@ -10,6 +10,9 @@ import Distribution.Verbosity
+ import Distribution.Simple.Program
+ import Distribution.Simple.Utils
+ import Distribution.Simple.Setup
++#if MIN_VERSION_Cabal(3,14,0)
++import Distribution.Simple.LocalBuildInfo (interpretSymbolicPathLBI)
++#endif
+ 
+ import System.IO
+ import System.Directory
+@@ -31,13 +34,19 @@ main = defaultMainWithHooks ghcHooks
+ 
+ ghcAutogen :: Verbosity -> LocalBuildInfo -> IO ()
+ ghcAutogen verbosity lbi@LocalBuildInfo{..} = do
++#if MIN_VERSION_Cabal(3,14,0)
++  let fromSymPath = interpretSymbolicPathLBI lbi
++#else
++  let fromSymPath = id
++#endif
++
+   -- Get compiler/ root directory from the cabal file
+-  let Just compilerRoot = takeDirectory <$> pkgDescrFile
++  let Just compilerRoot = (takeDirectory . fromSymPath) <$> pkgDescrFile
+ 
+   let platformHostFile = "GHC/Platform/Host.hs"
+-      platformHostPath = autogenPackageModulesDir lbi </> platformHostFile
++      platformHostPath = fromSymPath (autogenPackageModulesDir lbi) </> platformHostFile
+       ghcVersionFile = "GHC/Version.hs"
+-      ghcVersionPath = autogenPackageModulesDir lbi </> ghcVersionFile
++      ghcVersionPath = fromSymPath (autogenPackageModulesDir lbi) </> ghcVersionFile
+ 
+   -- Get compiler settings
+   settings <- lookupEnv "HADRIAN_SETTINGS" >>= \case
+diff --git a/utils/deriveConstants/Main.hs b/utils/deriveConstants/Main.hs
+index 2141ad7..c6d1940 100644
+--- a/utils/deriveConstants/Main.hs
++++ b/utils/deriveConstants/Main.hs
+@@ -891,8 +891,9 @@ getWanted verbose os tmpdir gccProgram gccFlags nmProgram mobjdumpProgram
+           parseNmLine line
+               = case words line of
+                 ('_' : n) : "C" : s : _ -> mkP n s
+-                n : "C" : s : _ -> mkP n s
+-                [n, "D", _, s] -> mkP n s
++                n : "C" : s : _         -> mkP n s -- in common section
++                n : "B" : _off : s : _  -> mkP n s -- in .bss section
++                [n, "D", _, s]          -> mkP n s
+                 [s, "O", "*COM*", _, n] -> mkP n s
+                 _ -> Nothing
+               where mkP r s = case (stripPrefix prefix r, readHex s) of
+diff --git a/utils/genprimopcode/Main.hs b/utils/genprimopcode/Main.hs
+index cce9dcb..d1eea7c 100644
+--- a/utils/genprimopcode/Main.hs
++++ b/utils/genprimopcode/Main.hs
+@@ -213,6 +213,9 @@ main = getArgs >>= \args ->
+                       "--foundation-tests"
+                          -> putStr (gen_foundation_tests p_o_specs)
+ 
++                      "--wrappers-module"
++                         -> putStr (gen_wrappers_module p_o_specs)
++
+                       _ -> error "Should not happen, known_args out of sync?"
+                    )
+ 
+@@ -238,7 +241,8 @@ known_args
+        "--make-latex-doc",
+        "--wired-in-docs",
+        "--wired-in-deprecations",
+-       "--foundation-tests"
++       "--foundation-tests",
++       "--wrappers-module"
+      ]
+ 
+ ------------------------------------------------------------------
+@@ -304,6 +308,9 @@ In PrimopWrappers we set some crucial GHC options
+   a very simple module and there is no optimisation to be done
+ -}
+ 
++gen_wrappers_module :: Info -> String
++gen_wrappers_module info = "primOpWrappersModule = " ++ show (gen_wrappers info)
++
+ gen_wrappers :: Info -> String
+ gen_wrappers (Info _ entries)
+    =    "-- | Users should not import this module.  It is GHC internal only.\n"
+diff --git a/utils/genprimopcode/genprimopcode.cabal b/utils/genprimopcode/genprimopcode.cabal
+index 8db8827..6626217 100644
+--- a/utils/genprimopcode/genprimopcode.cabal
++++ b/utils/genprimopcode/genprimopcode.cabal
+@@ -31,5 +31,10 @@ Executable genprimopcode
+                    AccessOps
+     Build-Depends: base       >= 4   && < 5,
+                    array
++
++    -- Happy generated unboxed sums without the necessary pragma.
++    default-extensions:
++      UnboxedSums
++
+     if flag(build-tool-depends)
+       build-tool-depends: alex:alex >= 3.2.6, happy:happy >= 1.20.0

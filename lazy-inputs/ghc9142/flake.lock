@@ -1,0 +1,30 @@
+{
+  "nodes": {
+    "ghc9142": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781150814,
+        "narHash": "sha256-9jpdycOg6NfnhGq/YjYOipuEavhNgkRznBEq7U0eNgM=",
+        "ref": "wip/9.14.2-backports",
+        "rev": "08c99230c9e2e09afc500693aa716b665db0deee",
+        "revCount": 68552,
+        "submodules": true,
+        "type": "git",
+        "url": "https://gitlab.haskell.org/ghc/ghc"
+      },
+      "original": {
+        "ref": "wip/9.14.2-backports",
+        "submodules": true,
+        "type": "git",
+        "url": "https://gitlab.haskell.org/ghc/ghc"
+      }
+    },
+    "root": {
+      "inputs": {
+        "ghc9142": "ghc9142"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}
