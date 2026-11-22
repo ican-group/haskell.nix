@@ -60,7 +60,7 @@ Legend: ✅ built & cached · ⚠️ dependency failed · ❌ failed · ⚪ abor
 | unstable | `aarch64-darwin` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | unstable | `aarch64-darwin` → musl64 | ✅ | · | · | · | · | ✅ | · |
 | unstable | `aarch64-darwin` → aarch64-musl | ✅ | · | · | · | · | ✅ | · |
-| unstable | `aarch64-darwin` → javascript | ✅ | ✅ | ✅ | · | ✅ | ✅ | · |
+| unstable | `aarch64-darwin` → javascript | ✅ | · | ✅ | · | ✅ | ✅ | · |
 | unstable | `aarch64-darwin` → wasm | ✅ | · | · | · | ✅ | ✅ | · |
 <!-- CI-STATUS:END -->
 
