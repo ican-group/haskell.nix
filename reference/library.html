@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-3827411f.js";
+            window.path_to_searchindex_js = "../searchindex-88b62555.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-556adea0.js"></script>
@@ -343,6 +343,31 @@ output.</p>
   shell.tools.cabal = {};
 }).shell
 </code></pre>
+<p><strong>The <code>hpack</code> argument</strong>: with <code>supportHpack = true</code>, packages that have a
+<code>package.yaml</code> and no <code>.cabal</code> file are turned into <code>.cabal</code> files by hpack
+while planning.  By default that is the hpack that ships with nix-tools,
+and the builders run it again on the package source.  <code>hpack</code> picks
+another one: a version (or other <code>haskell-nix.tool</code> arguments) builds it
+with the project’s compiler on <code>evalSystem</code>, and a derivation with
+<code>bin/hpack</code> is used as it is (it must run on <code>evalSystem</code>).</p>
+<p>With <code>hpack</code> set, it runs on the project source (as the source filter
+leaves it, so included YAML files, <code>LICENSE</code>, symlinks and <code>source-dirs</code>
+outside the package directory are all there) in a step of its own.  The
+<code>.cabal</code> files it writes are the ones <code>plan-to-nix</code> reads and the packages
+are built with; the builders do not run hpack again, so the plan and the
+build always agree.  Editing a source file re-runs only the hpack step:
+the project is planned again only when a generated <code>.cabal</code> file changes.</p>
+<pre><code class="language-nix">pkgs.haskell-nix.project' {
+  src = ./.;
+  supportHpack = true;
+  hpack = "0.38.1";
+}
+</code></pre>
+<p>Pin a version rather than using <code>"latest"</code>, so that a haskell.nix update
+does not bring a different hpack.  The hpack is built for each compiler
+the project is planned with, before the project can be planned.</p>
+<p>Stack projects ignore <code>hpack</code> (with a warning): <code>stack-to-nix</code> plans with
+its own built-in hpack, and the builders use the matching nix-tools one.</p>
 <h2 id="stackproject"><a class="header" href="#stackproject">stackProject’</a></h2>
 <p>A function calling <a href="#callstacktonix">callStackToNix</a> with all arguments.</p>
 <p>Then feeding its result into <a href="#mkstackpkgset">mkStackPkgSet</a> passing also
@@ -483,7 +508,8 @@ needed for <code>importAndFilterProject</code>.</p>
 <tr><td><code>cabalProjectFreeze</code></td><td>String</td><td>Optional cabal project file contents (defaults to readFile “${src}/cabal.project.freeze”).</td></tr>
 <tr><td><code>ghc</code></td><td></td><td>Deprecated. Use <code>compiler-nix-name</code> instead. Optional ghc to use</td></tr>
 <tr><td><code>nix-tools</code></td><td></td><td>Optional nix-tools to use</td></tr>
-<tr><td><code>hpack</code></td><td></td><td>Optional hpack to use</td></tr>
+<tr><td><code>supportHpack</code></td><td>Bool</td><td>Run hpack on <code>package.yaml</code> files that have no <code>.cabal</code> file (default <code>false</code>).</td></tr>
+<tr><td><code>hpack</code></td><td>String, attrs or derivation</td><td>Optional hpack to use for that: a version or other <code>haskell-nix.tool</code> arguments, or a derivation with <code>bin/hpack</code> (see <a href="#project"><code>project'</code></a>).  Defaults to the one in nix-tools.  When set, the <code>.cabal</code> files it generates are also what the packages are built with.</td></tr>
 <tr><td><code>cabal-install</code></td><td></td><td>Optional cabal-install to use</td></tr>
 <tr><td><code>configureArgs</code></td><td>String</td><td>Optional extra arguments to pass to <code>cabal new-configure</code> (–enable-tests is included by default, include <code>--disable-tests</code> to override that).</td></tr>
 </tbody>

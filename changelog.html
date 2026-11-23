@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-3827411f.js";
+            window.path_to_searchindex_js = "searchindex-88b62555.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-556adea0.js"></script>
@@ -195,6 +195,19 @@ reports a hidden package instead.  Add the package to the shell (for
 <code>ghcWithPackages</code>, to the list) to get a copy built against the
 rebuilt packages, or pass <code>-package &lt;name&gt;</code> to use GHC’s copy as
 before.</p>
+</li>
+<li>
+<p>New project argument <code>hpack</code> chooses the hpack that turns
+<code>package.yaml</code> files into <code>.cabal</code> files for a cabal project with
+<code>supportHpack = true</code>, instead of the one in nix-tools.  It takes a
+version, such as <code>hpack = "0.38.1";</code>, other <code>haskell-nix.tool</code>
+arguments, or a derivation.  When it is set, it runs on the project
+source in a step of its own, and the <code>.cabal</code> files it writes are what
+plan-to-nix reads and what the packages are built with (the builders no
+longer run hpack for them), so plan and build agree.  Editing a source
+file does not re-plan the project unless a generated <code>.cabal</code> file
+changes.  Stack projects ignore it.  Projects that do not set it build
+exactly what they did before.</p>
 </li>
 </ul>
 <h2 id="november-20-2026"><a class="header" href="#november-20-2026">November 20, 2026</a></h2>
