@@ -1226,7 +1226,7 @@ final: prev: {
                   coverage = final.lib.optionalAttrs project.args.flake.doCoverage
                     (haskellLib.projectCoverageCiJobs
                       project selectPackages project.args.flake.coverageProjectModule);
-                  inherit (project.args.flake) doHaddock;
+                  inherit (project.args.flake) doHaddock ciSkip;
                   doDefaults = isMain && project.args.flake.doDefaults;
                 };
                 forAllCrossCompilers = prefix: project: (
@@ -1277,6 +1277,10 @@ final: prev: {
                     ++ final.lib.optional (config.ghc != null) { ghc.package = config.ghc.evalWith.${evalSystem} or (config.ghc.override { evalSystem = evalSystem; }); }
                     ++ final.lib.optional (config.compiler-nix-name != null)
                         { compiler.nix-name = final.lib.mkForce config.compiler-nix-name; }
+                    # `stack-to-nix` runs its own built-in hpack, and the
+                    # builders keep the matching nix-tools one.
+                    ++ final.lib.optional (config.hpack != null)
+                        (final.lib.warn "haskell-nix: the `hpack` argument is ignored for stack projects (stack-to-nix plans with its own hpack)." {})
                     ++ [ { evalPackages = final.lib.mkDefault evalPackages;
                            inherit (config) builderVersion;
                          } ];

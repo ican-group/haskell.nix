@@ -61,6 +61,7 @@
                             # package.
 , evalPackages
 , supportHpack ? false      # Run hpack on package.yaml files with no .cabal file
+, hpack ? null              # The project's `hpack` option (modules/project-common.nix)
 , ignorePackageYaml ? false # Ignore package.yaml files even if they exist
 , prebuilt-depends ? []
 , prepopulateHackageIndex ? true # When false, prepopulate an *empty* hackage
@@ -175,6 +176,73 @@ in let
             then [ dirStr ] ++ subDirs
             else [];
     in pkgs.lib.genAttrs (walk cabalFilesRoot cabalFilesRootStr) (_: true);
+
+  # With the project's own `hpack` (`useProjectHpack`), it runs on the real
+  # project source in a step of its own (`hpackOutputs`), so it sees what a
+  # builder would: every source file (to infer modules and globbed file
+  # lists), `LICENSE` (to infer `license:`), included YAML files, symlinks
+  # and `source-dirs` outside the package directory.  The `.cabal` files it
+  # writes are read here (`hpackCabalFiles`, keyed by the package directory
+  # relative to the source root, `""` for the root), handed to the plan-nix
+  # step as content-only files, which plan-to-nix then reads like any other
+  # `.cabal` file, and given to the builders by lib/load-cabal-plan.nix as
+  # `package-description-override` (they do not run hpack again).  So the
+  # plan and the build agree, and editing a source file re-runs only the
+  # hpack step: plan-nix changes only when a generated `.cabal` file does.
+  useProjectHpack = supportHpack && hpack != null;
+  hpackExe = haskellLib.hpackTool evalPackages
+    evalPackages.stdenv.hostPlatform.system compiler-nix-name hpack;
+  # The project source as the source filter leaves it (from the root, like
+  # `cleanedSource`, as packages may refer to sibling directories).
+  hpackSource = haskellLib.cleanSourceWith {
+    name = if name != null then "${name}-hpack-source" else "source-hpack-source";
+    src = cabalFilesOrigSrc;
+    filter = parentFilter;
+  };
+  # `hpack` is called by its full path, so a value without `bin/hpack` fails
+  # here rather than quietly falling back to another hpack.  `index` lists
+  # `<package dir><TAB><.cabal file>` for every `package.yaml` that has no
+  # `.cabal` file beside it (the ones the plan-nix step would run hpack on).
+  hpackOutputs = evalPackages.runCommand (nameAndSuffix "hpack-cabal-files") {} ''
+    shopt -s nullglob
+    cp -r --no-preserve=mode ${hpackSource} src
+    cd src
+    mkdir -p $out/files
+    touch $out/index
+    find . -name package.yaml -print0 | sort -z | while IFS= read -r -d "" hpackFile; do
+      dir=$(dirname "$hpackFile")
+      existing=("$dir"/*.cabal)
+      if [ ''${#existing[@]} -gt 0 ]; then
+        continue
+      fi
+      echo "Running hpack on $hpackFile"
+      ${hpackExe}/bin/hpack "$hpackFile"
+      rel=''${dir#.}
+      rel=''${rel#/}
+      mkdir -p "$out/files/$rel"
+      for generated in "$dir"/*.cabal; do
+        cp "$generated" "$out/files/$rel/"
+        printf '%s\t%s\n' "$rel" "$(basename "$generated")" >> $out/index
+      done
+    done
+  '';
+  hpackCabalFiles = if !useProjectHpack then {} else
+    let
+      lines = pkgs.lib.filter (l: l != "")
+        (pkgs.lib.splitString "\n" (builtins.readFile "${hpackOutputs}/index"));
+      entry = l:
+        let parts = pkgs.lib.splitString "\t" l;
+            dir = builtins.elemAt parts 0;
+            file = builtins.elemAt parts 1;
+        in {
+          name = dir;
+          value = {
+            name = file;
+            text = builtins.unsafeDiscardStringContext (builtins.readFile
+              "${hpackOutputs}/files/${if dir == "" then "" else dir + "/"}${file}");
+          };
+        };
+    in builtins.listToAttrs (map entry lines);
 
   cabalFilesRoot = if builtins.isPath cabalFilesOrigSrc
     then cabalFilesOrigSrc
@@ -365,18 +433,57 @@ let
                 (if inputMap.${repoData.url}.rev != (repoData.rev or repoData.ref)
                   then throw "${inputMap.${repoData.url}.rev} may not match ${repoData.rev or repoData.ref} for ${repoData.url} use \"${repoData.url}/${repoData.rev or repoData.ref}\" as the inputMap key if ${repoData.rev or repoData.ref} is a branch or tag that points to ${inputMap.${repoData.url}.rev}."
                   else inputMap.${repoData.url})
-            else if repoData.sha256 != null
-            then fetchgit { inherit (repoData) url sha256; rev = repoData.rev or repoData.ref; }
-            else
-              let drv = builtins.fetchGit
-                ({ inherit (repoData) url ; }
-                  # fetchGit does not accept "null" as rev and ref, so when it's null
-                  # we have to omit the argument completely.
-                  // pkgs.lib.optionalAttrs (repoData ? ref) { inherit (repoData) ref; }
-                  // pkgs.lib.optionalAttrs (repoData ? rev) { inherit (repoData) rev; });
-              in __trace "WARNING: No sha256 found for source-repository-package ${repoData.url} ref=${repoData.ref or "(unspecified)"} rev=${repoData.rev or "(unspecified)"} download may fail in restricted mode (hydra)"
-                (__trace "Consider adding `--sha256: ${hashPath drv}` to the ${cabalProjectFileName} file or passing in a sha256map argument"
-                 drv);
+            else if isSsh || repoData.sha256 == null
+              then
+                let drv = builtins.fetchGit
+                  ({ url = if isSsh then pkgs.haskell-nix.haskellLib.sshGitUrl repoData.url else repoData.url; }
+                    # fetchGit does not accept "null" as rev and ref, so when it's null
+                    # we have to omit the argument completely.
+                    // pkgs.lib.optionalAttrs (repoData ? ref) { inherit (repoData) ref; }
+                    // pkgs.lib.optionalAttrs (repoData ? rev) { inherit (repoData) rev; }
+                    // pkgs.lib.optionalAttrs isSsh sshFetchGitArgs);
+                in if isSsh
+                  then drv
+                  else __trace "WARNING: No sha256 found for source-repository-package ${repoData.url} ref=${repoData.ref or "(unspecified)"} rev=${repoData.rev or "(unspecified)"} download may fail in restricted mode (hydra)"
+                    (__trace "Consider adding `--sha256: ${hashPath drv}` to the ${cabalProjectFileName} file or passing in a sha256map argument"
+                     drv)
+            else fetchgitDrv;
+          fetchgitDrv = fetchgit { inherit (repoData) url sha256; rev = repoData.rev or repoData.ref; };
+          # `fetchgit` runs in the build sandbox, which has neither `ssh` nor
+          # the user's keys, so it can never fetch over ssh (#1996).  ssh
+          # locations go to `builtins.fetchGit` instead, which runs as the
+          # user at eval time and uses their ssh agent and config.
+          isSsh = pkgs.haskell-nix.haskellLib.isSshGitUrl repoData.url;
+          sshFetchGitArgs =
+            # Like `fetchgit` (and `nix-prefetch-git`, which is how a
+            # `--sha256` is usually worked out): include submodules and
+            # ignore `export-ignore` attributes (which Nix only applies, and
+            # only accepts the argument for, from 2.20).
+            { submodules = true; }
+            // pkgs.lib.optionalAttrs (builtins.compareVersions builtins.nixVersion "2.20" >= 0) { exportIgnore = false; }
+            # cabal's `tag:` is a full commit hash (`rev`), or a tag, branch
+            # or abbreviated commit hash (`ref`).  `builtins.fetchGit` only
+            # resolves those last three when it fetches all the refs; a
+            # full hash is found without that.
+            // pkgs.lib.optionalAttrs (!(repoData ? rev)) { allRefs = true; }
+            # With a hash, check it, and give the source the name (and so
+            # the store path) `fetchgit` would have.  Nix still fetches it
+            # over ssh (or reuses its own fetcher cache in ~/.cache/nix); a
+            # copy that is only in the store is not enough.
+            // pkgs.lib.optionalAttrs (repoData.sha256 != null && sriSha256 != null) {
+              narHash = sriSha256;
+              inherit (fetchgitDrv) name;
+            };
+          # `convertHash` and `narHash` reject a string with context.
+          sha256NoContext = builtins.unsafeDiscardStringContext repoData.sha256;
+          sriSha256 =
+            if pkgs.lib.hasPrefix "sha256-" sha256NoContext
+              then sha256NoContext
+            else if builtins ? convertHash
+              then builtins.convertHash { hash = sha256NoContext; hashAlgo = "sha256"; toHashFormat = "sri"; }
+            else __trace ("WARNING: this Nix has no `builtins.convertHash` (Nix 2.19 and later have it),"
+                + " so the --sha256 of ${repoData.url} is not checked; an SRI hash (sha256-...) is checked on any Nix")
+              null;
         in {
           # Download the source-repository-package commit and add it to a minimal git
           # repository that `cabal` will be able to access from a non fixed output derivation.
@@ -669,7 +776,15 @@ let
     else
       rsync -a --chmod=u+w ${cleanedSource}/ ./
     fi
-    # Decide what to do for each `package.yaml` file.
+    ${
+      # The `.cabal` files the project's own `hpack` generated
+      # (`hpackCabalFiles`), as content-only files, so the loop below finds
+      # a `.cabal` file beside each such `package.yaml` and leaves it alone.
+      # Prefixed to the next line so that it adds nothing (not even a line)
+      # without the option.
+      pkgs.lib.concatStrings (pkgs.lib.mapAttrsToList (dir: f: ''
+        install -D -m 644 ${evalPackages.writeText f.name f.text} ./${pkgs.lib.escapeShellArg dir}/${pkgs.lib.escapeShellArg f.name}
+      '') hpackCabalFiles)}# Decide what to do for each `package.yaml` file.
     for hpackFile in $(find . -name package.yaml); do (
       # Look to see if a `.cabal` file exists
       shopt -u nullglob
@@ -809,7 +924,13 @@ let
     mv $out${subDir'}/pkgs.nix $out${subDir'}/default.nix
   '');
 in {
-  projectNix = plan-json;
+  # Only for a native project, so that a cross project (which also
+  # evaluates its build-platform twin) does not say it twice.
+  projectNix = pkgs.lib.warnIf (hpack != null && !supportHpack
+      && pkgs.stdenv.hostPlatform == pkgs.stdenv.buildPlatform)
+    "haskell-nix: the `hpack` argument has no effect without `supportHpack = true`."
+    plan-json;
+  inherit hpackCabalFiles;
   inherit index-state-max src;
   inherit (fixedProject) sourceRepos extra-hackages;
   inherit fixedCabalProjectLocal;
