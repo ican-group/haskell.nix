@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-26ebac6a.js";
+            window.path_to_searchindex_js = "searchindex-f4a74f29.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-556adea0.js"></script>
@@ -223,6 +223,31 @@ packages themselves and the packages that depend on them, for cabal to
 build from the source a <code>cabal.project</code> next to the stack.yaml points
 at.  <code>localPackages</code> module options apply to them too.  Without the
 option nothing changes.</p>
+</li>
+<li>
+<p>A tool in <code>shellFor</code>’s <code>tools</code>, a project’s <code>shell.tools</code>,
+<code>project.tools</code> or <code>haskell-nix.tool</code>/<code>tools</code> can now be a derivation,
+which is used as it is (with the default builder as well as with
+<code>builderVersion = 2</code>; <code>tools.hoogle</code> too).  <code>tools.cabal = "v2-cabal-install"</code> asks for haskell.nix’s own cabal-install (the
+same derivation as <code>project.v2-cabal-install</code>) for the project’s
+<code>evalSystem</code>, in shells of either builder and in a project’s <code>shell</code>
+argument.  It gives a default-builder shell a cabal-install that can
+reuse the shell’s pre-built packages for dependencies on public
+sub-libraries (<code>build-depends: pkg:sublib</code>).  The cabal-install from
+Hackage cannot, and rebuilds such packages from source
+(haskell/cabal#6039).  See “Why does <code>cabal build</code> in my shell
+rebuild a dependency that has public sub-libraries?” in
+<code>docs/troubleshooting.md</code>.</p>
+</li>
+<li>
+<p>A tool given both in a project’s <code>shell.tools</code> and in <code>shellFor</code>’s
+<code>tools</code> is now merged by these rules: <code>"latest"</code> and <code>{}</code> give way to
+any other definition; a derivation wins over a version or module
+spec (with a warning when that discards a pin); two different
+derivations or two different version strings are an error (use
+<code>lib.mkForce</code> to pick one).  Two version strings used to be
+concatenated, and a string and a derivation could not be merged at
+all.</p>
 </li>
 </ul>
 <h2 id="november-20-2026"><a class="header" href="#november-20-2026">November 20, 2026</a></h2>

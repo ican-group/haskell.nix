@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-26ebac6a.js";
+            window.path_to_searchindex_js = "../searchindex-f4a74f29.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-556adea0.js"></script>
@@ -346,10 +346,10 @@ cabal-install (<code>haskell-nix.v2-cabal-install</code>, also available as
 different unit IDs, misses every unit in that store and rebuilds all of
 them.  So in a v2 shell:</p>
 <ul>
-<li><code>tools.cabal = "latest"</code>, <code>{}</code>, or any argument set without a
-<code>version</code> gives you <code>v2-cabal-install</code>, not a cabal-install from
-Hackage.  Its other arguments (<code>src</code>, <code>index-state</code>,
-<code>cabalProjectLocal</code>, …) are not used.</li>
+<li><code>tools.cabal = "latest"</code>, <code>{}</code>, <code>"v2-cabal-install"</code>, or any argument
+set without a <code>version</code> gives you <code>v2-cabal-install</code>, not a
+cabal-install from Hackage.  Its other arguments (<code>src</code>,
+<code>index-state</code>, <code>cabalProjectLocal</code>, …) are not used.</li>
 <li><code>tools.cabal = "&lt;version&gt;"</code> (or <code>{ version = "&lt;version&gt;"; ... }</code>)
 builds that version from Hackage as usual, with a warning when it is
 not the version that built the store.</li>
@@ -359,12 +359,36 @@ cannot be built with the project’s GHC.  For instance a from-source
 compiler such as <code>ghc914-sh</code> cannot always build tools itself, so
 build them with a nixpkgs-provided GHC:
 <code>tools.hlint = pkgs.haskell-nix.tool "ghc912" "hlint" "latest";</code>.
-(v1 shells do not accept derivations in <code>tools</code>; add them to
-<code>nativeBuildInputs</code> instead.)</li>
+A <code>cabal</code> derivation gets the same warning as a version pin unless it
+is the cabal-install that built the store.  (v1 shells take
+derivations in <code>tools</code> too.)</li>
 <li>Tools are built with <code>haskell-nix.tool</code>, so their plans are made on
 the build machine’s system rather than the project’s <code>evalSystem</code>.</li>
 <li><code>withHoogle = true</code> only puts <code>hoogle</code> on <code>PATH</code> (from <code>tools.hoogle</code>
 when given); run <code>hoogle generate</code> yourself to make an index.</li>
+</ul>
+<h2 id="haskellnixs-own-cabal-install"><a class="header" href="#haskellnixs-own-cabal-install">haskell.nix’s own cabal-install</a></h2>
+<p><code>tools.cabal = "v2-cabal-install"</code> asks for the cabal-install the v2
+builder builds slices with, built for the project’s <code>evalSystem</code> (the
+same derivation as <code>project.v2-cabal-install</code>).  It works in shells of
+either builder, and in a project’s <code>shell</code> argument, where <code>project</code> is
+not available.  It is only valid for <code>cabal</code>.  See
+<a href="../troubleshooting.html#why-does-cabal-build-in-my-shell-rebuild-a-dependency-that-has-public-sub-libraries">the troubleshooting entry</a>
+for why a default-builder shell may want it.</p>
+<h2 id="tools-given-in-more-than-one-place"><a class="header" href="#tools-given-in-more-than-one-place">Tools given in more than one place</a></h2>
+<p>A project’s <code>shell.tools</code> and a <code>shellFor { tools = ...; }</code> are merged
+tool by tool:</p>
+<ul>
+<li>Module priorities come first: <code>lib.mkForce</code> picks a definition
+outright.</li>
+<li><code>"latest"</code> and <code>{}</code> ask for no particular version, and give way to
+any other definition.  So a template’s <code>shell.tools.cabal = "latest"</code>
+does not get in the way of a <code>shellFor { tools.cabal = ...; }</code>.</li>
+<li>A derivation wins over a version or module spec, with a warning when
+that throws away an actual pin.</li>
+<li>Two different derivations, or two different version strings, are an
+error.  Use <code>lib.mkForce</code> on the one you want.</li>
+<li>Otherwise module specs are merged as before.</li>
 </ul>
 <h2 id="alternatives"><a class="header" href="#alternatives">Alternatives</a></h2>
 <p><code>tools</code> is a convenience for “the executable of one Hackage package”.

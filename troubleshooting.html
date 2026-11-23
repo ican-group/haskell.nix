@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-26ebac6a.js";
+            window.path_to_searchindex_js = "searchindex-f4a74f29.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-556adea0.js"></script>
@@ -259,6 +259,45 @@ What is going on?</p>
 So we only include Haskell sources if they appear in a <code>hs-source-dirs</code> somewhere; and we only include non-Haskell files if they are included in <code>extra-source-files</code> or similar.</p>
 <p>This is good practice anyway: if you do not include such files in <code>extra-source-files</code> then they will not be included in <code>cabal sdist</code>, which will cause problems if you ever upload your package to Hackage.
 But <code>haskell.nix</code> is very picky about it.</p>
+<h3 id="why-does-cabal-build-in-my-shell-rebuild-a-dependency-that-has-public-sub-libraries"><a class="header" href="#why-does-cabal-build-in-my-shell-rebuild-a-dependency-that-has-public-sub-libraries">Why does <code>cabal build</code> in my shell rebuild a dependency that has public sub-libraries?</a></h3>
+<p>Inside a <code>shellFor</code> shell, <code>cabal build</code> is meant to reuse the
+dependencies the shell already provides.  With the default builder
+(<code>builderVersion = 1</code>) those are installed in the shell’s GHC package
+database, and the cabal-install from Hackage cannot use an installed
+package for a dependency on one of its public sub-libraries
+(<code>build-depends: provider:slib</code>): its solver does not know that an
+installed package can have more than one library
+(<a href="https://github.com/haskell/cabal/issues/6039">haskell/cabal#6039</a>).
+It rejects the installed package and either builds it from source again
+or, when no source is available, fails with an error like:</p>
+<pre><code>rejecting: provider-0.1.0.0/installed-... (does not contain library 'slib', which is required by consumer)
+</code></pre>
+<p>haskell.nix’s own cabal-install (the one the v2 builder uses,
+<code>project.v2-cabal-install</code>) lets installed units satisfy sub-library
+dependencies.  Give the shell that cabal instead, in a project’s
+<code>shell</code> argument:</p>
+<pre><code class="language-nix">pkgs.haskell-nix.cabalProject' {
+  src = ./.;
+  compiler-nix-name = "ghc9103";
+  shell.tools.cabal = "v2-cabal-install";
+}
+</code></pre>
+<p>or in a <code>shellFor</code>:</p>
+<pre><code class="language-nix">project.shellFor {
+  tools.cabal = "v2-cabal-install";
+}
+</code></pre>
+<p><code>"v2-cabal-install"</code> picks the build of it for the project’s
+<code>evalSystem</code>, the same derivation as <code>project.v2-cabal-install</code> (which
+<code>tools</code> also accepts, since a tool can be a derivation).  It wins over a
+<code>shell.tools.cabal = "latest"</code> from elsewhere, as the templates set; see
+“Tools given in more than one place” in <a href="reference/tools.html">Tools</a>.</p>
+<p>This cabal is a 3.19 pre-release build and keeps its <code>~/.cabal/store</code> in
+its own layout, so it will not reuse what another cabal-install built
+there.</p>
+<p>Shells of projects using the v2 builder (<code>builderVersion = 2</code>) already
+use this cabal by default and reuse a cabal store, so they are not
+affected.</p>
 <h3 id="why-does-my-executable-depend-on-ghcgcc"><a class="header" href="#why-does-my-executable-depend-on-ghcgcc">Why does my executable depend on GHC/GCC?</a></h3>
 <p>You may want to set the <code>dontStrip</code> option to <code>false</code> (see https://github.com/ican-group/haskell.nix/issues/829).
 This is not set by default because it can occasionally cause breakage.</p>
