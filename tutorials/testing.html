@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-f903b882.js";
+            window.path_to_searchindex_js = "../searchindex-eea71735.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a339c369.js"></script>
@@ -218,7 +218,11 @@ nix flake check
 (for example, one that needs network access). This works whatever
 <code>doCheck</code> is set to.</p>
 <p>The <code>ciJobs</code> and <code>hydraJobs</code> outputs of <code>project.flake {}</code> include the
-same checks.</p>
+same checks.  When the plan leaves the test suites out
+(<code>configureArgs = "--disable-tests"</code>), they also leave out any
+sub-library that only those test suites use, directly or through other
+such sub-libraries (it is still in the flake’s <code>packages</code>); set
+<code>flake.ciSkip = [];</code> in the project to build those too.</p>
 <p>To collect checks yourself, for example for a CI job, use
 <a href="../reference/library.html#collectchecks-collectchecks"><code>collectChecks</code> / <code>collectChecks'</code></a>:</p>
 <pre><code class="language-nix">haskellLib.collectChecks' (haskellLib.selectProjectPackages project.hsPkgs)

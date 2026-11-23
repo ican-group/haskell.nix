@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-f903b882.js";
+            window.path_to_searchindex_js = "searchindex-eea71735.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-a339c369.js"></script>
@@ -192,6 +192,17 @@ Nix’s fetcher cache): the source is no longer a fixed-output derivation
 a binary cache could provide, and restricted evaluation (Hydra,
 non-flake) refuses ssh fetches.  Use <code>inputMap</code> for those.  See
 <code>docs/tutorials/source-repository-hashes.md</code>.</li>
+<li><code>project.flake</code> (<code>haskellLib.mkFlake</code>) no longer builds, in <code>ciJobs</code>
+and <code>hydraJobs</code>, a sub-library that only components left out of the
+build use, such as a private library used only by test suites when the
+plan disables them (<code>configureArgs = "--disable-tests"</code>) or by a
+component that is not buildable, or only by another such sub-library.
+cabal still plans such a sub-library, but nothing that is built needs
+it.  It stays in the flake’s <code>packages</code> (so
+<code>nix build .#pkg:lib:sublib</code> works), and a sub-library that nothing
+uses at all is still built, since it may be a public one.  Stack
+projects leave nothing out.  Set <code>flake.ciSkip = [];</code> in the project
+(or pass <code>ciSkip = [];</code> to <code>project.flake</code>) to build them all.</li>
 </ul>
 <h2 id="november-19-2026"><a class="header" href="#november-19-2026">November 19, 2026</a></h2>
 <ul>
