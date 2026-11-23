@@ -757,19 +757,69 @@ in {
   # `coverageProjectModule` is applied to `project` and is useful for
   # modifying the project settings when running code coverage (just
   # pass `{}` if you do not need to modify anything).
-  # By default the `doCoverage` flag will be set for the packages
-  # selected by `packages`.
+  # The packages selected by `packages` get coverage:
+  #
+  #  * `builderVersion = 1`: their `doCoverage` flag is set.  To leave one
+  #    out, give it a plain definition in `coverageProjectModule`
+  #    (`modules = [{ packages.foo.doCoverage = false; }]`); a `mkDefault`
+  #    is not enough (see below).
+  #  * `builderVersion = 2`: the `doCoverage` flag alone is ignored
+  #    (coverage has to be in the plan), so they get
+  #    `package <name>\n  coverage: True` in `cabalProjectLocal` instead,
+  #    and `doCoverage` follows from the plan.  To leave one out, add
+  #    `package foo\n  coverage: False` to `cabalProjectLocal` in
+  #    `coverageProjectModule` (it comes after these stanzas, so it wins),
+  #    or narrow the `packages` selector.  Setting `doCoverage = false`
+  #    there conflicts with the plan's `true`.
+  #
+  # Whether it is v2 is read from the coverage project itself, so a
+  # `coverageProjectModule` that changes `builderVersion` is honoured.
+  #
+  # The compiler's boot packages are always left out, even when `packages`
+  # selects them.  A stable-haskell `-target` cross compiler (ghc914-sh for
+  # a cross target) ships no boot libraries, so the project builds them
+  # from source as local packages, and `selectProjectPackages` then picks
+  # them up.  Coverage on them is not what anyone asks for here, and on
+  # `ghc-internal` it panics GHC.
   projectCoverageCiJobs = project: packages: coverageProjectModule:
     let
-      packageNames = project: builtins.attrNames (packages project.hsPkgs);
+      bootPackageNames = project.args.stableHaskellBootPackageNames or [];
+      selected = project: lib.filterAttrs
+        (_: p: !(builtins.elem (p.identifier.name or "") bootPackageNames))
+        (packages project.hsPkgs);
+      packageNames = project: builtins.attrNames (selected project);
+      # cabal package names (v2's `hsPkgs` is keyed by plan id, and a plan
+      # id can change once coverage is in the plan).
+      cabalPackageNames = lib.unique (map (p: p.identifier.name)
+        (builtins.attrValues (selected project)));
       coverageProject = project.appendModule [
         coverageProjectModule
-        {
-          modules = [{
-            packages = lib.genAttrs (packageNames project)
-              (_: { doCoverage = lib.mkDefault true; });
-          }];
-        }
+        ({ config, options, ... }: let isV2 = config.builderVersion == 2; in {
+          # `mkIf` rather than `optionalAttrs` on `isV2`: the module's shape
+          # must not depend on `builderVersion`, or evaluating it recurses.
+          # An explicit `config`, so the `options ? cabalProjectLocal` test
+          # below does not decide the module's top-level keys.
+          config = {
+            modules = lib.mkIf (!isV2) [{
+              # `mkOverride 900`: above `mkDefault`, because
+              # `modules/plan.nix` passes the global `doCoverage = false`
+              # down to every package as a `mkDefault` and two `mkDefault`s
+              # conflict; below a plain definition, which therefore turns
+              # it off.
+              packages = lib.genAttrs (packageNames project)
+                (_: { doCoverage = lib.mkOverride 900 true; });
+            }];
+          } // lib.optionalAttrs (options ? cabalProjectLocal) {
+            # Only cabal projects have `cabalProjectLocal` (stack projects
+            # are always v1), and defining an undeclared option is an error
+            # even under a false `mkIf`.
+            # `mkOrder 700`: after what haskell.nix itself puts first
+            # (`mkBefore`) and before `coverageProjectModule`'s own text, so
+            # a `coverage: False` there wins.
+            cabalProjectLocal = lib.mkIf isV2 (lib.mkOrder 700 (lib.concatMapStrings
+              (n: "\npackage ${n}\n  coverage: True\n") cabalPackageNames));
+          };
+        })
       ];
     in
       builtins.listToAttrs (lib.concatMap (packageName: [{

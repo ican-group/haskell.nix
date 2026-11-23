@@ -36,7 +36,17 @@ let
     (acc: c: if lib.any (x: x.name == c.name) acc then acc else acc ++ [c])
     [] checks;
 
-in pkgs.runCommand (name + "-coverage-report")
+  # v2 slices whose `doCoverage` module option was set without the plan
+  # having coverage (see `coverageIgnored` in builder/comp-v2-builder.nix)
+  # were built without HPC, so the report would silently miss them: the
+  # libraries' mix files, or the tix files of the test suites the checks
+  # run (`lib/check.nix` passes the flag on).  `uniqueChecks`, so a test
+  # that v2 exposes under two plan ids is reported once.
+  coverageIgnored = lib.filter (l: l.coverageIgnored or false) (mixLibraries ++ uniqueChecks);
+
+in assert lib.assertMsg (coverageIgnored == [])
+  (lib.concatMapStringsSep "\n" (l: l.coverageIgnoredMessage) coverageIgnored);
+  pkgs.runCommand (name + "-coverage-report")
   ({nativeBuildInputs = [ (ghc.buildGHC or ghc) pkgs.buildPackages.zip ];
     passthru = {
       inherit name checks mixLibraries;

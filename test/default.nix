@@ -309,6 +309,7 @@ let
     shell-for-reinstalled-boot-pkg = callTest ./shell-for-reinstalled-boot-pkg {};
     cabal-22 = callTest ./cabal-22 { inherit util; };
     coverage = callTest ./coverage {};
+    coverage-flake = callTest ./coverage-flake {};
     coverage-golden = callTest ./coverage-golden {};
     coverage-no-libs = callTest ./coverage-no-libs {};
     v2-slice-sharing = callTest ./v2-slice-sharing {};
