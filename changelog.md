@@ -1,6 +1,23 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 20, 2026
+
+  * `source-repository-package`s with an ssh location (`ssh://...`,
+    `git+ssh://...`, `ssh+git://...` or `[user@]host:path`) are now
+    fetched with `builtins.fetchGit`, which runs as you and uses your ssh
+    agent and config, so private repositories work.  They used to go to
+    `fetchgit` whenever a `--sha256` was given, and its build sandbox has
+    no `ssh` ("error: cannot run ssh").  Submodules are included.  A
+    `--sha256` is optional; one that is given is checked and gives the
+    source `fetchgit`'s store path.  `tag` may also be a tag, branch or
+    abbreviated hash (outside pure evaluation).  An scp-like location is
+    fetched as `ssh://[user@]host/path`.  Evaluation needs ssh access (or
+    Nix's fetcher cache): the source is no longer a fixed-output derivation
+    a binary cache could provide, and restricted evaluation (Hydra,
+    non-flake) refuses ssh fetches.  Use `inputMap` for those.  See
+    `docs/tutorials/source-repository-hashes.md`.
+
 ## November 19, 2026
 
   * New `projectPackages` and `localPackages` module options set package
