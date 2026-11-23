@@ -2981,6 +2981,9 @@ let
     # Per-component `Setup build -jN` (see modules/component-options.nix).
     buildJobs = component.buildJobs or null;
     doHaddock = true;
+    # The compiler (and so the haddock) that wrote this slice's
+    # interfaces, for `projectHaddock`'s combined index.
+    passthru = { haddockGhc = sliceGhc; };
     # The build-cabal-slice dry-run check fails when cabal plans
     # to build anything other than `expectedPackage` — that's
     # exactly the diagnostic we want for `.doc`: if dep doc

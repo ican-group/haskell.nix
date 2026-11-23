@@ -1075,6 +1075,10 @@ final: prev: {
 
             projectCoverageReport = haskellLib.projectCoverageReport project (map (pkg: pkg.coverageReport) (final.lib.attrValues (haskellLib.selectProjectPackages hsPkgs)));
 
+            # The docs of all the project's own libraries in one directory,
+            # with a combined contents page and index (`cabal haddock-project`).
+            projectHaddock = haskellLib.projectHaddock project;
+
             # `projectCross` is like `pkgsCross`, but for haskell.nix projects.
             # To get a cross platform version of the project use
             # `projectCross.<system>` where system is a member of nixpkgs lib.systems.examples.
