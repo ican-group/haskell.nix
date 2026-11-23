@@ -1012,37 +1012,46 @@ let
   # is otherwise indistinguishable from the shell simply not working.
   #
   # The same binary is `project.v2-cabal-install`, for a shell built
-  # some other way than `shellFor`.
+  # some other way than `shellFor`; `tools.cabal = "v2-cabal-install"`
+  # asks for it explicitly.
+  #
+  # A prebuilt DERIVATION is taken as-is and put straight on PATH — needed
+  # for tools that can't be rebuilt through `haskell-nix.tool` under a
+  # from-source `compiler-nix-name` (which has no nixpkgs-prebuilt GHC).
+  # It gets the same version check as a pin, unless it is the very binary
+  # that built the slices.
   cabalTool = versionOrMod:
     let
+      mismatch = what: lib.warn
+        ("shellFor: tools.cabal is ${what}, but this project's v2 "
+         + "slices were built with cabal-install ${v2CabalInstallVersion}.  The "
+         + "two compute different UnitIds, so `cabal build` in this shell will "
+         + "rebuild every dependency from source instead of reusing the composed "
+         + "cabal store.  Drop it to get the matching cabal.");
       pinned = if lib.isString versionOrMod
                  then versionOrMod
                  else versionOrMod.version or null;
     in
-      if pinned == null || pinned == "latest" then v2CabalInstall
-      else lib.warnIf (pinned != v2CabalInstallVersion)
-        ("shellFor: tools.cabal is pinned to ${pinned}, but this project's v2 "
-         + "slices were built with cabal-install ${v2CabalInstallVersion}.  The "
-         + "two compute different UnitIds, so `cabal build` in this shell will "
-         + "rebuild every dependency from source instead of reusing the composed "
-         + "cabal store.  Drop the pin to get the matching cabal.")
-        (pkgs.pkgsBuildBuild.haskell-nix.tool compilerNixName "cabal" versionOrMod);
+      if lib.isDerivation versionOrMod then
+        if versionOrMod.drvPath == v2CabalInstall.drvPath
+           || (versionOrMod.version or null) == v2CabalInstallVersion
+          then versionOrMod
+          else mismatch "a derivation (${versionOrMod.name or "unnamed"})" versionOrMod
+      else if pinned == null || pinned == "latest" || pinned == "v2-cabal-install"
+        then v2CabalInstall
+      else if pinned != v2CabalInstallVersion
+        then mismatch "pinned to ${pinned}"
+          (pkgs.pkgsBuildBuild.haskell-nix.tool compilerNixName "cabal" versionOrMod)
+      else pkgs.pkgsBuildBuild.haskell-nix.tool compilerNixName "cabal" versionOrMod;
 
   # A tool value is normally a hackage version string / module spec passed
-  # to `haskell-nix.tool`.  A prebuilt DERIVATION is taken as-is and put
-  # straight on PATH — needed for tools that can't be rebuilt through
-  # `haskell-nix.tool` under a from-source `compiler-nix-name` (which has
-  # no nixpkgs-prebuilt GHC), notably the v2 store layout's own fork cabal
-  # `haskell-nix.v2-cabal-install`.  A v2 shell that keeps mainline cabal
-  # ("latest") gets a cabal that reads the old `ghc-<ver>/package.db`
-  # layout and re-plans the whole composed store from scratch.  That case
-  # is checked first: a derivation is neither a version string nor a
-  # module spec, so `cabalTool` could not read a version out of it.
+  # to `haskell-nix.tool`, which also takes a derivation as it is.  `cabal`
+  # is special (see `cabalTool`): a v2 shell that keeps mainline cabal
+  # ("latest") would get a cabal that reads the old `ghc-<ver>/package.db`
+  # layout and re-plans the whole composed store from scratch.
   toolDrvs = lib.mapAttrsToList
     (name: versionOrMod:
-      if lib.isDerivation versionOrMod
-        then versionOrMod
-      else if name == "cabal"
+      if name == "cabal"
         then cabalTool versionOrMod
         else pkgs.pkgsBuildBuild.haskell-nix.tool compilerNixName name versionOrMod)
     tools;

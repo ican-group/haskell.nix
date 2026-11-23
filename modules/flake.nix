@@ -80,5 +80,18 @@
         set `packages.<name>.doHaddock = false` for those.
       '';
     };
+    ciSkip = lib.mkOption {
+      type = lib.types.nullOr (lib.types.listOf lib.types.str);
+      default = null;
+      description = ''
+        Component ids (`pkg:lib:sublib`) to leave out of the flake `ciJobs`
+        and `hydraJobs` (they stay in `packages`).  By default (`null`)
+        these are the sub-libraries that only components which are not
+        built use, such as a private library used only by test suites
+        when the plan disables them (`configureArgs = "--disable-tests"`),
+        see `haskellLib.subLibrariesOnlyForUnbuilt`.  Set it to `[]` to
+        build them all.
+      '';
+    };
   };
 }

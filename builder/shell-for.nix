@@ -142,10 +142,21 @@ let
     frameworks   = haskellLib.uniqueWithName (lib.concatMap (x: (haskellLib.dependToLib x).frameworks or []) allConfigs);
     doExactConfig = false;
   };
+  # The libraries the selected components (and `additionalPackages`) are
+  # built against.  `makeConfigFiles` hides GHC's own copy of any of them
+  # (#1532).  Setup dependencies are left out: a custom `Setup` built
+  # against, say, its own Cabal must not hide the Cabal the libraries use.
+  # This walks the dependency closure at eval time for every shell, which
+  # instantiating the shell's package db does anyway.
+  shadowedPkgs = map (p: p.identifier.name) (haskellLib.flatLibDepends {
+    depends = removeSelectedInputs (haskellLib.uniqueWithName
+        (lib.concatMap (c: c.config.depends) selectedComponents))
+      ++ additionalPackages;
+  });
   configFiles = makeConfigFiles {
     fullName = name;
     identifier.name = identifierName;
-    inherit component enableDWARF;
+    inherit component enableDWARF shadowedPkgs;
     chooseDrv = p: if withHaddock && p ? haddock then p.haddock else p;
   };
   ghcEnv = ghcForComponent {
@@ -169,13 +180,9 @@ let
   in hoogleLocal {
     packages = map docPackage (haskellLib.flatLibDepends component);
 
-    hoogle = pkgsBuildBuild.haskell-nix.hackage-tool (
-        lib.optionals (args ? tools && args.tools ? hoogle) (haskellLib.versionOrModToMods args.tools.hoogle)
-      ++ [{
-          name = "hoogle";
-          compiler-nix-name = compiler.nix-name;
-          evalSystem = evalPackages.stdenv.hostPlatform.system;
-        }]);
+    # `tool'` uses a `tools.hoogle` derivation as it is.
+    hoogle = pkgsBuildBuild.haskell-nix.tool' evalPackages.stdenv.hostPlatform.system
+      compiler.nix-name "hoogle" (args.tools.hoogle or {});
     };
 
   mkDrvArgs = builtins.removeAttrs args ["packages" "components" "additional" "withHoogle" "tools" "includeExtraPackages"];
@@ -188,6 +195,9 @@ in
     nativeBuildInputs = [ ghcEnv.drv ]
       ++ nativeBuildInputs
       ++ mkDrvArgs.nativeBuildInputs or []
+      # `tools'` passes a tool given as a derivation (e.g.
+      # `tools.cabal = project.v2-cabal-install`) through as it is, and
+      # resolves `tools.cabal = "v2-cabal-install"`.
       ++ lib.attrValues (pkgsBuildBuild.haskell-nix.tools' evalPackages.stdenv.hostPlatform.system compiler.nix-name tools)
       ++ lib.optional (ghcEnv.baseGhc.useLdLld or false) llvmPackages.bintools
       # If this shell is a cross compilation shell include

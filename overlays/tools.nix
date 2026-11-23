@@ -52,6 +52,17 @@ let
        + "pass its system (\"${e.stdenv.hostPlatform.system}\") instead.")
       e.stdenv.hostPlatform.system;
 
+  # `cabal = "v2-cabal-install"`: haskell.nix's own cabal-install (the one
+  # the v2 builder builds slices with) for `evalSystem`, the same
+  # derivation as `project.v2-cabal-install`.  `null` takes the default
+  # instance.
+  v2CabalInstallFor = fn: name: evalSystem:
+    if name != "cabal"
+      then throw ("haskell-nix.${fn}: \"v2-cabal-install\" is only a valid "
+                  + "version for `cabal`, not for `${name}`.")
+      else let v2ci = final.pkgsBuildBuild.haskell-nix.v2-cabal-install;
+           in if evalSystem == null then v2ci else v2ci.evalWith.${evalSystem} or v2ci;
+
 in { haskell-nix = prev.haskell-nix // {
 
   # Some times the package name in hackage is not the same as tool name.
@@ -98,8 +109,17 @@ in { haskell-nix = prev.haskell-nix // {
       exeName = final.haskell-nix.packageToolName.${name} or name;
     in package.getComponent "exe:${exeName}";
 
+  # A tool given as a derivation (e.g. `cabal = project.v2-cabal-install`)
+  # is used as it is.  `cabal = "v2-cabal-install"` asks for haskell.nix's
+  # own cabal-install for the eval system in use (see `v2CabalInstallFor`),
+  # so users need not pick its eval-system variant themselves.  Anything
+  # else is a version or a module spec for `hackage-tool`.
   tool = compiler-nix-name: name: versionOrMod:
-      final.haskell-nix.hackage-tool (
+    if lib.isDerivation versionOrMod
+      then versionOrMod
+    else if versionOrMod == "v2-cabal-install"
+      then v2CabalInstallFor "tool" name null
+      else final.haskell-nix.hackage-tool (
            final.haskell-nix.haskellLib.versionOrModToMods versionOrMod
         ++ [(lib.mapAttrs (_: lib.mkOverride 1100) { inherit compiler-nix-name name; })]
       );
@@ -109,7 +129,11 @@ in { haskell-nix = prev.haskell-nix // {
   # from it (see modules/project-common.nix).  A nixpkgs (`evalPackages`),
   # which this used to take, is still accepted with a deprecation warning.
   tool' = evalSystemOrPackages: compiler-nix-name: name: versionOrMod:
-      let evalSystem = toEvalSystem "tool'" evalSystemOrPackages;
+    if lib.isDerivation versionOrMod
+      then versionOrMod
+    else if versionOrMod == "v2-cabal-install"
+      then v2CabalInstallFor "tool'" name (toEvalSystem "tool'" evalSystemOrPackages)
+      else let evalSystem = toEvalSystem "tool'" evalSystemOrPackages;
       in final.haskell-nix.hackage-tool (
            final.haskell-nix.haskellLib.versionOrModToMods versionOrMod
         ++ [(lib.mapAttrs (_: lib.mkOverride 1100) { inherit evalSystem compiler-nix-name name; })]

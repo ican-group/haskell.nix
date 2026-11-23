@@ -12,37 +12,73 @@ If you have an existing Haskell project that you want to build with `haskell.nix
 
 **IMPORTANT:** you _must_ do this or you _will_ build several copies of GHC!
 
-You can configure Nix to use our binary cache, which is pushed to by CI, so should contain the artifacts that you need.
+`haskell.nix` CI pushes its GHCs and boot libraries to two binary caches:
 
-You need to add the following sections to `/etc/nix/nix.conf` or, if you are a trusted user, `~/.config/nix/nix.conf` (if you don't know what a "trusted user" is, you probably want to do the former). `[...]` denote any existing entries.
+| Cache | Public key | Holds |
+| --- | --- | --- |
+| `https://cache.zw3rk.com` | `loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=` | every compiler and platform `haskell.nix` CI tests, including cross compilers (see the table in the [README](https://github.com/ican-group/haskell.nix#compiler-ci-status)) |
+| `https://cache.iog.io` | `hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=` | the GHC versions IOG's own projects use |
+
+Each cache only works with its own key: a substitute that is not signed by
+one of your `trusted-public-keys` is ignored (with a warning like
+`ignoring substitute for '...', as it's not signed by any of the keys in 'trusted-public-keys'`).
+
+Add both to `/etc/nix/nix.conf`. `[...]` denote any existing entries.
 ```
-extra-trusted-public-keys = [...] hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= [...]
-extra-substituters = [...] https://cache.iog.io [...]
+extra-substituters = [...] https://cache.zw3rk.com https://cache.iog.io [...]
+extra-trusted-public-keys = [...] loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= [...]
 ```
 
-If you're running NixOS, you need to add/update the following in your `/etc/nixos/configuration.nix` files instead.
+* Use the `extra-` settings.  Plain `substituters = ...` and
+  `trusted-public-keys = ...` *replace* the defaults, so unless you list
+  `https://cache.nixos.org` and `cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=`
+  there too, Nix stops using the nixpkgs cache and builds much of nixpkgs
+  (including the bootstrap GHC) from source.
+* With a multi-user install (the default on macOS and on most Linux
+  installs), the settings are read by the Nix daemon, so restart it after
+  editing the file: `sudo systemctl restart nix-daemon` on Linux,
+  `sudo launchctl kickstart -k system/org.nixos.nix-daemon` on macOS (or
+  reboot).
+* `~/.config/nix/nix.conf` and `--option` on the command line only add
+  substituters for [trusted users](https://nix.dev/manual/nix/latest/command-ref/conf-file.html#conf-trusted-users).
+  For anyone else Nix prints `ignoring untrusted substituter` and carries
+  on without them, which is why `/etc/nix/nix.conf` is the place for them.
+* The `nixConfig` of a flake (such as the one in the
+  [template](#create-a-project-using-flakes)) is the same, and even a
+  trusted user has to accept it, when Nix asks or with
+  `--accept-flake-config`; otherwise Nix prints
+  `ignoring untrusted flake configuration setting 'extra-substituters'`.
+
+If you're running NixOS, add the following to `/etc/nixos/configuration.nix`
+instead.  NixOS keeps `cache.nixos.org` in these lists for you.
 ```nix
-# Binary Cache for haskell.nix
-nix.settings.trusted-public-keys = [
-  "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
-];
+# Binary caches for haskell.nix
 nix.settings.substituters = [
+  "https://cache.zw3rk.com"
   "https://cache.iog.io"
+];
+nix.settings.trusted-public-keys = [
+  "loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk="
+  "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
 ];
 ```
 
-NixOS-21.11 and older use slightly different settings.
-```nix
-# Binary Cache for haskell.nix  
-nix.binaryCachePublicKeys = [
-  "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
-];
-nix.binaryCaches = [
-  "https://cache.iog.io"
-];   
+To check what the daemon ended up with, run:
 ```
+nix config show substituters
+nix config show trusted-public-keys
+```
+
+Once you have a project (see below), `nix build --dry-run` lists what would
+be fetched from a cache and what would be built (it still has to build the
+project's evaluation-time dependencies, such as its plan, to get that far).
+If a `ghc` derivation is in the `will be built` list, the caches are not set
+up correctly.
 
 This can be tricky to get setup properly. If you're still having trouble getting cache hits, consult the corresponding [troubleshooting section](../troubleshooting.md#why-am-i-building-ghc).
+
+To push your own project's builds to a cache, see
+[Caching your project's builds](caching-your-project.md).
 
 ## Create a project using Flakes
 
@@ -124,7 +160,7 @@ cabal repl your-package-name:lib:your-package-name
 cabal build your-package-name
 ```
 
-To open a shell for use with `stack` see [the following issue](https://github.com/ican-group/haskell.nix/issues/689#issuecomment-643832619).
+To open a shell for use with `stack` and HLS, see [Using Stack and HLS with a Stack project](./development.md#using-stack-and-hls-with-a-stack-project).
 
 ## Getting started with Hix
 

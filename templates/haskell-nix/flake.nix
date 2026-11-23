@@ -43,11 +43,17 @@
 
   # --- Flake Local Nix Configuration ----------------------------
   nixConfig = {
-    # This sets the flake to use the IOG nix cache.
-    # Nix should ask for permission before using it,
-    # but remove it here if you do not want it to.
-    extra-substituters = ["https://cache.iog.io"];
-    extra-trusted-public-keys = ["hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="];
+    # This sets the flake to use the haskell.nix binary caches:
+    # cache.zw3rk.com has every compiler haskell.nix CI tests and
+    # cache.iog.io the ones IOG uses.  Nix only uses them for trusted
+    # users, and asks before it does; remove them here if you do not want
+    # that (see the "Setting up the binary cache" section of the
+    # haskell.nix getting started guide for configuring them system-wide).
+    extra-substituters = ["https://cache.zw3rk.com" "https://cache.iog.io"];
+    extra-trusted-public-keys = [
+      "loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk="
+      "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
+    ];
     allow-import-from-derivation = "true";
   };
 }

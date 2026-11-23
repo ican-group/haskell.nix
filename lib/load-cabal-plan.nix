@@ -322,6 +322,39 @@ let
         hsPkgs = {}; pkgconfPkgs = {};
         errorHandler = args.errorHandler // { pkgConfDepError = name: [ name ]; };
       }))));
+  # The `build-depends` of every component a package's `.cabal` file
+  # declares, planned or not, under the plan's flags.  Read like
+  # `pkgconfNamesOf`: with an empty `hsPkgs` every dependency falls to
+  # `buildDepError`, which returns its Cabal name (`dep`, or `pkg:sublib`).
+  # Keyed by component id (`pkg:lib:pkg`, `pkg:test:t`, ...).  Only the
+  # `depends` lists are forced, and each entry is an `or`-guarded lookup
+  # falling to `buildDepError`, so the read cannot fail where the package's
+  # real import does not.  It stays lazy: only `mkFlake`'s `ciJobs` force it.
+  componentDependNamesOf = name: file: args:
+    let
+      components = (import file (args // {
+        hsPkgs = {};
+        errorHandler = args.errorHandler // { buildDepError = dep: dep; };
+      })).components or {};
+      namesOf = c: pkgs.lib.filter builtins.isString (c.depends or []);
+    in pkgs.lib.optionalAttrs ((components.library or null) != null) {
+        "${name}:lib:${name}" = namesOf components.library;
+      }
+      // pkgs.lib.concatMapAttrs (collection: prefix:
+          pkgs.lib.mapAttrs' (n: c: pkgs.lib.nameValuePair "${name}:${prefix}:${n}" (namesOf c))
+            (components.${collection} or {}))
+        haskellLib.componentPrefix;
+  # `componentDependNames` is the same for every unit of a package in one
+  # stage, so only the first unit of each package and stage reads it; the
+  # others get `{}`, and `subLibrariesOnlyForUnbuilt` takes the union over
+  # all units.  (`listToAttrs` keeps the first occurrence of a name.)
+  dependNamesReaders = pkgs.lib.listToAttrs (map (p: {
+      name = p.id;
+      value = null;
+    }) (pkgs.lib.attrValues (pkgs.lib.listToAttrs (map (p: {
+      name = "${if isTwoStagePlan then haskellLib.planUnitStage p else "host"}/${p.pkg-name}";
+      value = p;
+    }) partitioned.local))));
   # Calculate the packages for a component
   getComponents = cabal2nixComponents: hsPkgs: p:
     let
@@ -368,6 +401,18 @@ let
   # We use unsafeDiscardStringContext to ensure that we don't query this derivation when importing
   # each package. The cost can be very high when using a remote store, as we need to do a network call.
   nixFilesDir = builtins.unsafeDiscardStringContext callProjectResults.projectNix.outPath + callProjectResults.src.origSubDir or "";
+  # A local package's directory relative to the project directory (the
+  # `subDir` of its `src`), from its relative `pkg-src.path` ...
+  localSubDir = p: pkgs.lib.removePrefix "./" (pkgs.lib.removePrefix "/" (pkgs.lib.removeSuffix "/." (pkgs.lib.removeSuffix "/." (
+    if pkgs.lib.hasPrefix ".${callProjectResults.src.origSubDir or ""}/" (p.pkg-src.path + "/")
+      then pkgs.lib.removePrefix ".${callProjectResults.src.origSubDir or ""}" p.pkg-src.path
+      else throw "Unexpected path ${p.pkg-src.path} expected it to start with .${callProjectResults.src.origSubDir or ""}"))));
+  # ... and relative to the source root, as `hpackCabalFiles` is keyed
+  # (lib/call-cabal-project-to-nix.nix).  Only for relative paths.
+  localRootDir = p:
+    let d = localSubDir p;
+    in pkgs.lib.removePrefix "/"
+      ((callProjectResults.src.origSubDir or "") + (if d == "" then "" else "/" + d));
 in {
   # This replaces the `plan-nix/default.nix`
   pkgs = (hackage: {
@@ -495,6 +540,17 @@ in {
                 sha256 = p.pkg-src-sha256;
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local" && cabal2nix ? cabal-generator) {
                 inherit (cabal2nix) cabal-generator;
+              } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local"
+                  && (callProjectResults.hpackCabalFiles or {}) != {}
+                  && !pkgs.lib.hasPrefix "/" p.pkg-src.path
+                  && callProjectResults.hpackCabalFiles ? ${localRootDir p}) {
+                # The `.cabal` file the project's own `hpack` generated for
+                # this package directory (lib/call-cabal-project-to-nix.nix),
+                # which is also what plan-to-nix read: build with it rather
+                # than running hpack again.  A default, so that a user's own
+                # override still wins.
+                package-description-override = pkgs.lib.mkDefault
+                  callProjectResults.hpackCabalFiles.${localRootDir p}.text;
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local") {
                 # Find the `src` location based on `p.pkg-src.path`
                 src = if pkgs.lib.hasPrefix "/" p.pkg-src.path
@@ -502,10 +558,7 @@ in {
                   else haskellLib.appendSubDir {
                     # Relative to the project path
                     inherit (callProjectResults) src;
-                    subDir = pkgs.lib.removePrefix "./" (pkgs.lib.removePrefix "/" (pkgs.lib.removeSuffix "/." (pkgs.lib.removeSuffix "/." (
-                      if pkgs.lib.hasPrefix ".${callProjectResults.src.origSubDir or ""}/" (p.pkg-src.path + "/")
-                        then pkgs.lib.removePrefix ".${callProjectResults.src.origSubDir or ""}" p.pkg-src.path
-                        else throw "Unexpected path ${p.pkg-src.path} expected it to start with .${callProjectResults.src.origSubDir or ""}"))));
+                    subDir = localSubDir p;
                     includeSiblings = true; # Filtering sibling dirs of the package dir is done in the
                                             # component builder so that relative paths can be used to
                                             # reference project directories not in the package subDir.
@@ -516,6 +569,10 @@ in {
                 package = cabal2nix.package // {
                   identifier = { name = p.pkg-name; version = p.pkg-version; id = p.id; };
                   pkgconfNames = pkgconfNamesOf file args;
+                  componentDependNames =
+                    if dependNamesReaders ? ${p.id}
+                      then componentDependNamesOf p.pkg-name file args
+                      else {};
                   isProject = true;
                   setup-depends = []; # The correct setup depends will be in `components.setup.depends`
                 };

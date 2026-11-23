@@ -1,0 +1,16 @@
+cabal-version: 2.4
+name:          tool-user
+version:       0.1.0.0
+build-type:    Simple
+
+-- `markdown-unlit` is both a library dependency and a
+-- `build-tool-depends` executable, the shape in the issue: the shell
+-- pre-builds both, and `cabal` inside the shell must use them rather
+-- than rejecting the installed library for not containing the
+-- executable (or building the tool from source).
+executable tool-user
+  main-is:            Main.lhs
+  ghc-options:        -pgmL markdown-unlit
+  build-depends:      base, markdown-unlit
+  build-tool-depends: markdown-unlit:markdown-unlit
+  default-language:   Haskell2010

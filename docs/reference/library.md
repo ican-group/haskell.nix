@@ -201,6 +201,37 @@ output.
 }).shell
 ```
 
+**The `hpack` argument**: with `supportHpack = true`, packages that have a
+`package.yaml` and no `.cabal` file are turned into `.cabal` files by hpack
+while planning.  By default that is the hpack that ships with nix-tools,
+and the builders run it again on the package source.  `hpack` picks
+another one: a version (or other `haskell-nix.tool` arguments) builds it
+with the project's compiler on `evalSystem`, and a derivation with
+`bin/hpack` is used as it is (it must run on `evalSystem`).
+
+With `hpack` set, it runs on the project source (as the source filter
+leaves it, so included YAML files, `LICENSE`, symlinks and `source-dirs`
+outside the package directory are all there) in a step of its own.  The
+`.cabal` files it writes are the ones `plan-to-nix` reads and the packages
+are built with; the builders do not run hpack again, so the plan and the
+build always agree.  Editing a source file re-runs only the hpack step:
+the project is planned again only when a generated `.cabal` file changes.
+
+```nix
+pkgs.haskell-nix.project' {
+  src = ./.;
+  supportHpack = true;
+  hpack = "0.38.1";
+}
+```
+
+Pin a version rather than using `"latest"`, so that a haskell.nix update
+does not bring a different hpack.  The hpack is built for each compiler
+the project is planned with, before the project can be planned.
+
+Stack projects ignore `hpack` (with a warning): `stack-to-nix` plans with
+its own built-in hpack, and the builders use the matching nix-tools one.
+
 ## stackProject'
 
 A function calling [callStackToNix](#callstacktonix) with all arguments.
@@ -355,7 +386,8 @@ needed for `importAndFilterProject`.
 | `cabalProjectFreeze` | String | Optional cabal project file contents (defaults to readFile "${src}/cabal.project.freeze"). |
 | `ghc`                |        | Deprecated. Use `compiler-nix-name` instead. Optional ghc to use |
 | `nix-tools`          |        | Optional nix-tools to use |
-| `hpack`              |        | Optional hpack to use |
+| `supportHpack`       | Bool   | Run hpack on `package.yaml` files that have no `.cabal` file (default `false`). |
+| `hpack`              | String, attrs or derivation | Optional hpack to use for that: a version or other `haskell-nix.tool` arguments, or a derivation with `bin/hpack` (see [`project'`](#project)).  Defaults to the one in nix-tools.  When set, the `.cabal` files it generates are also what the packages are built with. |
 | `cabal-install`      |        | Optional cabal-install to use |
 | `configureArgs`      | String | Optional extra arguments to pass to `cabal new-configure` (--enable-tests is included by default, include `--disable-tests` to override that). |
 
@@ -513,7 +545,7 @@ shellFor =
 | `withHoogle`   | Boolean  | Whether to build a Hoogle documentation index and provide the `hoogle` command. |
 | `exactDeps`    | Boolean  | Prevents the Cabal solver from choosing any package dependency other than what are in the package set. |
 | `allToolDeps`  | Boolean  | Indicates if the shell should include all the tool dependencies of the haskell packages in the project. |
-| `tools`        | Function | AttrSet of tools to make available e.g. `{ cabal = "3.2.0.0"; }` or `{ cabal = { version = "3.2.0.0"; }; }`. If an AttrSet is provided for a tool, the additional arguments will be passed to the function creating the derivation for that tool. So you can provide an `index-state` or a `materialized` argument like that `{ cabal = { version = "3.2.0.0"; index-state = "2020-10-30T00:00:00Z"; materialized = ./cabal.materialized; }; }` for example. You can specify and materialize the version of hoogle used to construct the hoogle index by including something like `{ hoogle = { version = "5.0.17.15"; index-state = "2020-05-31T00:00:00Z"; materialized = ./hoogle.materialized; }`. Uses a default version of hoogle if omitted. See [Tools](tools.md) for the details. |
+| `tools`        | Function | AttrSet of tools to make available e.g. `{ cabal = "3.2.0.0"; }` or `{ cabal = { version = "3.2.0.0"; }; }`. If an AttrSet is provided for a tool, the additional arguments will be passed to the function creating the derivation for that tool. So you can provide an `index-state` or a `materialized` argument like that `{ cabal = { version = "3.2.0.0"; index-state = "2020-10-30T00:00:00Z"; materialized = ./cabal.materialized; }; }` for example. You can specify and materialize the version of hoogle used to construct the hoogle index by including something like `{ hoogle = { version = "5.0.17.15"; index-state = "2020-05-31T00:00:00Z"; materialized = ./hoogle.materialized; }`. Uses a default version of hoogle if omitted. A tool can also be a derivation, which is put on `PATH` as it is, for instance `{ cabal = project.v2-cabal-install; }`, and `{ cabal = "v2-cabal-install"; }` asks for that same cabal-install by name. See [Tools](tools.md) for the details, including how tools given in more than one place are merged. |
 | `packageSetupDeps` | Boolean | Set this to `false` to exclude custom-setup dependencies.
 | `enableDWARF`  | Boolean  | Include debug info |
 | `crossPlatforms` | Function | Platform selection function for cross compilation targets to support eg. `ps: with ps; [ghcjs mingwW64]` (see nixpkgs lib.systems.examples for list of platform names). |

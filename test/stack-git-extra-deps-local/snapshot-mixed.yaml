@@ -1,0 +1,10 @@
+# A git package from the same repository and commit as the extra-dep in
+# stack-mixed*.yaml, but a different subdir (and package).
+resolver: lts-23.7
+name: stack-git-extra-deps-local-mixed
+
+packages:
+- git: https://github.com/ican-group/haskell.nix.git
+  commit: bc01ebc05a8105035c9449943046b46c8364b932
+  subdirs:
+    - test/cabal-sublib
