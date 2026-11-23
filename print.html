@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-f4a74f29.js";
+            window.path_to_searchindex_js = "searchindex-c054c3a6.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-556adea0.js"></script>
@@ -137082,6 +137082,51 @@ affected.</p>
 <h3 id="why-does-my-executable-depend-on-ghcgcc"><a class="header" href="#why-does-my-executable-depend-on-ghcgcc">Why does my executable depend on GHC/GCC?</a></h3>
 <p>You may want to set the <code>dontStrip</code> option to <code>false</code> (see https://github.com/ican-group/haskell.nix/issues/829).
 This is not set by default because it can occasionally cause breakage.</p>
+<h3 id="why-does-cabal-build-in-my-shell-build-happy-or-another-build-tool-depends-tool-again"><a class="header" href="#why-does-cabal-build-in-my-shell-build-happy-or-another-build-tool-depends-tool-again">Why does <code>cabal build</code> in my shell build <code>happy</code> (or another <code>build-tool-depends</code> tool) again?</a></h3>
+<p>A <code>shellFor</code> shell puts the executables named in the selected packages’
+<code>build-tool-depends</code> (<code>happy</code>, <code>alex</code>, <code>tasty-discover</code>, …) on <code>PATH</code>,
+pre-built.  Whether <code>cabal build</code> inside the shell uses them depends on
+the builder:</p>
+<ul>
+<li><strong><code>builderVersion = 2</code></strong>: the shell’s cabal store holds the tool, and
+<code>cabal build</code> reuses it; the only things it builds are your own
+packages.</li>
+<li><strong><code>builderVersion = 1</code></strong> (the default for most compilers): the shell’s
+libraries are in a GHC package database, which records no executables.
+cabal-install always solves <code>build-tool-depends</code> itself, cannot take
+the tool from <code>PATH</code>, and finds no installed package that provides it.
+So it plans the tool from source and builds it into <code>~/.cabal/store</code>
+(once), or fails if it cannot download it.  Giving a v1 shell
+haskell.nix’s cabal-install (<code>project.v2-cabal-install</code>) does not change
+this.</li>
+</ul>
+<p>When the same package is both a library dependency and a tool, as in</p>
+<pre><code class="language-cabal">  ghc-options:        -pgmL markdown-unlit
+  build-depends:      base, markdown-unlit
+  build-tool-depends: markdown-unlit:markdown-unlit
+</code></pre>
+<p>a v1 shell can instead fail with</p>
+<pre><code>rejecting: my-pkg:markdown-unlit:exe.markdown-unlit-0.6.0/installed-...
+(does not contain executable 'markdown-unlit', which is required by my-pkg)
+</code></pre>
+<p>since the solver sees the installed library but will not let it provide
+the executable.</p>
+<p>Ways around it:</p>
+<ul>
+<li>Use the v2 builder (<code>builderVersion = 2</code>; see
+<a href="#migrating-a-project-from-builderversion--1-to-builderversion--2">Migrating to builderVersion = 2</a> and
+<a href="#shells-with-builderversion--2">Shells with <code>builderVersion = 2</code></a>).
+A v2 shell links the dependencies’ library <em>and</em> executable units into
+its cabal store, and <code>cabal build</code> reuses both.</li>
+<li>Let cabal fetch and build the tool from source (needs network access
+and a Hackage index).  This works, but rebuilds the tool.</li>
+<li>Use the deprecated <code>build-tools: markdown-unlit</code> field instead of
+<code>build-tool-depends</code>.  cabal then only looks for the program on <code>PATH</code>,
+where the shell has put it.</li>
+</ul>
+<p>The <code>test/shell-build-tool-depends</code> (tool only, both builders) and
+<code>test/shell-for-build-tool-depends</code> (library and tool from one package,
+v2) tests show this.</p>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="templates--abstraction"><a class="header" href="#templates--abstraction">Templates / Abstraction</a></h1>
 <div style="break-before: page; page-break-before: always;"></div>
