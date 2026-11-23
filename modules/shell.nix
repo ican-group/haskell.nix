@@ -69,7 +69,58 @@
       '';
     };
     tools = lib.mkOption {
-      type = lib.types.attrsOf lib.types.unspecified;
+      # A tool is a version string, a module spec for `haskell-nix.tool`
+      # or a derivation.  The default `unspecified` merge cannot combine a
+      # string with a derivation ("Cannot merge definitions"), `//`s a
+      # `{ version = ...; }` set into a derivation, and concatenates two
+      # strings ("latest" and "3.12.1.0" become "latest3.12.1.0").  So:
+      #
+      #  * Module priorities apply first, as for any option: only the
+      #    highest-priority definitions get here, so `lib.mkForce` picks
+      #    one outright.
+      #  * `"latest"` and `{}` ask for no version in particular (`{}` leaves
+      #    the version at its default, "latest"), and give way to any
+      #    other definition, e.g. a project's (or template's)
+      #    `shell.tools.cabal = "latest"` to a `shellFor { tools.cabal =
+      #    ...; }`.  Several of them together merge to "latest".
+      #  * A derivation wins over versions and module specs, with a
+      #    warning when that throws away an actual pin.  Two different
+      #    derivations are an error, not decided by definition order.
+      #  * Two different version strings are an error too.  Anything else
+      #    merges as before (module specs are `//`ed).
+      type = lib.types.attrsOf (lib.mkOptionType {
+        name = "haskell-nix-tool";
+        description = "tool version, module spec or derivation";
+        merge = loc: defs:
+          let
+            isDrv = d: lib.isDerivation d.value;
+            asksForNothing = v: v == "latest" || v == {};
+            drvDefs = lib.filter isDrv defs;
+            pinDefs = lib.filter (d: !isDrv d && !asksForNothing d.value) defs;
+            conflict = what: ds: throw (
+              "The option `${lib.showOption loc}' has ${what} definitions in "
+              + "${lib.options.showFiles (map (d: d.file) ds)}.  Use `lib.mkForce` "
+              + "on the one to use.");
+          in
+            if drvDefs != [] then
+              if lib.length (lib.unique (map (d: d.value.drvPath) drvDefs)) > 1
+                then conflict "conflicting derivation" drvDefs
+              else lib.warnIf (pinDefs != [])
+                ("`${lib.showOption loc}` is a derivation here, so the version or "
+                 + "module spec it is also given in "
+                 + "${lib.options.showFiles (map (d: d.file) pinDefs)} is not used.  "
+                 + "Drop one of them (or use `lib.mkForce`) to silence this.")
+                (lib.head drvDefs).value
+            # `{}` leaves the version at its default, which is "latest".
+            else if pinDefs == [] then
+              if lib.length (lib.unique (map (d: d.value) defs)) == 1
+                then (lib.head defs).value
+                else "latest"
+            else if lib.all (d: lib.isString d.value) pinDefs
+                 && lib.length (lib.unique (map (d: d.value) pinDefs)) > 1
+              then conflict "conflicting version" pinDefs
+            else lib.mergeDefaultOption loc pinDefs;
+      });
       default = {};
     };
     packageSetupDeps = lib.mkOption {
