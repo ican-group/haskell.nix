@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-32bdfc64.js";
+            window.path_to_searchindex_js = "../searchindex-5638dc9f.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-556adea0.js"></script>
@@ -385,6 +385,7 @@ its own built-in hpack, and the builders use the matching nix-tools one.</p>
 <tr><td><code>shell</code></td><td>Derivation</td><td>Shell made with the project <code>shell</code> argument (see <a href="#shellfor"><code>shellFor</code></a>)</td></tr>
 <tr><td><code>ghcWithHoogle</code></td><td>Function</td><td><a href="#ghcwithhoogle"><code>ghcWithHoogle</code></a></td></tr>
 <tr><td><code>ghcWithPackages</code></td><td>Function</td><td><a href="#ghcwithpackages"><code>ghcWithPackages</code></a></td></tr>
+<tr><td><code>projectHaddock</code></td><td>Derivation</td><td>The docs of the project’s own libraries and sub-libraries in one directory, <code>share/doc/&lt;name&gt;/html</code>, with a combined contents page and index (like <code>cabal haddock-project</code>).  Links between them are relative; links to dependencies point at the dependencies’ docs in the store.  Includes only components that have docs (<code>doHaddock</code>, or <code>documentation: True</code> with <code>builderVersion = 2</code>).</td></tr>
 </tbody>
 </table>
 </div>
@@ -406,6 +407,7 @@ its own built-in hpack, and the builders use the matching nix-tools one.</p>
 <tr><td><code>shell</code></td><td>Derivation</td><td>Shell made with the project <code>shell</code> argument (see <a href="#shellfor"><code>shellFor</code></a>)</td></tr>
 <tr><td><code>ghcWithHoogle</code></td><td>Function</td><td><a href="#ghcwithhoogle"><code>ghcWithHoogle</code></a></td></tr>
 <tr><td><code>ghcWithPackages</code></td><td>Function</td><td><a href="#ghcwithpackages"><code>ghcWithPackages</code></a></td></tr>
+<tr><td><code>projectHaddock</code></td><td>Derivation</td><td>The docs of the project’s own libraries and sub-libraries in one directory, <code>share/doc/&lt;name&gt;/html</code>, with a combined contents page and index (like <code>cabal haddock-project</code>).  Links between them are relative; links to dependencies point at the dependencies’ docs in the store.  Includes only components that have docs (<code>doHaddock</code>, or <code>documentation: True</code> with <code>builderVersion = 2</code>).</td></tr>
 <tr><td><code>projectCross</code></td><td>Attrset</td><td>Like <code>pkgs.pkgsCross.&lt;system&gt;</code> from nixpkgs <code>p.projectCross.&lt;system&gt;</code> returns the project results for cross compilation (where system is a member of nixpkgs lib.systems.examples).  So <code>p.projectCross.ghcjs.hsPkgs</code> is the same as <code>hsPkgs</code> but compiled with ghcjs</td></tr>
 <tr><td><code>projectVariants</code></td><td>Attrset</td><td>Attribute set of variant for the project, mapped from <code>flake.variants</code> config values</td></tr>
 <tr><td><code>appendModule</code></td><td>Function</td><td>Re-eval the project with an extra module (or module list).</td></tr>
