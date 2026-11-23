@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-422f2a37.js";
+            window.path_to_searchindex_js = "searchindex-3827411f.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-287b71b6.js"></script>
+        <script src="toc-556adea0.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -2298,34 +2298,53 @@ profiled and DWARF builds of the test. v2 checks do not.</li>
 project using Cabal’s inbuilt hpc support.</p>
 <h2 id="prerequisites-1"><a class="header" href="#prerequisites-1">Prerequisites</a></h2>
 <p>To get a sensible coverage report, you need to enable coverage on each
-of the packages of your project:</p>
-<pre><code class="language-nix">pkgs.haskell-nix.project {
-  src = pkgs.haskell-nix.haskellLib.cleanGit {
-    name = "haskell-nix-project";
-    src = ./.;
-  };
-  compiler-nix-name = "ghc884";
-
-  modules = [{
-    packages.$pkg.components.library.doCoverage = true;
-  }];
-}
+of the packages of your project.</p>
+<h3 id="in-cabalproject-recommended"><a class="header" href="#in-cabalproject-recommended">In <code>cabal.project</code> (recommended)</a></h3>
+<p>haskell.nix reads cabal’s own <code>coverage</code> field, so the setting you use
+with <code>cabal build</code> / <code>cabal test</code> works here too.  A top-level field
+applies to every package listed in <code>packages:</code>:</p>
+<pre><code class="language-cabal">packages: pkga pkgb
+coverage: True
 </code></pre>
-<p>If you would like to make coverage optional, add an argument to your nix expression:</p>
+<p>or enable it for particular packages only:</p>
+<pre><code class="language-cabal">package pkga
+  coverage: True
+</code></pre>
+<p>This works with both component builders (<code>builderVersion = 1</code>, the
+default, and <code>builderVersion = 2</code>): cabal records it in the plan
+(<code>--enable-coverage</code> in the package’s <code>configure-args</code>), and haskell.nix
+sets <code>doCoverage</code> on those packages from there.</p>
+<p>To keep <code>cabal.project</code> unchanged and make coverage optional, pass the
+same text as <code>cabalProjectLocal</code>, which haskell.nix appends to the
+project the way cabal reads a <code>cabal.project.local</code>:</p>
 <pre><code class="language-nix">{ withCoverage ? false }:
 
-pkgs.haskell-nix.project {
-  src = pkgs.haskell-nix.haskellLib.cleanGit {
-    name = "haskell-nix-project";
-    src = ./.;
-  };
-  compiler-nix-name = "ghc884";
-
-  modules = pkgs.lib.optional withCoverage [{
-    packages.$pkg.components.library.doCoverage = true;
+pkgs.haskell-nix.cabalProject {
+  src = ./.;
+  compiler-nix-name = "ghc9103";
+  cabalProjectLocal = pkgs.lib.optionalString withCoverage ''
+    coverage: True
+  '';
+}
+</code></pre>
+<p>Turning coverage on or off changes the plan, so the local packages are
+rebuilt.</p>
+<h3 id="with-the-docoverage-module-option-builderversion--1-only"><a class="header" href="#with-the-docoverage-module-option-builderversion--1-only">With the <code>doCoverage</code> module option (<code>builderVersion = 1</code> only)</a></h3>
+<p>The default builder also accepts the <code>doCoverage</code> module option:</p>
+<pre><code class="language-nix">pkgs.haskell-nix.cabalProject {
+  src = ./.;
+  compiler-nix-name = "ghc9103";
+  modules = [{
+    packages.pkga.components.library.doCoverage = true;
+    packages.pkgb.components.library.doCoverage = true;
   }];
 }
 </code></pre>
+<p>With <code>builderVersion = 2</code> this option alone is not enough: the v2
+builder builds each package the way the cabal plan says, so without the
+<code>cabal.project</code> setting the libraries are built without coverage and the
+report comes out empty.  Use the <code>cabal.project</code> setting (you can keep
+the module option alongside it).</p>
 <h2 id="per-package"><a class="header" href="#per-package">Per-package</a></h2>
 <pre><code class="language-shell">nix-build default.nix -A "projectWithCoverage.$pkg.coverageReport"
 </code></pre>
@@ -2359,12 +2378,12 @@ let
       name = "haskell-nix-project";
       src = ./.;
     };
-    compiler-nix-name = "ghc884";
+    compiler-nix-name = "ghc9103";
 
-    modules = [{
-      packages.$pkgA.components.library.doCoverage = true;
-      packages.$pkgB.components.library.doCoverage = true;
-    }];
+    # Coverage for the local packages (see "Prerequisites" above).
+    cabalProjectLocal = ''
+      coverage: True
+    '';
   };
 
   # Generate a coverage report for $pkgA that only includes the
@@ -2393,6 +2412,69 @@ in {
   inherit project custom$pkgACoverageReport custom$pkgBCoverageReport allUnitTestsProjectCoverageReport;
 }
 </code></pre>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="building-documentation-haddock"><a class="header" href="#building-documentation-haddock">Building documentation (Haddock)</a></h1>
+<p>Each Haskell component built by haskell.nix can have a <code>.doc</code>
+attribute: a derivation that runs Haddock for it.</p>
+<pre><code class="language-shell">nix-build -A hsPkgs.pkga.components.library.doc
+</code></pre>
+<p>Whether it is there, and how you switch it on or off, depends on the
+component builder the project uses.</p>
+<h2 id="builderversion--1-the-default"><a class="header" href="#builderversion--1-the-default"><code>builderVersion = 1</code> (the default)</a></h2>
+<p>Documentation is on by default: every library has a <code>.doc</code>.  The
+HTML ends up in <code>share/doc/&lt;package&gt;/html/</code> in the output.</p>
+<p>It is controlled by the <code>doHaddock</code> module option, not by
+<code>cabal.project</code>.  Turn it off for the whole project with a top-level
+module setting, or for a single package:</p>
+<pre><code class="language-nix">pkgs.haskell-nix.cabalProject {
+  src = ./.;
+  compiler-nix-name = "ghc9103";
+  modules = [
+    # No haddock for any package.
+    { doHaddock = false; }
+    # Or for just one:
+    # { packages.pkga.doHaddock = false; }
+  ];
+}
+</code></pre>
+<p>With <code>doHaddock = false</code> the component has no <code>.doc</code> attribute.  A
+<code>documentation: False</code> in <code>cabal.project</code> does not do this.
+(<code>documentation: True</code> makes cabal pass <code>-haddock</code> to GHC, which
+haskell.nix passes on, but the <code>.doc</code> derivations are there either
+way.)  The related options <code>doHoogle</code>, <code>doHyperlinkSource</code> and
+<code>doQuickjump</code> (all on by default) control the Hoogle index, the
+hyperlinked source and the Quickjump index.</p>
+<h2 id="builderversion--2"><a class="header" href="#builderversion--2"><code>builderVersion = 2</code></a></h2>
+<p>The v2 builder builds each package the way cabal planned it, and in
+cabal, building documentation changes a package’s unit-id.  So <code>.doc</code>
+exists only when the plan has documentation enabled, which is set in
+<code>cabal.project</code> (or <code>cabalProjectLocal</code>) with cabal’s own field:</p>
+<pre><code class="language-cabal">packages: pkga pkgb
+documentation: True
+</code></pre>
+<p>A top-level field applies to the packages in <code>packages:</code>.  To also
+get documentation for dependencies, so links into them resolve, use
+<code>package *</code>:</p>
+<pre><code class="language-cabal">package *
+  documentation: True
+</code></pre>
+<p>or <code>package &lt;name&gt;</code> for one package.</p>
+<p>Without it, using <code>.doc</code> stops evaluation with an error explaining
+the <code>documentation: True</code> setting.  The HTML is under
+<code>store/…/&lt;unit-id&gt;/share/doc/html/</code> in the <code>.doc</code> output (cabal’s own
+store layout); the unit-id contains a hash, so find a page with e.g.
+<code>find -L result -name PkgA.html</code>.  See the
+<a href="dev/haddock.html">developer notes</a> for the details.</p>
+<h2 id="see-also"><a class="header" href="#see-also">See also</a></h2>
+<ul>
+<li><a href="#coverage">Generating coverage information</a>: the other
+<code>cabal.project</code> setting that works project-wide in the same way.</li>
+<li><a href="#how-to-get-a-local-hoogle-index">Creating a development environment</a>
+for a shell with a local Hoogle index of your dependencies.</li>
+<li><code>test/sublib-docs</code> in the haskell.nix repository: <code>package *</code> /
+<code>documentation: True</code>, checking that a library’s docs link into a
+dependency’s (aeson’s) docs.</li>
+</ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="build-a-specific-package-from-hackage-or-stackage"><a class="header" href="#build-a-specific-package-from-hackage-or-stackage">Build a specific package from Hackage or Stackage</a></h1>
 <h2 id="from-a-stackage-snapshot"><a class="header" href="#from-a-stackage-snapshot">From a <a href="https://stackage.org">Stackage</a> snapshot</a></h2>

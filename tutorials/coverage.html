@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-422f2a37.js";
+            window.path_to_searchindex_js = "../searchindex-3827411f.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-287b71b6.js"></script>
+        <script src="../toc-556adea0.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -179,34 +179,53 @@
 project using Cabal’s inbuilt hpc support.</p>
 <h2 id="prerequisites"><a class="header" href="#prerequisites">Prerequisites</a></h2>
 <p>To get a sensible coverage report, you need to enable coverage on each
-of the packages of your project:</p>
-<pre><code class="language-nix">pkgs.haskell-nix.project {
-  src = pkgs.haskell-nix.haskellLib.cleanGit {
-    name = "haskell-nix-project";
-    src = ./.;
-  };
-  compiler-nix-name = "ghc884";
-
-  modules = [{
-    packages.$pkg.components.library.doCoverage = true;
-  }];
-}
+of the packages of your project.</p>
+<h3 id="in-cabalproject-recommended"><a class="header" href="#in-cabalproject-recommended">In <code>cabal.project</code> (recommended)</a></h3>
+<p>haskell.nix reads cabal’s own <code>coverage</code> field, so the setting you use
+with <code>cabal build</code> / <code>cabal test</code> works here too.  A top-level field
+applies to every package listed in <code>packages:</code>:</p>
+<pre><code class="language-cabal">packages: pkga pkgb
+coverage: True
 </code></pre>
-<p>If you would like to make coverage optional, add an argument to your nix expression:</p>
+<p>or enable it for particular packages only:</p>
+<pre><code class="language-cabal">package pkga
+  coverage: True
+</code></pre>
+<p>This works with both component builders (<code>builderVersion = 1</code>, the
+default, and <code>builderVersion = 2</code>): cabal records it in the plan
+(<code>--enable-coverage</code> in the package’s <code>configure-args</code>), and haskell.nix
+sets <code>doCoverage</code> on those packages from there.</p>
+<p>To keep <code>cabal.project</code> unchanged and make coverage optional, pass the
+same text as <code>cabalProjectLocal</code>, which haskell.nix appends to the
+project the way cabal reads a <code>cabal.project.local</code>:</p>
 <pre><code class="language-nix">{ withCoverage ? false }:
 
-pkgs.haskell-nix.project {
-  src = pkgs.haskell-nix.haskellLib.cleanGit {
-    name = "haskell-nix-project";
-    src = ./.;
-  };
-  compiler-nix-name = "ghc884";
-
-  modules = pkgs.lib.optional withCoverage [{
-    packages.$pkg.components.library.doCoverage = true;
+pkgs.haskell-nix.cabalProject {
+  src = ./.;
+  compiler-nix-name = "ghc9103";
+  cabalProjectLocal = pkgs.lib.optionalString withCoverage ''
+    coverage: True
+  '';
+}
+</code></pre>
+<p>Turning coverage on or off changes the plan, so the local packages are
+rebuilt.</p>
+<h3 id="with-the-docoverage-module-option-builderversion--1-only"><a class="header" href="#with-the-docoverage-module-option-builderversion--1-only">With the <code>doCoverage</code> module option (<code>builderVersion = 1</code> only)</a></h3>
+<p>The default builder also accepts the <code>doCoverage</code> module option:</p>
+<pre><code class="language-nix">pkgs.haskell-nix.cabalProject {
+  src = ./.;
+  compiler-nix-name = "ghc9103";
+  modules = [{
+    packages.pkga.components.library.doCoverage = true;
+    packages.pkgb.components.library.doCoverage = true;
   }];
 }
 </code></pre>
+<p>With <code>builderVersion = 2</code> this option alone is not enough: the v2
+builder builds each package the way the cabal plan says, so without the
+<code>cabal.project</code> setting the libraries are built without coverage and the
+report comes out empty.  Use the <code>cabal.project</code> setting (you can keep
+the module option alongside it).</p>
 <h2 id="per-package"><a class="header" href="#per-package">Per-package</a></h2>
 <pre><code class="language-shell">nix-build default.nix -A "projectWithCoverage.$pkg.coverageReport"
 </code></pre>
@@ -240,12 +259,12 @@ let
       name = "haskell-nix-project";
       src = ./.;
     };
-    compiler-nix-name = "ghc884";
+    compiler-nix-name = "ghc9103";
 
-    modules = [{
-      packages.$pkgA.components.library.doCoverage = true;
-      packages.$pkgB.components.library.doCoverage = true;
-    }];
+    # Coverage for the local packages (see "Prerequisites" above).
+    cabalProjectLocal = ''
+      coverage: True
+    '';
   };
 
   # Generate a coverage report for $pkgA that only includes the
@@ -283,7 +302,7 @@ in {
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../tutorials/building-package-from-stackage-hackage.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../tutorials/haddock.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -297,7 +316,7 @@ in {
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../tutorials/building-package-from-stackage-hackage.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../tutorials/haddock.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>
