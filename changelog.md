@@ -3,6 +3,20 @@ that will impact users.
 
 ## November 20, 2026
 
+  * `source-repository-package`s with an ssh location (`ssh://...`,
+    `git+ssh://...`, `ssh+git://...` or `[user@]host:path`) are now
+    fetched with `builtins.fetchGit`, which runs as you and uses your ssh
+    agent and config, so private repositories work.  They used to go to
+    `fetchgit` whenever a `--sha256` was given, and its build sandbox has
+    no `ssh` ("error: cannot run ssh").  Submodules are included.  A
+    `--sha256` is optional; one that is given is checked and gives the
+    source `fetchgit`'s store path.  `tag` may also be a tag, branch or
+    abbreviated hash (outside pure evaluation).  An scp-like location is
+    fetched as `ssh://[user@]host/path`.  Evaluation needs ssh access (or
+    Nix's fetcher cache): the source is no longer a fixed-output derivation
+    a binary cache could provide, and restricted evaluation (Hydra,
+    non-flake) refuses ssh fetches.  Use `inputMap` for those.  See
+    `docs/tutorials/source-repository-hashes.md`.
   * `project.flake` (`haskellLib.mkFlake`) no longer builds, in `ciJobs`
     and `hydraJobs`, a sub-library that only components left out of the
     build use, such as a private library used only by test suites when the
@@ -12,8 +26,8 @@ that will impact users.
     it.  It stays in the flake's `packages` (so
     `nix build .#pkg:lib:sublib` works), and a sub-library that nothing
     uses at all is still built, since it may be a public one.  Stack
-    projects leave nothing out.  Set `flake.ciSkip = [];` in the project (or pass
-    `ciSkip = [];` to `project.flake`) to build them all.
+    projects leave nothing out.  Set `flake.ciSkip = [];` in the project
+    (or pass `ciSkip = [];` to `project.flake`) to build them all.
 
 ## November 19, 2026
 
