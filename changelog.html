@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-c054c3a6.js";
+            window.path_to_searchindex_js = "searchindex-32bdfc64.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-556adea0.js"></script>
@@ -248,6 +248,41 @@ derivations or two different version strings are an error (use
 <code>lib.mkForce</code> to pick one).  Two version strings used to be
 concatenated, and a string and a derivation could not be merged at
 all.</p>
+</li>
+<li>
+<p>With <code>builderVersion = 2</code>, the <code>doCoverage</code> module option on its own
+no longer fails silently.  v2 builds only produce coverage when it is
+in the plan, i.e. <code>coverage: True</code> in <code>cabal.project</code> or
+<code>cabalProjectLocal</code>, so <code>coverageReport</code> / <code>projectCoverageReport</code> now
+fail with a message saying what to add instead of producing an empty
+report (for libraries and for the test suites whose checks they run),
+and instantiating such a component of a local package prints the same
+message as a warning.  Dependencies are flagged
+(<code>coverageIgnored</code>) but not warned about.</p>
+</li>
+<li>
+<p>The flake’s coverage jobs (<code>flake.doCoverage</code>,
+<code>haskellLib.projectCoverageCiJobs</code>) work again.</p>
+<ul>
+<li>With <code>builderVersion = 2</code> (read from the coverage project, so a
+<code>coverageProjectModule</code> that sets it counts) they add
+<code>package &lt;name&gt;\n  coverage: True</code> for the selected packages to
+<code>cabalProjectLocal</code>; before, their reports were empty.  To leave a
+package out, put <code>package &lt;name&gt;\n  coverage: False</code> in
+<code>coverageProjectModule</code>’s <code>cabalProjectLocal</code>, or narrow the
+package selector.</li>
+<li>With <code>builderVersion = 1</code> their <code>doCoverage</code> no longer conflicts with
+the global <code>doCoverage</code> default (“conflicting definition values”).
+To leave a package out, set its <code>doCoverage = false</code> with a plain
+definition (or <code>mkForce</code>): a <code>mkDefault</code> has the same priority as the
+project-wide default and loses to the jobs’ setting.  This also makes
+<code>projectCoverageCiJobs</code> work for stack projects.</li>
+<li>They leave out the compiler’s boot packages even when the selector
+picks them.  A stable-haskell cross compiler (ghc914-sh for a cross
+target) builds <code>rts</code>, <code>ghc-internal</code>, <code>base</code>, … from source as local
+packages, so <code>selectProjectPackages</code> returns them too, and coverage on
+<code>ghc-internal</code> panics GHC.</li>
+</ul>
 </li>
 </ul>
 <h2 id="november-20-2026"><a class="header" href="#november-20-2026">November 20, 2026</a></h2>
