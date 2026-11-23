@@ -326,10 +326,10 @@ let
   # declares, planned or not, under the plan's flags.  Read like
   # `pkgconfNamesOf`: with an empty `hsPkgs` every dependency falls to
   # `buildDepError`, which returns its Cabal name (`dep`, or `pkg:sublib`).
-  # Keyed by component id (`pkg:lib:pkg`, `pkg:test:t`, ...).  `null` if
-  # reading it throws, which makes `subLibrariesOnlyForUnbuilt` skip
-  # nothing.  (`tryEval` only catches `throw` and `assert`; the read itself
-  # only uses `or`-guarded lookups, as the real import does.)
+  # Keyed by component id (`pkg:lib:pkg`, `pkg:test:t`, ...).  Only the
+  # `depends` lists are forced, and each entry is an `or`-guarded lookup
+  # falling to `buildDepError`, so the read cannot fail where the package's
+  # real import does not.  It stays lazy: only `mkFlake`'s `ciJobs` force it.
   componentDependNamesOf = name: file: args:
     let
       components = (import file (args // {
@@ -337,15 +337,13 @@ let
         errorHandler = args.errorHandler // { buildDepError = dep: dep; };
       })).components or {};
       namesOf = c: pkgs.lib.filter builtins.isString (c.depends or []);
-      result = pkgs.lib.optionalAttrs ((components.library or null) != null) {
-          "${name}:lib:${name}" = namesOf components.library;
-        }
-        // pkgs.lib.concatMapAttrs (collection: prefix:
-            pkgs.lib.mapAttrs' (n: c: pkgs.lib.nameValuePair "${name}:${prefix}:${n}" (namesOf c))
-              (components.${collection} or {}))
-          haskellLib.componentPrefix;
-      checked = builtins.tryEval (builtins.deepSeq result result);
-    in if checked.success then checked.value else null;
+    in pkgs.lib.optionalAttrs ((components.library or null) != null) {
+        "${name}:lib:${name}" = namesOf components.library;
+      }
+      // pkgs.lib.concatMapAttrs (collection: prefix:
+          pkgs.lib.mapAttrs' (n: c: pkgs.lib.nameValuePair "${name}:${prefix}:${n}" (namesOf c))
+            (components.${collection} or {}))
+        haskellLib.componentPrefix;
   # `componentDependNames` is the same for every unit of a package in one
   # stage, so only the first unit of each package and stage reads it; the
   # others get `{}`, and `subLibrariesOnlyForUnbuilt` takes the union over

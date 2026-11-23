@@ -290,17 +290,9 @@ lib.runTests {
     expected = [ "pkgA:lib:testlib" "pkgB:lib:bench-only" ];
   };
 
-  # Nothing is left out when any dependencies are unknown: a failed read
-  # (`null`) ...
-  testSubLibrariesOnlyForUnbuiltReadFailed = {
-    expr = haskellLib.subLibrariesOnlyForUnbuilt (subLibPkgs // {
-      pkgC.componentDependNames = null;
-    }) subLibBuiltDefault;
-    expected = [ ];
-  };
-
-  # ... or a built component with no entry (e.g. a stack project, which has
-  # no `componentDependNames`).
+  # Nothing is left out when any dependencies are unknown: a built
+  # component with no entry (e.g. a stack project, which has no
+  # `componentDependNames`).
   testSubLibrariesOnlyForUnbuiltUnknownComponent = {
     expr = haskellLib.subLibrariesOnlyForUnbuilt (subLibPkgs // {
       pkgC = { };

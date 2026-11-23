@@ -73,11 +73,10 @@ in
       # (`pkg:test:t`), as Cabal names (`dep`, or `pkg:sublib` for a
       # sub-library); `componentDependNamesOf` in lib/load-cabal-plan.nix.
       # Only set for project packages, on one unit per package (`{}` on the
-      # rest); `null` if reading the `.cabal` file's Cabal2Nix term failed.
-      # `haskellLib.mkFlake` uses it to find sub-libraries only unbuilt
+      # rest).  `haskellLib.mkFlake` uses it to find sub-libraries only unbuilt
       # components use (#2028).
       componentDependNames = lib.mkOption {
-        type = types.nullOr (types.attrsOf (types.listOf types.str));
+        type = types.attrsOf (types.listOf types.str);
         internal = true;
         default = {};
       };

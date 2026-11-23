@@ -735,9 +735,9 @@ in {
   # unless it is itself left out.  The dependencies come from the packages'
   # `componentDependNames`.
   #
-  # When any dependencies are unknown, nothing is left out: a read of a
-  # `.cabal` file failed (`null`), or a built component has no entry (e.g.
-  # a stack project, which has no `componentDependNames`).
+  # When any dependencies are unknown, nothing is left out: that is when a
+  # built component has no entry (e.g. a stack project, which has no
+  # `componentDependNames`).
   subLibrariesOnlyForUnbuilt = haskellPackages: packages:
     let
       allDependNames = map (p: p.componentDependNames or {})
@@ -745,13 +745,11 @@ in {
       # The union over all units: every unit of a package, and a two-stage
       # plan's build-machine twin, can only add dependencies, so they can
       # only keep more sub-libraries.
-      dependNames = lib.zipAttrsWith (_: lib.concatLists)
-        (lib.filter (n: n != null) allDependNames);
+      dependNames = lib.zipAttrsWith (_: lib.concatLists) allDependNames;
       isComponentId = id:
         builtins.match "[^:]+:(lib|flib|exe|test|bench):[^:]+" id != null;
-      unknown = lib.any (n: n == null) allDependNames
-        || lib.any (id: isComponentId id && !(dependNames ? ${id}))
-             (lib.attrNames packages);
+      unknown = lib.any (id: isComponentId id && !(dependNames ? ${id}))
+        (lib.attrNames packages);
       # `pkg:sublib` names the component `pkg:lib:sublib`; a bare `pkg` (or
       # `pkg:pkg`) is the main library, which is never left out.
       subLibId = dep:
