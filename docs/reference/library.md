@@ -201,6 +201,37 @@ output.
 }).shell
 ```
 
+**The `hpack` argument**: with `supportHpack = true`, packages that have a
+`package.yaml` and no `.cabal` file are turned into `.cabal` files by hpack
+while planning.  By default that is the hpack that ships with nix-tools,
+and the builders run it again on the package source.  `hpack` picks
+another one: a version (or other `haskell-nix.tool` arguments) builds it
+with the project's compiler on `evalSystem`, and a derivation with
+`bin/hpack` is used as it is (it must run on `evalSystem`).
+
+With `hpack` set, it runs on the project source (as the source filter
+leaves it, so included YAML files, `LICENSE`, symlinks and `source-dirs`
+outside the package directory are all there) in a step of its own.  The
+`.cabal` files it writes are the ones `plan-to-nix` reads and the packages
+are built with; the builders do not run hpack again, so the plan and the
+build always agree.  Editing a source file re-runs only the hpack step:
+the project is planned again only when a generated `.cabal` file changes.
+
+```nix
+pkgs.haskell-nix.project' {
+  src = ./.;
+  supportHpack = true;
+  hpack = "0.38.1";
+}
+```
+
+Pin a version rather than using `"latest"`, so that a haskell.nix update
+does not bring a different hpack.  The hpack is built for each compiler
+the project is planned with, before the project can be planned.
+
+Stack projects ignore `hpack` (with a warning): `stack-to-nix` plans with
+its own built-in hpack, and the builders use the matching nix-tools one.
+
 ## stackProject'
 
 A function calling [callStackToNix](#callstacktonix) with all arguments.
@@ -355,7 +386,8 @@ needed for `importAndFilterProject`.
 | `cabalProjectFreeze` | String | Optional cabal project file contents (defaults to readFile "${src}/cabal.project.freeze"). |
 | `ghc`                |        | Deprecated. Use `compiler-nix-name` instead. Optional ghc to use |
 | `nix-tools`          |        | Optional nix-tools to use |
-| `hpack`              |        | Optional hpack to use |
+| `supportHpack`       | Bool   | Run hpack on `package.yaml` files that have no `.cabal` file (default `false`). |
+| `hpack`              | String, attrs or derivation | Optional hpack to use for that: a version or other `haskell-nix.tool` arguments, or a derivation with `bin/hpack` (see [`project'`](#project)).  Defaults to the one in nix-tools.  When set, the `.cabal` files it generates are also what the packages are built with. |
 | `cabal-install`      |        | Optional cabal-install to use |
 | `configureArgs`      | String | Optional extra arguments to pass to `cabal new-configure` (--enable-tests is included by default, include `--disable-tests` to override that). |
 

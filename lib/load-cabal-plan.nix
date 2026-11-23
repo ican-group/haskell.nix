@@ -401,6 +401,18 @@ let
   # We use unsafeDiscardStringContext to ensure that we don't query this derivation when importing
   # each package. The cost can be very high when using a remote store, as we need to do a network call.
   nixFilesDir = builtins.unsafeDiscardStringContext callProjectResults.projectNix.outPath + callProjectResults.src.origSubDir or "";
+  # A local package's directory relative to the project directory (the
+  # `subDir` of its `src`), from its relative `pkg-src.path` ...
+  localSubDir = p: pkgs.lib.removePrefix "./" (pkgs.lib.removePrefix "/" (pkgs.lib.removeSuffix "/." (pkgs.lib.removeSuffix "/." (
+    if pkgs.lib.hasPrefix ".${callProjectResults.src.origSubDir or ""}/" (p.pkg-src.path + "/")
+      then pkgs.lib.removePrefix ".${callProjectResults.src.origSubDir or ""}" p.pkg-src.path
+      else throw "Unexpected path ${p.pkg-src.path} expected it to start with .${callProjectResults.src.origSubDir or ""}"))));
+  # ... and relative to the source root, as `hpackCabalFiles` is keyed
+  # (lib/call-cabal-project-to-nix.nix).  Only for relative paths.
+  localRootDir = p:
+    let d = localSubDir p;
+    in pkgs.lib.removePrefix "/"
+      ((callProjectResults.src.origSubDir or "") + (if d == "" then "" else "/" + d));
 in {
   # This replaces the `plan-nix/default.nix`
   pkgs = (hackage: {
@@ -528,6 +540,17 @@ in {
                 sha256 = p.pkg-src-sha256;
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local" && cabal2nix ? cabal-generator) {
                 inherit (cabal2nix) cabal-generator;
+              } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local"
+                  && (callProjectResults.hpackCabalFiles or {}) != {}
+                  && !pkgs.lib.hasPrefix "/" p.pkg-src.path
+                  && callProjectResults.hpackCabalFiles ? ${localRootDir p}) {
+                # The `.cabal` file the project's own `hpack` generated for
+                # this package directory (lib/call-cabal-project-to-nix.nix),
+                # which is also what plan-to-nix read: build with it rather
+                # than running hpack again.  A default, so that a user's own
+                # override still wins.
+                package-description-override = pkgs.lib.mkDefault
+                  callProjectResults.hpackCabalFiles.${localRootDir p}.text;
               } // pkgs.lib.optionalAttrs (p.pkg-src.type or "" == "local") {
                 # Find the `src` location based on `p.pkg-src.path`
                 src = if pkgs.lib.hasPrefix "/" p.pkg-src.path
@@ -535,10 +558,7 @@ in {
                   else haskellLib.appendSubDir {
                     # Relative to the project path
                     inherit (callProjectResults) src;
-                    subDir = pkgs.lib.removePrefix "./" (pkgs.lib.removePrefix "/" (pkgs.lib.removeSuffix "/." (pkgs.lib.removeSuffix "/." (
-                      if pkgs.lib.hasPrefix ".${callProjectResults.src.origSubDir or ""}/" (p.pkg-src.path + "/")
-                        then pkgs.lib.removePrefix ".${callProjectResults.src.origSubDir or ""}" p.pkg-src.path
-                        else throw "Unexpected path ${p.pkg-src.path} expected it to start with .${callProjectResults.src.origSubDir or ""}"))));
+                    subDir = localSubDir p;
                     includeSiblings = true; # Filtering sibling dirs of the package dir is done in the
                                             # component builder so that relative paths can be used to
                                             # reference project directories not in the package subDir.
