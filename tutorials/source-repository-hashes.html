@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-7fcf28db.js";
+            window.path_to_searchindex_js = "../searchindex-5c79ce72.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a339c369.js"></script>
@@ -231,6 +231,69 @@ let
   };
 in
   pandoc.components.exes.pandoc
+</code></pre>
+<h2 id="private-repositories"><a class="header" href="#private-repositories">Private repositories</a></h2>
+<p>A <code>--sha256</code> (or <code>sha256map</code>) makes haskell.nix fetch the repository with
+<code>fetchgit</code>, which runs inside the Nix build sandbox.  The sandbox has no
+<code>ssh</code> and none of your keys, so it can only fetch public repositories.</p>
+<p>A <code>source-repository-package</code> with an ssh location is fetched with
+<code>builtins.fetchGit</code> instead, whether or not it has a <code>--sha256</code>.  That
+runs at evaluation time as you, so it uses your ssh agent and
+<code>~/.ssh/config</code>:</p>
+<pre><code>source-repository-package
+  type: git
+  location: git@github.com:my-org/my-private-repo.git
+  tag: 0123456789abcdef0123456789abcdef01234567
+</code></pre>
+<p>The locations treated this way are <code>ssh://...</code>, <code>git+ssh://...</code>,
+<code>ssh+git://...</code> (in any case) and git’s scp-like <code>[user@]host:path</code>
+(<code>host</code> may be a bracketed IPv6 address).  An scp-like location is
+fetched as <code>ssh://[user@]host/path</code>, the way Nix itself reads
+<code>user@host:path</code>: a relative <code>path</code> is taken from <code>/</code>, which is what
+GitHub, GitLab and other forges expect.  For a path relative to your home
+directory on your own server, write <code>host:~/path</code>.  Submodules are fetched
+too, as <code>fetchgit</code> does.</p>
+<p><code>tag</code> can be a full commit hash, a tag name, a branch name or an
+abbreviated commit hash; the last three are resolved by fetching all of the
+repository’s refs.  Use the full commit hash where you can: a name can move,
+so the fetch is not reproducible; pure (flake) evaluation refuses anything
+but a full hash; and Nix looks a name up again (over ssh, fetching all the
+refs) once its cached answer is older than <code>tarball-ttl</code> (an hour by
+default), so evaluation then needs the network again.</p>
+<p>A <code>--sha256</code> is optional for these, since the commit hash already pins the
+content.  If one is given it is checked (a wrong one fails with “NAR hash
+mismatch”), and the source gets the same store path <code>fetchgit</code> would have
+given it.  The hash is of the files as <code>nix-prefetch-git</code> checks them out;
+<code>builtins.fetchGit</code> takes them straight from the repository, without the
+checkout conversions a <code>.gitattributes</code> file can ask for (<code>eol</code>, <code>ident</code>,
+<code>filter</code>), so for a repository that uses those the two differ and the
+<code>--sha256</code> will not match.  Leave the <code>--sha256</code> out for such a repository.</p>
+<p>Nix keeps what it has fetched in its own cache (<code>~/.cache/nix</code>), and
+evaluating the project again uses that rather than ssh.  A copy that is
+only in the Nix store, or in a binary cache, is not used: unlike
+<code>fetchgit</code>’s fixed-output derivation, the source cannot be substituted,
+so a machine without access to the repository (a CI runner without your
+keys, for instance) cannot evaluate the project even if your binary cache
+has the source.  Use <code>inputMap</code> there, as below.</p>
+<p>Restricted evaluation (<code>restrict-eval</code>, as used by Hydra for non-flake
+jobsets) refuses <code>builtins.fetchGit</code> of an ssh URL outright (“access to URI
+… is forbidden in restricted mode”), even when the source is already in
+the store.  There, for machines without access to the repository, and for
+private https repositories, the repository has to come from somewhere Nix
+can already read.  With flakes, add it as an input and pass it in
+<code>inputMap</code>, keyed by the <code>location</code> from the <code>cabal.project</code> file.  Lock the input to the same commit as the <code>tag</code>
+(haskell.nix checks this, and stops with “may not match” otherwise), or key
+the entry by <code>"&lt;location&gt;/&lt;tag&gt;"</code> when <code>tag</code> is a name that points to the
+locked commit:</p>
+<pre><code class="language-nix">inputs.my-private-repo = {
+  url = "git+ssh://git@github.com/my-org/my-private-repo";
+  flake = false;
+};
+
+# in the project arguments
+inputMap = {
+  "git@github.com:my-org/my-private-repo.git" = inputs.my-private-repo;
+};
 </code></pre>
 
                     </main>
