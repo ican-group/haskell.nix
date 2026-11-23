@@ -1,0 +1,11 @@
+cabal-version: 2.4
+name:          btd
+version:       0.1.0.0
+build-type:    Simple
+
+library
+  exposed-modules:    Calc
+  hs-source-dirs:     src
+  build-depends:      base, array
+  build-tool-depends: happy:happy
+  default-language:   Haskell2010
