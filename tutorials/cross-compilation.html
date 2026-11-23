@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-5c79ce72.js";
+            window.path_to_searchindex_js = "../searchindex-f903b882.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-a339c369.js"></script>
@@ -175,151 +175,149 @@
                 <div id="mdbook-content" class="content">
                     <main>
                         <h1 id="cross-compilation"><a class="header" href="#cross-compilation">Cross compilation</a></h1>
-<p>Cross compilation of Haskell projects involves building a version of
-GHC that outputs code for the target platform, and providing builds of
-all library dependencies for that platform.</p>
-<p>First, understand how to cross-compile a normal package from
-Nixpkgs. Matthew Bauer’s <a href="https://matthewbauer.us/blog/beginners-guide-to-cross.html">Beginners’ guide to cross compilation in
-Nixpkgs</a> is a useful resource.</p>
-<p>Using an example from the guide, this builds GNU Hello for a Raspberry
-Pi:</p>
-<pre><code>nix build -f '&lt;nixpkgs&gt;' pkgsCross.raspberryPi.hello
+<p>Cross compiling a Haskell project needs a GHC that generates code for the
+target platform, and every library dependency built for that platform.
+<a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> provides both: it builds the project with the cross
+package sets of nixpkgs.</p>
+<p>First, understand how to cross-compile a normal package from Nixpkgs.
+Matthew Bauer’s <a href="https://matthewbauer.us/blog/beginners-guide-to-cross.html">Beginners’ guide to cross compilation in Nixpkgs</a>
+is a useful resource.  For example, this builds GNU Hello for a 64-bit ARM
+Linux machine:</p>
+<pre><code>nix-build '&lt;nixpkgs&gt;' -A pkgsCross.aarch64-multiplatform.hello
 </code></pre>
-<p>We will use the same principle in <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> — replacing the normal
-package set <code>pkgs</code> with a cross-compiling package set
-<code>pkgsCross.raspberryPi</code>.</p>
-<h3 id="raspberry-pi-example"><a class="header" href="#raspberry-pi-example">Raspberry Pi example</a></h3>
-<p>This is an example of using <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> to build the <a href="https://hackage.haskell.org/package/bench">Bench</a>
-command-line utility, which is a Haskell program.</p>
-<pre><code class="language-nix">{ pkgs ? import &lt;nixpkgs&gt; {} }:
-let
-  haskellNix = import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz);
-  native = haskellNix { inherit pkgs; };
-in
-  native.haskellPackages.bench.components.exes.bench
+<p><a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> uses the same principle: replace the package set <code>pkgs</code>
+with a cross-compiling one such as <code>pkgs.pkgsCross.aarch64-multiplatform</code>.</p>
+<h2 id="building-a-project-for-another-platform"><a class="header" href="#building-a-project-for-another-platform">Building a project for another platform</a></h2>
+<p>Every project has a <code>projectCross</code> attribute.  <code>projectCross.&lt;system&gt;</code> is
+the same project, with the same modules and settings, built with
+<code>pkgs.pkgsCross.&lt;system&gt;</code>, where <code>&lt;system&gt;</code> is one of the names in nixpkgs’
+<code>lib.systems.examples</code>.  With the project from
+<a href="getting-started.html">Getting started</a> (<code>default.nix</code>):</p>
+<pre><code class="language-shell"># Native
+nix-build -A hsPkgs.hello.components.exes.hello
+# 64-bit ARM Linux
+nix-build -A projectCross.aarch64-multiplatform.hsPkgs.hello.components.exes.hello
+# 64-bit Windows (UCRT)
+nix-build -A projectCross.ucrt64.hsPkgs.hello.components.exes.hello
+# Static x86_64 Linux executable, linked with musl libc
+nix-build -A projectCross.musl64.hsPkgs.hello.components.exes.hello
 </code></pre>
-<p>Now switch the package set as in the previous example:</p>
-<pre><code class="language-nix">{ pkgs ? import &lt;nixpkgs&gt; {} }:
-let
-  haskellNix = import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz);
-  raspberryPi = haskellNix { pkgs = pkgs.pkgsCross.raspberryPi; };
-in
-  raspberryPi.haskellPackages.bench.components.exes.bench
-</code></pre>
-<p>You should be prepared for a long wait because it first needs to build
-GHC, before building all the Haskell dependencies of <a href="https://hackage.haskell.org/package/bench">Bench</a>. If all
-of these dependencies compiled successfully, I would be very surprised!</p>
-<blockquote>
-<p><strong>Hint:</strong></p>
-<p>The above example won’t build, but you can try and see, if you like.
-It will fail on <a href="http://hackage.haskell.org/package/clock-0.7.2">clock-0.7.2</a>,
-which needs a patch to build.</p>
-</blockquote>
-<p>To fix the build problems, you must add extra configuration to the
-package set. Your project will have a <a href="../reference/library.html#mkstackpkgset"><code>mkStackPkgSet</code></a> or
-<a href="../reference/library.html#mkcabalprojectpkgset"><code>mkCabalProjectPkgSet</code></a>. It is there where you must add
-<a href="../reference/modules.html">module options</a> for setting compiler flags, adding patches, and so on.</p>
-<blockquote>
-<p><strong>Note:</strong></p>
-<p>Note that <code>haskell.nix</code> will automatically use <code>qemu</code> to emulate the target
-when necessary to run Template Haskell splices.  See
-<a href="./cross-template-haskell.html">Cross-compiling Template Haskell: how it works</a>.</p>
-</blockquote>
-<h3 id="static-executables-with-musl-libc"><a class="header" href="#static-executables-with-musl-libc">Static executables with Musl libc</a></h3>
-<p>Another application of cross-compiling is to produce fully static
-binaries for Linux. For information about how to do that with the
-<a href="https://nixos.org/nixpkgs/manual/#users-guide-to-the-haskell-infrastructure">Nixpkgs Haskell infrastructure</a> (not <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a>), see
-<a href="https://github.com/nh2/static-haskell-nix">nh2/static‑haskell‑nix</a>. Vaibhav Sagar’s linked
-<a href="https://vaibhavsagar.com/blog/2018/01/03/static-haskell-nix/">blog post</a> is also very informative.</p>
-<pre><code class="language-nix">{ pkgs ? import &lt;nixpkgs&gt; {} }:
-let
-  haskellNix = import (builtins.fetchTarball https://github.com/ican-group/haskell.nix/archive/master.tar.gz);
-  musl64 = haskellNix { pkgs = pkgs.pkgsCross.musl64; };
-in
-  musl64.haskellPackages.bench.components.exes.bench
-</code></pre>
-<p>This example will build <a href="https://hackage.haskell.org/package/bench">Bench</a> linked against Musl libc. However
-the executable will still be dynamically linked. To get fully static
-executables you must add package overrides to:</p>
-<ol>
-<li>Disable dynamic linking</li>
-<li>Provide static versions of system libraries. (For more details, see
-<a href="https://vaibhavsagar.com/blog/2018/01/03/static-haskell-nix/">Vaibhav’s article</a>).</li>
-</ol>
-<pre><code class="language-nix">{
-  packages.bench.components.exes.bench.configureFlags =
-    lib.optionals stdenv.hostPlatform.isMusl [
-      "--disable-executable-dynamic"
-      "--disable-shared"
-      "--ghc-option=-optl=-pthread"
-      "--ghc-option=-optl=-static"
-      "--ghc-option=-optl=-L${gmp6.override { withStatic = true; }}/lib"
-      "--ghc-option=-optl=-L${zlib.static}/lib"
-    ];
+<p>You can also call <code>haskell-nix.project</code> from a cross package set
+directly.  This is the same as <code>projectCross.aarch64-multiplatform</code>
+above:</p>
+<pre><code class="language-nix">let
+  haskellNix = import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {};
+  pkgs = import haskellNix.sources.nixpkgs-unstable haskellNix.nixpkgsArgs;
+in pkgs.pkgsCross.aarch64-multiplatform.haskell-nix.project {
+  src = ./.;
+  compiler-nix-name = "ghc912";
 }
+</code></pre>
+<p>The cross GHC and its libraries are built (or substituted) as part of the
+first build.  Use a GHC version that haskell.nix CI builds for your target
+(see below) and the cache to avoid building GHC yourself.</p>
+<h3 id="with-flakes"><a class="header" href="#with-flakes">With flakes</a></h3>
+<p>Pass <code>crossPlatforms</code> to the project’s <code>flake</code> function to add the cross
+compiled components to the flake outputs.  Starting from the flake in
+<a href="getting-started-flakes.html">Getting started with flakes</a>:</p>
+<pre><code class="language-nix">flake = pkgs.helloProject.flake {
+  crossPlatforms = p: [ p.musl64 p.ucrt64 ];
+};
+</code></pre>
+<p>Each cross compiled component is named after the target platform’s
+<code>config</code> triple:</p>
+<pre><code class="language-shell">nix build .#hello:exe:hello                            # native
+nix build .#x86_64-unknown-linux-musl:hello:exe:hello  # static linux
+nix build .#x86_64-w64-mingw32:hello:exe:hello         # windows
+</code></pre>
+<p>The same naming applies to <code>checks</code> and <code>apps</code>.</p>
+<h3 id="in-a-development-shell"><a class="header" href="#in-a-development-shell">In a development shell</a></h3>
+<p><code>shell.crossPlatforms</code> adds the cross compilers to the project’s shell,
+next to the native one.  Each comes with a <code>cabal</code> wrapper named after
+its target, for example:</p>
+<pre><code class="language-nix">shell.crossPlatforms = p: [ p.ucrt64 ];
+</code></pre>
+<pre><code class="language-shell">x86_64-w64-mingw32-cabal build all
+</code></pre>
+<h2 id="targets"><a class="header" href="#targets">Targets</a></h2>
+<p>These are the targets that haskell.nix CI builds and tests on
+<code>x86_64-linux</code>.  The exact set of GHC versions per target is in the
+<code>crossSystems</code> function of <code>ci.nix</code>.</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th><code>projectCross.&lt;system&gt;</code></th><th>Platform</th></tr>
+</thead>
+<tbody>
+<tr><td><code>musl64</code>, <code>musl32</code></td><td>x86_64 and i686 Linux, musl libc, statically linked</td></tr>
+<tr><td><code>aarch64-multiplatform</code></td><td>64-bit ARM Linux (glibc)</td></tr>
+<tr><td><code>aarch64-multiplatform-musl</code></td><td>64-bit ARM Linux, musl libc, statically linked</td></tr>
+<tr><td><code>mingwW64</code>, <code>ucrt64</code></td><td>64-bit Windows (MSVCRT or UCRT C runtime)</td></tr>
+<tr><td><code>aarch64-android-prebuilt</code>, <code>armv7a-android-prebuilt</code></td><td>Android</td></tr>
+<tr><td><code>ghcjs</code></td><td>JavaScript, using GHC’s JavaScript backend</td></tr>
+<tr><td><code>wasi32</code></td><td>WebAssembly (WASI), see <a href="wasm.html">WebAssembly</a></td></tr>
+</tbody>
+</table>
+</div>
+<p><code>pkgs.pkgsStatic</code> (static musl executables for the build machine’s CPU)
+is tested too, with <code>pkgs.pkgsStatic.haskell-nix.project</code>, on both
+<code>x86_64-linux</code> and <code>aarch64-linux</code> (where <code>aarch64-multiplatform-musl</code>
+is also built).  On <code>aarch64-darwin</code> CI builds <code>ghcjs</code> and
+<code>wasi32</code>, and for GHC 9.14 also cross compiles to <code>musl64</code> and
+<code>aarch64-multiplatform-musl</code> (running Linux code under <code>hyper-linux</code>).
+On <code>x86_64-darwin</code> it builds <code>ghcjs</code>.</p>
+<p>The stable-haskell GHC (<code>ghc914-sh</code>) uses the same <code>projectCross</code>
+interface.</p>
+<h2 id="template-haskell-and-tests"><a class="header" href="#template-haskell-and-tests">Template Haskell and tests</a></h2>
+<p>Cross compiled Template Haskell works without configuration.  The splices
+run in an interpreter built for the target, started on the build machine
+by <code>iserv-proxy</code> under an emulator: <code>qemu</code> for Linux and Android (or
+<code>hyper-linux</code> on macOS), <code>wine</code> for Windows, <code>node</code> for JavaScript.  See
+<a href="cross-template-haskell.html">Cross-compiling Template Haskell: how it works</a>
+for the details.</p>
+<p>Test suites run under the same emulators.  See
+<a href="testing.html#cross-compiled-tests">Cross-compiled tests</a>.</p>
+<h2 id="static-executables-with-musl-libc"><a class="header" href="#static-executables-with-musl-libc">Static executables with musl libc</a></h2>
+<p>With the default builder, executables built for a musl target
+(<code>projectCross.musl64</code>, <code>projectCross.musl32</code>) are statically linked:
+haskell.nix passes <code>-optl=-static</code> (and <code>-optl=-pthread</code>) to GHC when
+linking them, and its musl overlay enables the static libraries of common
+C dependencies such as <code>gmp</code>, <code>zlib</code>, <code>ncurses</code>, <code>bzip2</code> and <code>xz</code>.
+<code>pkgs.pkgsStatic</code> links everything statically with either builder.</p>
+<p>If a package links another C library, the static version of that library
+may need adding to the link:</p>
+<pre><code class="language-nix">modules = [({ pkgs, lib, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isMusl {
+  packages.my-package.components.exes.my-exe.configureFlags = [
+    "--ghc-option=-optl=-L${pkgs.libsodium}/lib"
+  ];
+})];
 </code></pre>
 <blockquote>
 <p><strong>Note:</strong> Licensing</p>
-<p>Note that if copyleft licensing your program is a problem for you,
-then you need to statically link with <code>integer-simple</code> rather than
-<code>integer-gmp</code>. However, at present, <a href="https://github.com/ican-group/haskell.nix">Haskell.nix</a> does not provide
-an option for this.</p>
+<p>By default GHC implements <code>Integer</code> with GMP, which is LGPL licensed,
+and a statically linked executable includes it.  GHC’s native bignum
+backend avoids GMP; haskell.nix’s GHC derivations build with it when
+overridden with <code>enableNativeBignum = true</code> (the default for JavaScript
+and WebAssembly).  haskell.nix does not cache GHCs built that way.</p>
 </blockquote>
-<h3 id="how-to-cross-compile-your-project"><a class="header" href="#how-to-cross-compile-your-project">How to cross-compile your project</a></h3>
-<p>Set up your project Haskell package set.</p>
-<pre><code class="language-nix"># default.nix
-{ pkgs ? import &lt;nixpkgs&gt; {}}:
-let
-  # Import the Haskell.nix library,
-  haskell = import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {
-    inherit pkgs;
-  };
-
-  # Instantiate a package set using the generated file.
-  pkgSet = haskell.mkCabalProjectPkgSet {
-    plan-pkgs = import ./pkgs.nix;
-    pkg-def-extras = [];
-    modules = [
-      {
-        # You will need to put build fixes here.
-      }
-    ];
-  };
-in
-  pkgSet.config.hsPkgs
+<h2 id="fixing-build-problems"><a class="header" href="#fixing-build-problems">Fixing build problems</a></h2>
+<p>Some packages need extra configuration to cross compile: patches, flags,
+or C libraries for the target.  Add these as
+<a href="../reference/modules.html">module options</a> in the project’s <code>modules</code>, and
+make them conditional on the target platform so the native build is not
+affected:</p>
+<pre><code class="language-nix">modules = [({ pkgs, lib, ... }: lib.mkIf pkgs.stdenv.hostPlatform.isWindows {
+  packages.my-package.flags.use-pkg-config = false;
+  packages.my-package.configureFlags = [ "--ghc-option=-DWINDOWS_BUILD" ];
+})];
 </code></pre>
-<p>Apply that package set to the Nixpkgs cross package sets that you are
-interested in.</p>
-<p>We are going to expand the <code>pkgs.pkgsCross</code> shortcut to be more
-explicit.</p>
-<pre><code class="language-nix">let
-  pkgs = import &lt;nixpkgs&gt; {}
-in {
-  shortcut = pkgs.pkgsCross.SYSTEM;
-  actual = import &lt;nixpkgs&gt; { crossSystem = pkgs.lib.systems.examples.SYSTEM; };
-}
-</code></pre>
-<p>In the above example, for any <code>SYSTEM</code>, <code>shortcut</code> and <code>actual</code> are
-the same package set.</p>
-<pre><code class="language-nix"># release.nix
-let
-  myProject = import ./default.nix;
-
-  pkgsNative = import &lt;nixpkgs&gt; {};
-  pkgsRaspberryPi = import &lt;nixpkgs&gt; {
-    crossSystem = pkgsNative.lib.systems.examples.raspberryPi;
-  };
-
-  native = myProject { pkgs = pkgsNative; };
-  crossRaspberryPi = myProject { pkgs = pkgsRaspberryPi; };
-
-in {
-  my-project-native = native.my-project.components.exes.my-project;
-  my-project-raspberry-pi = crossRaspberryPi.my-project.components.exes.my-project;
-}
-</code></pre>
-<p>Try to build it, and apply fixes to the <code>modules</code> list, until there
-are no errors left.</p>
+<p>The project’s <code>modules</code> apply to every <code>projectCross</code> project, and the
+<code>pkgs</code> module argument is the package set of the platform being built
+for.  <code>haskellLib.isCrossHost</code> (also a module argument) is true when the
+code is built for another platform, except musl on the build machine’s
+own Linux CPU (for example <code>musl64</code> on <code>x86_64-linux</code>), which runs
+without an emulator.</p>
+<h2 id="troubleshooting"><a class="header" href="#troubleshooting">Troubleshooting</a></h2>
 <h3 id="diagnosing-template-haskell-failures-on-rosetta-builders"><a class="header" href="#diagnosing-template-haskell-failures-on-rosetta-builders">Diagnosing Template Haskell failures on Rosetta builders</a></h3>
 <p>The Linux cross-compilation chain is GHC → <code>iserv-wrapper</code> → <code>iserv-proxy</code>
 → QEMU → the target interpreter. A target signal followed by a Nix timeout
