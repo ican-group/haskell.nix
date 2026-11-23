@@ -1,0 +1,4 @@
+# The same git package, but from a custom snapshot instead of `extra-deps`.
+resolver: snapshot.yaml
+
+packages: []

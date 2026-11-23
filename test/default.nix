@@ -287,6 +287,7 @@ let
     build-twin-pkgconfig = callTest ./build-twin-pkgconfig {};
     foreign-lib = callTest ./foreign-lib {};
     stack-source-repo = callTest ./stack-source-repo {};
+    stack-git-extra-deps-local = callTest ./stack-git-extra-deps-local {};
     stack-inputMap = callTest ./stack-inputMap { inherit testSrcRoot; };
     ghc-lib-reinstallable-cabal = callTest ./ghc-lib-reinstallable/cabal.nix {};
     ghc-lib-reinstallable-stack = callTest ./ghc-lib-reinstallable/stack.nix {};
@@ -297,11 +298,13 @@ let
     hls-cabal = callTest ./haskell-language-server/cabal.nix {};
     hls-stack = callTest ./haskell-language-server/stack.nix {};
     cabal-hpack = callTest ./cabal-hpack { inherit util; };
+    cabal-hpack-version = callTest ./cabal-hpack-version {};
     index-state = callTest ./index-state {};
     sha256map = callTest ./sha256map {};
     # fully-static = callTest ./fully-static { inherit (pkgs) buildPackages; };
     shell-for = callTest ./shell-for {};
     shell-for-extra-packages = callTest ./shell-for-extra-packages {};
+    shell-for-reinstalled-boot-pkg = callTest ./shell-for-reinstalled-boot-pkg {};
     cabal-22 = callTest ./cabal-22 { inherit util; };
     coverage = callTest ./coverage {};
     coverage-golden = callTest ./coverage-golden {};

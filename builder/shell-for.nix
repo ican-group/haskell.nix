@@ -142,10 +142,21 @@ let
     frameworks   = haskellLib.uniqueWithName (lib.concatMap (x: (haskellLib.dependToLib x).frameworks or []) allConfigs);
     doExactConfig = false;
   };
+  # The libraries the selected components (and `additionalPackages`) are
+  # built against.  `makeConfigFiles` hides GHC's own copy of any of them
+  # (#1532).  Setup dependencies are left out: a custom `Setup` built
+  # against, say, its own Cabal must not hide the Cabal the libraries use.
+  # This walks the dependency closure at eval time for every shell, which
+  # instantiating the shell's package db does anyway.
+  shadowedPkgs = map (p: p.identifier.name) (haskellLib.flatLibDepends {
+    depends = removeSelectedInputs (haskellLib.uniqueWithName
+        (lib.concatMap (c: c.config.depends) selectedComponents))
+      ++ additionalPackages;
+  });
   configFiles = makeConfigFiles {
     fullName = name;
     identifier.name = identifierName;
-    inherit component enableDWARF;
+    inherit component enableDWARF shadowedPkgs;
     chooseDrv = p: if withHaddock && p ? haddock then p.haddock else p;
   };
   ghcEnv = ghcForComponent {

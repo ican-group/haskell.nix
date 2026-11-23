@@ -47,6 +47,36 @@ in
         Default arguments to use for the `p.flake`.
       '';
     };
+    hpack = mkOption {
+      # `package` also matches a store path string; the list and function
+      # forms are `haskell-nix.tool` module arguments.
+      type = nullOr (oneOf [ package str attrs (listOf unspecified) (functionTo unspecified) ]);
+      default = null;
+      example = literalExpression ''"0.38.1"'';
+      description = ''
+        The `hpack` that turns `package.yaml` files into `.cabal` files, for
+        the packages of a cabal project (`supportHpack = true`) that have no
+        `.cabal` file.  When it is set, it runs on the project source (the
+        whole source, as the source filter leaves it) in a step of its own,
+        and the `.cabal` files it writes are what `plan-to-nix` reads and
+        what the packages are built with (the builders do not run hpack
+        again), so the plan and the build always agree.  Editing a source
+        file re-runs only that hpack step; the project is only planned again
+        when a generated `.cabal` file changes.
+
+        A version string (pin it, e.g. `"0.38.1"`), or other
+        `haskell-nix.tool` arguments (an attribute set, a module list or a
+        function), builds that hpack with `haskell-nix.tool` and the
+        project's compiler, on `evalSystem` (so each compiler builds its
+        own hpack before the project can be planned).  A derivation with
+        `bin/hpack` is used as it is; it must run on `evalSystem`.  `null`
+        (the default) uses the hpack that ships with nix-tools, which the
+        builders also run.
+
+        Stack projects ignore it (with a warning): `stack-to-nix` plans with
+        its own built-in hpack.
+      '';
+    };
     evalSystem = mkOption {
       type = str;
       # `evalSystem` is the single knob for the platform on which `cabal` /
