@@ -68,6 +68,19 @@ in
         default = [];
       };
 
+      # The `build-depends` of every component the `.cabal` file declares,
+      # planned or not, under the plan's flags, keyed by component id
+      # (`pkg:test:t`), as Cabal names (`dep`, or `pkg:sublib` for a
+      # sub-library); `componentDependNamesOf` in lib/load-cabal-plan.nix.
+      # Only set for project packages, on one unit per package (`{}` on the
+      # rest).  `haskellLib.mkFlake` uses it to find sub-libraries only unbuilt
+      # components use (#2028).
+      componentDependNames = lib.mkOption {
+        type = types.attrsOf (types.listOf types.str);
+        internal = true;
+        default = {};
+      };
+
       license = lib.mkOption {
         type = types.str;
       };

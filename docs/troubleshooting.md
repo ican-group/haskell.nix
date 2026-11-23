@@ -6,9 +6,31 @@
 
 It's easier to list the reverse: when will you *not* build GHC?
 
-- You have configured the [binary cache](tutorials/getting-started.md) correctly.
+- You have configured the [binary cache](tutorials/getting-started.md#setting-up-the-binary-cache) correctly.
 - You are using one of the GHC versions which [we support](reference/supported-ghc-versions.md).
 - You are using one of the nixpkgs versions used by our CI (you can access the sources for these [through haskell.nix](tutorials/getting-started.md).
+
+Common binary cache mistakes:
+
+- `nix config show substituters` does not list `https://cache.zw3rk.com`
+  (or `https://cache.iog.io`): the settings went into a file the Nix daemon
+  does not read, or the daemon was not restarted after editing
+  `/etc/nix/nix.conf`.
+- Nix warns `ignoring untrusted substituter`: the cache was added in
+  `~/.config/nix/nix.conf` or on the command line, which only counts for
+  trusted users.  Put it in `/etc/nix/nix.conf` instead.
+- Nix warns `ignoring untrusted flake configuration setting 'extra-substituters'`:
+  the caches in the flake's `nixConfig` were not accepted (answer yes when
+  Nix asks, or pass `--accept-flake-config`; this too needs a trusted
+  user).  `/etc/nix/nix.conf` avoids the question.
+- Nix warns `ignoring substitute for '...', as it's not signed by any of the keys`:
+  the key for that cache is missing from `trusted-public-keys`.  Each cache
+  has its own key (`loony-tools:...` for `cache.zw3rk.com`,
+  `hydra.iohk.io:...` for `cache.iog.io`).
+- `https://cache.nixos.org` is missing from `nix config show substituters`:
+  `substituters =` (rather than `extra-substituters =`) replaced the default
+  list.  Add it back, with its key `cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=`,
+  or switch to the `extra-` settings.
 
 If you think you are doing all of these and you still find you're building GHC, drop us a line.
 
@@ -91,7 +113,113 @@ So we only include Haskell sources if they appear in a `hs-source-dirs` somewher
 This is good practice anyway: if you do not include such files in `extra-source-files` then they will not be included in `cabal sdist`, which will cause problems if you ever upload your package to Hackage.
 But `haskell.nix` is very picky about it.
 
+### Why does `cabal build` in my shell rebuild a dependency that has public sub-libraries?
+
+Inside a `shellFor` shell, `cabal build` is meant to reuse the
+dependencies the shell already provides.  With the default builder
+(`builderVersion = 1`) those are installed in the shell's GHC package
+database, and the cabal-install from Hackage cannot use an installed
+package for a dependency on one of its public sub-libraries
+(`build-depends: provider:slib`): its solver does not know that an
+installed package can have more than one library
+([haskell/cabal#6039](https://github.com/haskell/cabal/issues/6039)).
+It rejects the installed package and either builds it from source again
+or, when no source is available, fails with an error like:
+
+```
+rejecting: provider-0.1.0.0/installed-... (does not contain library 'slib', which is required by consumer)
+```
+
+haskell.nix's own cabal-install (the one the v2 builder uses,
+`project.v2-cabal-install`) lets installed units satisfy sub-library
+dependencies.  Give the shell that cabal instead, in a project's
+`shell` argument:
+
+```nix
+pkgs.haskell-nix.cabalProject' {
+  src = ./.;
+  compiler-nix-name = "ghc9103";
+  shell.tools.cabal = "v2-cabal-install";
+}
+```
+
+or in a `shellFor`:
+
+```nix
+project.shellFor {
+  tools.cabal = "v2-cabal-install";
+}
+```
+
+`"v2-cabal-install"` picks the build of it for the project's
+`evalSystem`, the same derivation as `project.v2-cabal-install` (which
+`tools` also accepts, since a tool can be a derivation).  It wins over a
+`shell.tools.cabal = "latest"` from elsewhere, as the templates set; see
+"Tools given in more than one place" in [Tools](reference/tools.md).
+
+This cabal is a 3.19 pre-release build and keeps its `~/.cabal/store` in
+its own layout, so it will not reuse what another cabal-install built
+there.
+
+Shells of projects using the v2 builder (`builderVersion = 2`) already
+use this cabal by default and reuse a cabal store, so they are not
+affected.
+
 ### Why does my executable depend on GHC/GCC?
 
 You may want to set the `dontStrip` option to `false` (see https://github.com/ican-group/haskell.nix/issues/829).
 This is not set by default because it can occasionally cause breakage.
+
+### Why does `cabal build` in my shell build `happy` (or another `build-tool-depends` tool) again?
+
+A `shellFor` shell puts the executables named in the selected packages'
+`build-tool-depends` (`happy`, `alex`, `tasty-discover`, ...) on `PATH`,
+pre-built.  Whether `cabal build` inside the shell uses them depends on
+the builder:
+
+* **`builderVersion = 2`**: the shell's cabal store holds the tool, and
+  `cabal build` reuses it; the only things it builds are your own
+  packages.
+* **`builderVersion = 1`** (the default for most compilers): the shell's
+  libraries are in a GHC package database, which records no executables.
+  cabal-install always solves `build-tool-depends` itself, cannot take
+  the tool from `PATH`, and finds no installed package that provides it.
+  So it plans the tool from source and builds it into `~/.cabal/store`
+  (once), or fails if it cannot download it.  Giving a v1 shell
+  haskell.nix's cabal-install (`project.v2-cabal-install`) does not change
+  this.
+
+When the same package is both a library dependency and a tool, as in
+
+```cabal
+  ghc-options:        -pgmL markdown-unlit
+  build-depends:      base, markdown-unlit
+  build-tool-depends: markdown-unlit:markdown-unlit
+```
+
+a v1 shell can instead fail with
+
+```
+rejecting: my-pkg:markdown-unlit:exe.markdown-unlit-0.6.0/installed-...
+(does not contain executable 'markdown-unlit', which is required by my-pkg)
+```
+
+since the solver sees the installed library but will not let it provide
+the executable.
+
+Ways around it:
+
+* Use the v2 builder (`builderVersion = 2`; see
+  [Migrating to builderVersion = 2](./dev/migrating-to-v2.md) and
+  [Shells with `builderVersion = 2`](reference/tools.md#shells-with-builderversion--2)).
+  A v2 shell links the dependencies' library *and* executable units into
+  its cabal store, and `cabal build` reuses both.
+* Let cabal fetch and build the tool from source (needs network access
+  and a Hackage index).  This works, but rebuilds the tool.
+* Use the deprecated `build-tools: markdown-unlit` field instead of
+  `build-tool-depends`.  cabal then only looks for the program on `PATH`,
+  where the shell has put it.
+
+The `test/shell-build-tool-depends` (tool only, both builders) and
+`test/shell-for-build-tool-depends` (library and tool from one package,
+v2) tests show this.

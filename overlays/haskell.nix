@@ -764,9 +764,11 @@ final: prev: {
         mkCacheModule = cache:
             # for each item in the `cache`, set
             #   packages.$name.src = fetchgit ...
-            # and
+            # (or `builtins.fetchGit` for a private repo, or the `inputMap`
+            # input) and
             #   packages.$name.postUnpack = ...
-            # if subdir is given.
+            # if subdir is given.  Nothing else: whether these packages are
+            # local is up to `mkGitExtraDepsLocalModule`.
             #
             # We need to do this, as cabal-to-nix will generate
             # src = /nix/store/... paths, and when we build the
@@ -815,6 +817,43 @@ final: prev: {
                 builtins.foldl' (x: y: x // y) {} cacheMap;
 
             };
+
+        # The `gitExtraDepsLocal` stack project option: mark the packages of
+        # the stack.yaml's own git `extra-deps` as local (but not project)
+        # packages, like a cabal.project `source-repository-package`.  The
+        # `.nix` files for cache entries come from `cabal-to-nix`, which
+        # never sets `isLocal` (#462).  `extraDeps` is the stack.yaml's own
+        # git repos (`genStackCache` with `extraDepsOnly`); `cache` entries
+        # from a custom snapshot are not among them and stay non-local.
+        #
+        # Entries match on url, rev and subdir.  The url is compared without
+        # a trailing `/` or `.git`, as a hand-written `cache` may spell it
+        # either way (`stack-repos` turns `github: o/r` into
+        # `https://github.com/o/r.git`); a missing subdir is `.`, as
+        # `stack-repos` writes it.  `mkCacheModule` takes a package's `src`
+        # from the last cache entry with its name, and `stack-repos` lists a
+        # custom snapshot's packages after the stack.yaml's own, so a
+        # package is only marked local when that last entry is an extra-dep.
+        mkGitExtraDepsLocalModule = { cache, extraDeps }:
+          let
+            inherit (final) lib;
+            normUrl = url: lib.removeSuffix ".git" (lib.removeSuffix "/" url);
+            normSubdir = s: if s == null || s == "" then "." else s;
+            key = e: "${normUrl e.url} ${e.rev} ${normSubdir (e.subdir or null)}";
+            extraDepKeys = map key extraDeps;
+            cacheKeys = map key cache;
+            srcEntries = builtins.foldl' (acc: e: acc // { ${e.name} = e; }) {} cache;
+            unmatched = builtins.filter (k: !(builtins.elem k cacheKeys)) extraDepKeys;
+            packages = lib.mapAttrs (_: _: { package.isLocal = lib.mkDefault true; })
+              (lib.filterAttrs (_: e: builtins.elem (key e) extraDepKeys) srcEntries);
+          in {
+            packages =
+              if unmatched == []
+                then packages
+                else lib.warn ("gitExtraDepsLocal: no `cache` entry matches the git extra-dep(s) "
+                  + lib.concatStringsSep ", " unmatched + " (url, rev, subdir), so they are not marked local")
+                  packages;
+          };
 
         # Takes a haskell src directory runs cabal new-configure and plan-to-nix.
         # Resulting nix files are added to nix-plan subdirectory.
@@ -1191,7 +1230,7 @@ final: prev: {
                   coverage = final.lib.optionalAttrs project.args.flake.doCoverage
                     (haskellLib.projectCoverageCiJobs
                       project selectPackages project.args.flake.coverageProjectModule);
-                  inherit (project.args.flake) doHaddock;
+                  inherit (project.args.flake) doHaddock ciSkip;
                   doDefaults = isMain && project.args.flake.doDefaults;
                 };
                 forAllCrossCompilers = prefix: project: (
@@ -1234,10 +1273,18 @@ final: prev: {
                   pkg-def-extras = (config.pkg-def-extras or []);
                   modules = [ { _module.args.buildModules = final.lib.mkForce buildProject.pkg-set; }
                       (mkCacheModule cache) ]
+                    ++ final.lib.optional config.gitExtraDepsLocal (mkGitExtraDepsLocalModule {
+                        inherit cache;
+                        extraDeps = genStackCache (config // { extraDepsOnly = true; });
+                      })
                     ++ (config.modules or [])
                     ++ final.lib.optional (config.ghc != null) { ghc.package = config.ghc.evalWith.${evalSystem} or (config.ghc.override { evalSystem = evalSystem; }); }
                     ++ final.lib.optional (config.compiler-nix-name != null)
                         { compiler.nix-name = final.lib.mkForce config.compiler-nix-name; }
+                    # `stack-to-nix` runs its own built-in hpack, and the
+                    # builders keep the matching nix-tools one.
+                    ++ final.lib.optional (config.hpack != null)
+                        (final.lib.warn "haskell-nix: the `hpack` argument is ignored for stack projects (stack-to-nix plans with its own hpack)." {})
                     ++ [ { evalPackages = final.lib.mkDefault evalPackages;
                            inherit (config) builderVersion;
                          } ];

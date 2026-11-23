@@ -1,0 +1,12 @@
+# stack-nix.yaml: stack.yaml for use inside the haskell.nix shell.
+resolver: lts-24.67
+packages:
+- .
+# Use the shell's GHC, whose global package database already holds
+# every dependency (built by haskell.nix), instead of installing one.
+system-ghc: true
+install-ghc: false
+# The shell already provides everything; don't let Stack start its own.
+nix:
+  enable: false
+notify-if-nix-on-path: false

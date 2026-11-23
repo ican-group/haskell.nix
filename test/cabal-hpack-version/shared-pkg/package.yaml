@@ -1,0 +1,15 @@
+name:    hpack-shared
+version: 0.1.0.0
+license: BSD-3-Clause
+
+dependencies:
+- base
+
+# The modules are inferred, one of them from `../shared`, a source dir
+# outside the package directory.  (The v2 builder only packs the package
+# directory, and an sdist cannot hold files outside it, so only the plan
+# and the v1 build look at this package.)
+library:
+  source-dirs:
+  - src
+  - ../shared

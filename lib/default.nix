@@ -159,6 +159,49 @@ in {
   isProjectPackage = p: p.isProject or false;
   selectProjectPackages = lib.filterAttrs (n: p: p != null && isLocalPackage p && isProjectPackage p && !isRedirectPackage p && !isBuildTwinKey n);
 
+  # Is this `source-repository-package` location fetched over ssh?
+  # `ssh://...`, `git+ssh://...`, `ssh+git://...` (any case), or git's
+  # scp-like `[user@]host:path` (see `scpLikeGitUrl`).  Those are fetched
+  # with `builtins.fetchGit` (which uses the user's ssh agent) rather than
+  # `fetchgit`, whose sandbox has no ssh (#1996).
+  isSshGitUrl = url:
+    builtins.match "(git\\+)?ssh(\\+git)?://.*" (normaliseGitUrlScheme url) != null
+    || scpLikeGitUrl url != null;
+
+  # git's scp-like `[user@]host:path` as `[ "user@" host path ]` (the
+  # first is null without a user), or null for anything else.  No `://`,
+  # not `file:`, and a host of more than one character (so a Windows
+  # drive letter is not taken for one) or a bracketed IPv6 address.
+  scpLikeGitUrl = url:
+    if lib.hasInfix "://" url || lib.hasPrefix "file:" url
+      then null
+      else builtins.match "([^/:@]+@)?(\\[[0-9A-Za-z:.%]+]|[^/:@][^/:@]+):(.*)" url;
+
+  # The URL `builtins.fetchGit` is given for an ssh location: the scheme
+  # lower-cased (git accepts `SSH://`, `builtins.fetchGit` does not), and
+  # an scp-like `[user@]host:path` written as `ssh://[user@]host/path`
+  # (`builtins.fetchGit` only converts it itself when there is a user).
+  # Like Nix's own conversion, a relative `path` ends up relative to `/`,
+  # which is what the git forges expect; `host:~/path` keeps a path
+  # relative to the home directory.
+  sshGitUrl = url:
+    let m = scpLikeGitUrl url;
+    in if m == null
+      then normaliseGitUrlScheme url
+      else
+        let
+          user = if builtins.head m == null then "" else builtins.head m;
+          host = builtins.elemAt m 1;
+          path = builtins.elemAt m 2;
+        in "ssh://${user}${host}${if lib.hasPrefix "/" path then "" else "/"}${path}";
+
+  # Lower-case the scheme of a `scheme://...` URL; anything else is
+  # returned unchanged.
+  normaliseGitUrlScheme = url:
+    let m = builtins.match "([A-Za-z][A-Za-z0-9+.-]*)(://.*)" url;
+    in if m == null then url
+       else lib.toLower (builtins.head m) + builtins.elemAt m 1;
+
   # Format a componentId as it should appear as a target on the
   # command line of the setup script.
   componentTarget = componentId:"${componentId.ctype}:${componentId.cname}";
@@ -295,6 +338,17 @@ in {
       && builtins.match "stack([-.].*)?\\.ya?ml" name == null
       && !lib.hasPrefix "." name
       && lib.hasPrefix (dirOf path + "/") (pkgDir + "/");
+
+  # The `hpack` for a project's (non-null) `hpack` option (see
+  # modules/project-common.nix), built with `pkgs` (the eval packages: it
+  # only runs in the plan-nix step).  A derivation or store path is used as
+  # it is; anything else (a version, `"latest"`, or `haskell-nix.tool`
+  # arguments) is built like the project's other tools.
+  hpackTool = pkgs: evalSystem: compiler-nix-name: hpack:
+    if lib.isDerivation hpack || builtins.isPath hpack
+        || (builtins.isString hpack && lib.hasPrefix "${builtins.storeDir}/" hpack)
+      then hpack
+      else pkgs.haskell-nix.tool' evalSystem compiler-nix-name "hpack" hpack;
 
   # Use cleanSourceWith to filter just the files needed for a particular
   # component of a package
@@ -708,25 +762,127 @@ in {
   # `coverageProjectModule` is applied to `project` and is useful for
   # modifying the project settings when running code coverage (just
   # pass `{}` if you do not need to modify anything).
-  # By default the `doCoverage` flag will be set for the packages
-  # selected by `packages`.
+  # The packages selected by `packages` get coverage:
+  #
+  #  * `builderVersion = 1`: their `doCoverage` flag is set.  To leave one
+  #    out, give it a plain definition in `coverageProjectModule`
+  #    (`modules = [{ packages.foo.doCoverage = false; }]`); a `mkDefault`
+  #    is not enough (see below).
+  #  * `builderVersion = 2`: the `doCoverage` flag alone is ignored
+  #    (coverage has to be in the plan), so they get
+  #    `package <name>\n  coverage: True` in `cabalProjectLocal` instead,
+  #    and `doCoverage` follows from the plan.  To leave one out, add
+  #    `package foo\n  coverage: False` to `cabalProjectLocal` in
+  #    `coverageProjectModule` (it comes after these stanzas, so it wins),
+  #    or narrow the `packages` selector.  Setting `doCoverage = false`
+  #    there conflicts with the plan's `true`.
+  #
+  # Whether it is v2 is read from the coverage project itself, so a
+  # `coverageProjectModule` that changes `builderVersion` is honoured.
+  #
+  # The compiler's boot packages are always left out, even when `packages`
+  # selects them.  A stable-haskell `-target` cross compiler (ghc914-sh for
+  # a cross target) ships no boot libraries, so the project builds them
+  # from source as local packages, and `selectProjectPackages` then picks
+  # them up.  Coverage on them is not what anyone asks for here, and on
+  # `ghc-internal` it panics GHC.
   projectCoverageCiJobs = project: packages: coverageProjectModule:
     let
-      packageNames = project: builtins.attrNames (packages project.hsPkgs);
+      bootPackageNames = project.args.stableHaskellBootPackageNames or [];
+      selected = project: lib.filterAttrs
+        (_: p: !(builtins.elem (p.identifier.name or "") bootPackageNames))
+        (packages project.hsPkgs);
+      packageNames = project: builtins.attrNames (selected project);
+      # cabal package names (v2's `hsPkgs` is keyed by plan id, and a plan
+      # id can change once coverage is in the plan).
+      cabalPackageNames = lib.unique (map (p: p.identifier.name)
+        (builtins.attrValues (selected project)));
       coverageProject = project.appendModule [
         coverageProjectModule
-        {
-          modules = [{
-            packages = lib.genAttrs (packageNames project)
-              (_: { doCoverage = lib.mkDefault true; });
-          }];
-        }
+        ({ config, options, ... }: let isV2 = config.builderVersion == 2; in {
+          # `mkIf` rather than `optionalAttrs` on `isV2`: the module's shape
+          # must not depend on `builderVersion`, or evaluating it recurses.
+          # An explicit `config`, so the `options ? cabalProjectLocal` test
+          # below does not decide the module's top-level keys.
+          config = {
+            modules = lib.mkIf (!isV2) [{
+              # `mkOverride 900`: above `mkDefault`, because
+              # `modules/plan.nix` passes the global `doCoverage = false`
+              # down to every package as a `mkDefault` and two `mkDefault`s
+              # conflict; below a plain definition, which therefore turns
+              # it off.
+              packages = lib.genAttrs (packageNames project)
+                (_: { doCoverage = lib.mkOverride 900 true; });
+            }];
+          } // lib.optionalAttrs (options ? cabalProjectLocal) {
+            # Only cabal projects have `cabalProjectLocal` (stack projects
+            # are always v1), and defining an undeclared option is an error
+            # even under a false `mkIf`.
+            # `mkOrder 700`: after what haskell.nix itself puts first
+            # (`mkBefore`) and before `coverageProjectModule`'s own text, so
+            # a `coverage: False` there wins.
+            cabalProjectLocal = lib.mkIf isV2 (lib.mkOrder 700 (lib.concatMapStrings
+              (n: "\npackage ${n}\n  coverage: True\n") cabalPackageNames));
+          };
+        })
       ];
     in
       builtins.listToAttrs (lib.concatMap (packageName: [{
         name = packageName;
         value = coverageProject.hsPkgs.${packageName}.coverageReport;
       }]) (packageNames coverageProject));
+
+  # The sub-libraries `mkFlake` leaves out of `ciJobs` (#2028), as component
+  # ids: those only components that are not built depend on, e.g. a private
+  # library used just by test suites when the plan disables them
+  # (`configureArgs = "--disable-tests"`), or ones made non-buildable.
+  # cabal still plans such a sub-library, but nothing built uses it.  One
+  # that nothing depends on is kept, since it may be a public sub-library
+  # (part of the package's API, which `plan.json` cannot tell apart from a
+  # private one), as is one a built component uses.  `packages` is the
+  # flake's packages, keyed by component id; a component in it is built,
+  # unless it is itself left out.  The dependencies come from the packages'
+  # `componentDependNames`.
+  #
+  # When any dependencies are unknown, nothing is left out: that is when a
+  # built component has no entry (e.g. a stack project, which has no
+  # `componentDependNames`).
+  subLibrariesOnlyForUnbuilt = haskellPackages: packages:
+    let
+      allDependNames = map (p: p.componentDependNames or {})
+        (lib.attrValues haskellPackages);
+      # The union over all units: every unit of a package, and a two-stage
+      # plan's build-machine twin, can only add dependencies, so they can
+      # only keep more sub-libraries.
+      dependNames = lib.zipAttrsWith (_: lib.concatLists) allDependNames;
+      isComponentId = id:
+        builtins.match "[^:]+:(lib|flib|exe|test|bench):[^:]+" id != null;
+      unknown = lib.any (id: isComponentId id && !(dependNames ? ${id}))
+        (lib.attrNames packages);
+      # `pkg:sublib` names the component `pkg:lib:sublib`; a bare `pkg` (or
+      # `pkg:pkg`) is the main library, which is never left out.
+      subLibId = dep:
+        let m = builtins.match "([^:]+):([^:]+)" dep;
+        in if m == null || lib.head m == lib.elemAt m 1 then null
+          else "${lib.head m}:lib:${lib.elemAt m 1}";
+      # The sub-libraries to leave out, given those already left out
+      # (`skip`), which count as unbuilt: a sub-library only another left
+      # out one uses is left out too.  Leaving one out never brings one back
+      # (built components only lose dependants), so iterating from nothing
+      # reaches the fixed point.
+      step = skip:
+        let
+          built = id: packages ? ${id} && !(skip ? ${id});
+          depsOf = pred: lib.concatLists
+            (lib.attrValues (lib.filterAttrs (id: _: pred id) dependNames));
+          usedByBuilt = lib.genAttrs (depsOf built) (_: null);
+        in lib.genAttrs (lib.filter (id: id != null && packages ? ${id})
+          (map subLibId (lib.filter (dep: !(usedByBuilt ? ${dep}))
+            (depsOf (id: !built id))))) (_: null);
+      fixpoint = skip:
+        let next = step skip;
+        in if lib.attrNames next == lib.attrNames skip then skip else fixpoint next;
+    in if unknown then [] else lib.attrNames (fixpoint {});
 
   # Flake package names that are flat and match the cabal component names.
   mkFlakePackages =
@@ -891,7 +1047,21 @@ in {
         , devShell ? project.shell
         , devShells ? { default = devShell; }
         , checkedProject ? project.appendModule { checkMaterialization = true; }
-        , ciJobs ? mkFlakeCiJobs project { inherit checks coverage packages haddock devShells checkedProject; }
+        # Component ids left out of `ciJobs` (but kept in `packages`): by
+        # default the sub-libraries only unbuilt components use, see
+        # `subLibrariesOnlyForUnbuilt` (also when `null`, as the project's
+        # `flake.ciSkip` option passes by default).  Pass `[]` to build them
+        # in CI too.
+        , ciSkip ? null
+        , ciJobs ? let
+            skip = if ciSkip == null
+              then subLibrariesOnlyForUnbuilt haskellPackages packages
+              else ciSkip;
+          in mkFlakeCiJobs project {
+            inherit checks coverage devShells checkedProject;
+            packages = removeAttrs packages skip;
+            haddock = removeAttrs haddock skip;
+          }
         , hydraJobs ? ciJobs
         # The component for `packages.default` (`nix build`) and
         # `apps.default` (`nix run`).  By default these come from the

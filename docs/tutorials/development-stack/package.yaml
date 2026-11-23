@@ -1,0 +1,14 @@
+name: hello-stack
+version: 0.1.0.0
+dependencies:
+- base
+- text
+- split
+library:
+  source-dirs: src
+executables:
+  hello-stack:
+    main: Main.hs
+    source-dirs: app
+    dependencies:
+    - hello-stack
