@@ -433,18 +433,57 @@ let
                 (if inputMap.${repoData.url}.rev != (repoData.rev or repoData.ref)
                   then throw "${inputMap.${repoData.url}.rev} may not match ${repoData.rev or repoData.ref} for ${repoData.url} use \"${repoData.url}/${repoData.rev or repoData.ref}\" as the inputMap key if ${repoData.rev or repoData.ref} is a branch or tag that points to ${inputMap.${repoData.url}.rev}."
                   else inputMap.${repoData.url})
-            else if repoData.sha256 != null
-            then fetchgit { inherit (repoData) url sha256; rev = repoData.rev or repoData.ref; }
-            else
-              let drv = builtins.fetchGit
-                ({ inherit (repoData) url ; }
-                  # fetchGit does not accept "null" as rev and ref, so when it's null
-                  # we have to omit the argument completely.
-                  // pkgs.lib.optionalAttrs (repoData ? ref) { inherit (repoData) ref; }
-                  // pkgs.lib.optionalAttrs (repoData ? rev) { inherit (repoData) rev; });
-              in __trace "WARNING: No sha256 found for source-repository-package ${repoData.url} ref=${repoData.ref or "(unspecified)"} rev=${repoData.rev or "(unspecified)"} download may fail in restricted mode (hydra)"
-                (__trace "Consider adding `--sha256: ${hashPath drv}` to the ${cabalProjectFileName} file or passing in a sha256map argument"
-                 drv);
+            else if isSsh || repoData.sha256 == null
+              then
+                let drv = builtins.fetchGit
+                  ({ url = if isSsh then pkgs.haskell-nix.haskellLib.sshGitUrl repoData.url else repoData.url; }
+                    # fetchGit does not accept "null" as rev and ref, so when it's null
+                    # we have to omit the argument completely.
+                    // pkgs.lib.optionalAttrs (repoData ? ref) { inherit (repoData) ref; }
+                    // pkgs.lib.optionalAttrs (repoData ? rev) { inherit (repoData) rev; }
+                    // pkgs.lib.optionalAttrs isSsh sshFetchGitArgs);
+                in if isSsh
+                  then drv
+                  else __trace "WARNING: No sha256 found for source-repository-package ${repoData.url} ref=${repoData.ref or "(unspecified)"} rev=${repoData.rev or "(unspecified)"} download may fail in restricted mode (hydra)"
+                    (__trace "Consider adding `--sha256: ${hashPath drv}` to the ${cabalProjectFileName} file or passing in a sha256map argument"
+                     drv)
+            else fetchgitDrv;
+          fetchgitDrv = fetchgit { inherit (repoData) url sha256; rev = repoData.rev or repoData.ref; };
+          # `fetchgit` runs in the build sandbox, which has neither `ssh` nor
+          # the user's keys, so it can never fetch over ssh (#1996).  ssh
+          # locations go to `builtins.fetchGit` instead, which runs as the
+          # user at eval time and uses their ssh agent and config.
+          isSsh = pkgs.haskell-nix.haskellLib.isSshGitUrl repoData.url;
+          sshFetchGitArgs =
+            # Like `fetchgit` (and `nix-prefetch-git`, which is how a
+            # `--sha256` is usually worked out): include submodules and
+            # ignore `export-ignore` attributes (which Nix only applies, and
+            # only accepts the argument for, from 2.20).
+            { submodules = true; }
+            // pkgs.lib.optionalAttrs (builtins.compareVersions builtins.nixVersion "2.20" >= 0) { exportIgnore = false; }
+            # cabal's `tag:` is a full commit hash (`rev`), or a tag, branch
+            # or abbreviated commit hash (`ref`).  `builtins.fetchGit` only
+            # resolves those last three when it fetches all the refs; a
+            # full hash is found without that.
+            // pkgs.lib.optionalAttrs (!(repoData ? rev)) { allRefs = true; }
+            # With a hash, check it, and give the source the name (and so
+            # the store path) `fetchgit` would have.  Nix still fetches it
+            # over ssh (or reuses its own fetcher cache in ~/.cache/nix); a
+            # copy that is only in the store is not enough.
+            // pkgs.lib.optionalAttrs (repoData.sha256 != null && sriSha256 != null) {
+              narHash = sriSha256;
+              inherit (fetchgitDrv) name;
+            };
+          # `convertHash` and `narHash` reject a string with context.
+          sha256NoContext = builtins.unsafeDiscardStringContext repoData.sha256;
+          sriSha256 =
+            if pkgs.lib.hasPrefix "sha256-" sha256NoContext
+              then sha256NoContext
+            else if builtins ? convertHash
+              then builtins.convertHash { hash = sha256NoContext; hashAlgo = "sha256"; toHashFormat = "sri"; }
+            else __trace ("WARNING: this Nix has no `builtins.convertHash` (Nix 2.19 and later have it),"
+                + " so the --sha256 of ${repoData.url} is not checked; an SRI hash (sha256-...) is checked on any Nix")
+              null;
         in {
           # Download the source-repository-package commit and add it to a minimal git
           # repository that `cabal` will be able to access from a non fixed output derivation.

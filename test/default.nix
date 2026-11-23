@@ -303,6 +303,7 @@ let
     # fully-static = callTest ./fully-static { inherit (pkgs) buildPackages; };
     shell-for = callTest ./shell-for {};
     shell-for-extra-packages = callTest ./shell-for-extra-packages {};
+    shell-for-reinstalled-boot-pkg = callTest ./shell-for-reinstalled-boot-pkg {};
     cabal-22 = callTest ./cabal-22 { inherit util; };
     coverage = callTest ./coverage {};
     coverage-golden = callTest ./coverage-golden {};

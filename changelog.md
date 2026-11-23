@@ -1,8 +1,25 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
-## November 20, 2026
+## November 24, 2026
 
+  * `shellFor` and `ghcWithPackages` (including on Stackage snapshots,
+    `haskell-nix.snapshots."lts-…".ghcWithPackages`) no longer expose two
+    copies of a package GHC ships when the plan builds it from source
+    (every snapshot package, or a `constraints: text source`).  GHC's
+    copy used to stay exposed next to the built one, so imports of its
+    modules failed with "Ambiguous module name".  GHC's copy is now
+    hidden; it stays in the package database for the other packages GHC
+    ships that depend on it.
+
+    Those packages are hidden too (for instance GHC's `parsec`, `Cabal`,
+    `process` and `directory` once `text` or `bytestring` is rebuilt):
+    exposed, they mixed with the built copy and failed with "Couldn't
+    match type `Text' with `Text'".  Importing one of their modules now
+    reports a hidden package instead.  Add the package to the shell (for
+    `ghcWithPackages`, to the list) to get a copy built against the
+    rebuilt packages, or pass `-package <name>` to use GHC's copy as
+    before.
   * New project argument `hpack` chooses the hpack that turns
     `package.yaml` files into `.cabal` files for a cabal project with
     `supportHpack = true`, instead of the one in nix-tools.  It takes a
@@ -14,6 +31,43 @@ that will impact users.
     file does not re-plan the project unless a generated `.cabal` file
     changes.  Stack projects ignore it.  Projects that do not set it build
     exactly what they did before.
+
+## November 20, 2026
+
+  * `source-repository-package`s with an ssh location (`ssh://...`,
+    `git+ssh://...`, `ssh+git://...` or `[user@]host:path`) are now
+    fetched with `builtins.fetchGit`, which runs as you and uses your ssh
+    agent and config, so private repositories work.  They used to go to
+    `fetchgit` whenever a `--sha256` was given, and its build sandbox has
+    no `ssh` ("error: cannot run ssh").  Submodules are included.  A
+    `--sha256` is optional; one that is given is checked and gives the
+    source `fetchgit`'s store path.  `tag` may also be a tag, branch or
+    abbreviated hash (outside pure evaluation).  An scp-like location is
+    fetched as `ssh://[user@]host/path`.  Evaluation needs ssh access (or
+    Nix's fetcher cache): the source is no longer a fixed-output derivation
+    a binary cache could provide, and restricted evaluation (Hydra,
+    non-flake) refuses ssh fetches.  Use `inputMap` for those.  See
+    `docs/tutorials/source-repository-hashes.md`.
+  * `project.flake` (`haskellLib.mkFlake`) no longer builds, in `ciJobs`
+    and `hydraJobs`, a sub-library that only components left out of the
+    build use, such as a private library used only by test suites when the
+    plan disables them (`configureArgs = "--disable-tests"`) or by a
+    component that is not buildable, or only by another such sub-library.
+    cabal still plans such a sub-library, but nothing that is built needs
+    it.  It stays in the flake's `packages` (so
+    `nix build .#pkg:lib:sublib` works), and a sub-library that nothing
+    uses at all is still built, since it may be a public one.  Stack
+    projects leave nothing out.  Set `flake.ciSkip = [];` in the project
+    (or pass `ciSkip = [];` to `project.flake`) to build them all.
+  * The flake template (`nix flake init --template github:ican-group/haskell.nix`)
+    and `hix init` now list `https://cache.zw3rk.com` (key
+    `loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=`) next to
+    `https://cache.iog.io` in their `nixConfig`.  It holds every compiler
+    `haskell.nix` CI tests; `cache.iog.io` only has the ones IOG uses.  The
+    getting started guide's binary cache section covers both caches, and a
+    new "Caching your project's builds" page explains how to push a
+    project's evaluation-time builds (`plan-nix`, `roots`) along with its
+    packages.
 
 ## November 19, 2026
 
