@@ -1,6 +1,26 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 24, 2026
+
+  * `shellFor` and `ghcWithPackages` (including on Stackage snapshots,
+    `haskell-nix.snapshots."lts-…".ghcWithPackages`) no longer expose two
+    copies of a package GHC ships when the plan builds it from source
+    (every snapshot package, or a `constraints: text source`).  GHC's
+    copy used to stay exposed next to the built one, so imports of its
+    modules failed with "Ambiguous module name".  GHC's copy is now
+    hidden; it stays in the package database for the other packages GHC
+    ships that depend on it.
+
+    Those packages are hidden too (for instance GHC's `parsec`, `Cabal`,
+    `process` and `directory` once `text` or `bytestring` is rebuilt):
+    exposed, they mixed with the built copy and failed with "Couldn't
+    match type `Text' with `Text'".  Importing one of their modules now
+    reports a hidden package instead.  Add the package to the shell (for
+    `ghcWithPackages`, to the list) to get a copy built against the
+    rebuilt packages, or pass `-package <name>` to use GHC's copy as
+    before.
+
 ## November 20, 2026
 
   * `source-repository-package`s with an ssh location (`ssh://...`,

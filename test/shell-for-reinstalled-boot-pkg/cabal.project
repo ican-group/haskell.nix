@@ -1,0 +1,4 @@
+packages: pkga
+
+-- Build `text` from source, even though GHC ships a copy of it.
+constraints: text source
