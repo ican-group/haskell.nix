@@ -307,7 +307,9 @@ in rec {
   checks = pkgs.lib.recurseIntoAttrs (builtins.mapAttrs
     (_: d: haskellLib.check d)
       (lib.filterAttrs (_: d: d.config.doCheck) components.tests));
-  inherit (package) identifier detailLevel isLocal isProject buildType;
+  inherit (package) identifier detailLevel isLocal isProject buildType
+    # For `haskellLib.mkFlake` (see modules/package.nix).
+    componentDependNames;
   inherit setup sdist;
   isHaskell = true;
   inherit src;

@@ -6,9 +6,31 @@
 
 It's easier to list the reverse: when will you *not* build GHC?
 
-- You have configured the [binary cache](tutorials/getting-started.md) correctly.
+- You have configured the [binary cache](tutorials/getting-started.md#setting-up-the-binary-cache) correctly.
 - You are using one of the GHC versions which [we support](reference/supported-ghc-versions.md).
 - You are using one of the nixpkgs versions used by our CI (you can access the sources for these [through haskell.nix](tutorials/getting-started.md).
+
+Common binary cache mistakes:
+
+- `nix config show substituters` does not list `https://cache.zw3rk.com`
+  (or `https://cache.iog.io`): the settings went into a file the Nix daemon
+  does not read, or the daemon was not restarted after editing
+  `/etc/nix/nix.conf`.
+- Nix warns `ignoring untrusted substituter`: the cache was added in
+  `~/.config/nix/nix.conf` or on the command line, which only counts for
+  trusted users.  Put it in `/etc/nix/nix.conf` instead.
+- Nix warns `ignoring untrusted flake configuration setting 'extra-substituters'`:
+  the caches in the flake's `nixConfig` were not accepted (answer yes when
+  Nix asks, or pass `--accept-flake-config`; this too needs a trusted
+  user).  `/etc/nix/nix.conf` avoids the question.
+- Nix warns `ignoring substitute for '...', as it's not signed by any of the keys`:
+  the key for that cache is missing from `trusted-public-keys`.  Each cache
+  has its own key (`loony-tools:...` for `cache.zw3rk.com`,
+  `hydra.iohk.io:...` for `cache.iog.io`).
+- `https://cache.nixos.org` is missing from `nix config show substituters`:
+  `substituters =` (rather than `extra-substituters =`) replaced the default
+  list.  Add it back, with its key `cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=`,
+  or switch to the `extra-` settings.
 
 If you think you are doing all of these and you still find you're building GHC, drop us a line.
 

@@ -14,6 +14,33 @@ let
     package.buildable = true;
   };
 
+  # Packages for the `subLibrariesOnlyForUnbuilt` tests.  A v1 plan has an
+  # entry per unit; only one unit per package carries `componentDependNames`.
+  subLibPkgs = {
+    pkgA-unit-lib.componentDependNames = {
+      "pkgA:lib:pkgA" = [ "base" ];
+      "pkgA:lib:testlib" = [ "base" "pkgA" "pkgA:testutil" ];  # only the unbuilt test uses it
+      "pkgA:lib:testutil" = [ "base" ];        # only testlib (left out) uses it
+      "pkgA:lib:api" = [ "base" ];             # nothing uses it (public API?)
+      "pkgA:lib:shared" = [ "base" ];          # built exe and unbuilt test use it
+      "pkgA:lib:unplanned" = [ "base" ];       # used only by the unbuilt test, not built
+      "pkgA:exe:e" = [ "base" "pkgA" "pkgA:shared" "pkgB:util" ];
+      # `pkgA:pkgA` (the main library) is never left out.
+      "pkgA:test:t" = [ "base" "pkgA:pkgA" "pkgA:testlib" "pkgA:shared" "pkgA:unplanned" "pkgB:bench-only" ];
+    };
+    pkgA-unit-e.componentDependNames = { };
+    pkgB.componentDependNames = {
+      "pkgB:lib:util" = [ "base" ];            # another package's built exe uses it
+      "pkgB:lib:bench-only" = [ "base" ];      # another package's unbuilt test uses it
+      "pkgB:bench:b" = [ "base" "pkgB:util" ];
+    };
+  };
+  subLibBuilt = ids: builtins.listToAttrs (map (id: { name = id; value = id; }) ids);
+  subLibBuiltDefault = subLibBuilt [
+    "pkgA:lib:pkgA" "pkgA:lib:testlib" "pkgA:lib:testutil" "pkgA:lib:api"
+    "pkgA:lib:shared" "pkgA:exe:e" "pkgB:lib:util" "pkgB:lib:bench-only"
+  ];
+
   # Project and package sources as `appendSubDir` makes them, for the
   # `defaultFlakeComponents` tests.
   projectSrc = { origSrc = "/repo"; origSubDir = ""; };
@@ -66,6 +93,59 @@ let
     } "touch $out").drvPath).success;
 in
 lib.runTests {
+  # Which `source-repository-package` locations are fetched over ssh with
+  # `builtins.fetchGit` instead of `fetchgit` (#1996).
+  testIsSshGitUrl = {
+    expr = map haskellLib.isSshGitUrl [
+      "ssh://git@gitlab.com/macaroni.dev/mayhem-engine.git"
+      "ssh://gitlab.com/macaroni.dev/mayhem-engine.git"
+      "git+ssh://git@github.com/owner/repo.git"
+      "git@github.com:owner/repo.git"
+      "ssh+git://git@github.com/owner/repo.git"
+      "SSH://git@github.com/owner/repo.git"
+      "github.com:owner/repo.git"
+      "git@[fd00::5]:org/repo.git"
+      "[fd00::5]:org/repo.git"
+      "https://github.com/ican-group/haskell.nix.git"
+      "http://example.com/repo.git"
+      "git://example.com/repo.git"
+      "file:///srv/git/repo.git"
+      "file:repo.git"
+      "/srv/git/repo.git"
+      "./repo"
+      "C:/src/repo.git"
+      "https://user@example.com:8443/repo.git"
+    ];
+    expected = [ true true true true true true true true true false false false false false false false false false ];
+  };
+
+  # The URL `builtins.fetchGit` gets for an ssh location: it rejects an
+  # upper-case scheme and an scp-like URL without a user.
+  testSshGitUrl = {
+    expr = map haskellLib.sshGitUrl [
+      "SSH://git@github.com/Owner/Repo.git"
+      "Git+SSH://git@github.com/Owner/Repo.git"
+      "ssh://git@github.com/owner/repo.git"
+      "git@github.com:Owner/Repo.git"
+      "github.com:owner/repo.git"
+      "git@example.com:/srv/git/repo.git"
+      "example.com:~/repo.git"
+      "git@[fd00::5]:org/repo.git"
+      "[fd00::5]:org/repo.git"
+    ];
+    expected = [
+      "ssh://git@github.com/Owner/Repo.git"
+      "git+ssh://git@github.com/Owner/Repo.git"
+      "ssh://git@github.com/owner/repo.git"
+      "ssh://git@github.com/Owner/Repo.git"
+      "ssh://github.com/owner/repo.git"
+      "ssh://git@example.com/srv/git/repo.git"
+      "ssh://example.com/~/repo.git"
+      "ssh://git@[fd00::5]/org/repo.git"
+      "ssh://[fd00::5]/org/repo.git"
+    ];
+  };
+
   # Free licenses must stay free under nixpkgs' check-meta, which treats a
   # license in a list (what `cabalToNixpkgsLicense` returns) without `free` as
   # unfree.  Cabal turns the legacy unversioned `license: LGPL` into
@@ -242,6 +322,36 @@ lib.runTests {
         "pkgA:test:t" = "DOC-testA";
       };
     };
+
+  # `mkFlake` leaves out of `ciJobs` the sub-libraries only unbuilt
+  # components use (#2028).  `packages` holds the built components.
+  # testutil is only used by testlib, which is left out, so it is too.
+  testSubLibrariesOnlyForUnbuilt = {
+    expr = haskellLib.subLibrariesOnlyForUnbuilt subLibPkgs subLibBuiltDefault;
+    expected = [ "pkgA:lib:testlib" "pkgA:lib:testutil" "pkgB:lib:bench-only" ];
+  };
+
+  # A second unit (e.g. a two-stage plan's build-machine twin) whose read
+  # adds a dependency keeps that sub-library: units are combined, not
+  # overwritten.
+  testSubLibrariesOnlyForUnbuiltUnion = {
+    expr = haskellLib.subLibrariesOnlyForUnbuilt (subLibPkgs // {
+      pkgA-twin.componentDependNames = {
+        "pkgA:exe:e" = [ "base" "pkgA:testutil" ];
+      };
+    }) subLibBuiltDefault;
+    expected = [ "pkgA:lib:testlib" "pkgB:lib:bench-only" ];
+  };
+
+  # Nothing is left out when any dependencies are unknown: a built
+  # component with no entry (e.g. a stack project, which has no
+  # `componentDependNames`).
+  testSubLibrariesOnlyForUnbuiltUnknownComponent = {
+    expr = haskellLib.subLibrariesOnlyForUnbuilt (subLibPkgs // {
+      pkgC = { };
+    }) (subLibBuiltDefault // subLibBuilt [ "pkgC:lib:sub" ]);
+    expected = [ ];
+  };
 
   # A project with no haddock-producing components yields an empty group,
   # matching what `doHaddock = false` produces.
