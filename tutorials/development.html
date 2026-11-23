@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-88b62555.js";
+            window.path_to_searchindex_js = "../searchindex-733a7674.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-556adea0.js"></script>
@@ -188,13 +188,12 @@ described in <a href="getting-started.html">Creating Nix builds for your project
 it exists in a file called <code>default.nix</code>.</p>
 <blockquote>
 <p><strong>Note:</strong></p>
-<p>Old-style <code>cabal build</code> and <code>stack</code> builds are not (yet)
-supported. For example, <code>stack</code> will (by design) download and
-rebuild all dependencies, even though they are available in the
-shell. However, if you have a Stack project, you can generate the
-package set with Haskell.nix, then use <code>cabal new‑build</code> to work
-on it.  Starting Cabal 3.0 <code>cabal build</code> will work out of the box, as
-new style builds are the default.</p>
+<p>Old-style <code>cabal build</code> builds are not supported.  Starting Cabal 3.0
+<code>cabal build</code> will work out of the box, as new style builds are the
+default.  Plain <code>stack</code> downloads and rebuilds all dependencies, even
+though they are available in the shell, unless it is told to use the
+shell’s GHC: see <a href="#using-stack-and-hls-with-a-stack-project">Using Stack and HLS with a Stack
+project</a>.</p>
 </blockquote>
 <h2 id="how-to-get-a-development-shell"><a class="header" href="#how-to-get-a-development-shell">How to get a development shell</a></h2>
 <p>If you have a Cabal or Stack project with one or more packages
@@ -283,6 +282,103 @@ in
 </code></pre>
 <p>If you need a Hoogle documentation index, use <code>ghcWithHoogle</code> in place
 of <code>ghcWithPackages</code>.</p>
+<h2 id="using-stack-and-hls-with-a-stack-project"><a class="header" href="#using-stack-and-hls-with-a-stack-project">Using Stack and HLS with a Stack project</a></h2>
+<p>For a project with a <code>stack.yaml</code> (and <code>package.yaml</code> or <code>.cabal</code>
+files), use <a href="../reference/library.html#stackproject"><code>stackProject'</code></a> and
+its <code>shell</code>.  The shell’s GHC is the one the snapshot in <code>resolver:</code>
+names, and its global package database holds every dependency, built
+by Haskell.nix:</p>
+<pre><code class="language-nix"># shell.nix
+let
+  haskellNix = import (builtins.fetchTarball "https://github.com/ican-group/haskell.nix/archive/master.tar.gz") {};
+  pkgs = import haskellNix.sources.nixpkgs-unstable haskellNix.nixpkgsArgs;
+  project = pkgs.haskell-nix.stackProject' {
+    # Leave Stack's build directory out of the source, or every
+    # `stack build` changes it and the next `nix-shell` re-runs
+    # `stack-to-nix`.
+    src = pkgs.haskell-nix.haskellLib.cleanSourceWith {
+      name = "hello-stack";
+      src = ./.;
+      filter = path: type: baseNameOf path != ".stack-work";
+    };
+    # The GHC comes from the `resolver` in stack.yaml.
+    shell = {
+      tools = {
+        # Built with the project's GHC, as HLS must be.
+        haskell-language-server = "latest";
+      };
+      # Stack itself does not need to match the project's GHC, so the
+      # (cached) one from nixpkgs is fine.  `cacert` lets it download the
+      # snapshot description in a `nix-shell --pure`.
+      buildInputs = [ pkgs.stack pkgs.cacert ];
+      # Point `stack` at the configuration that uses the shell's GHC and
+      # packages (HLS gets it from hie.yaml).
+      shellHook = ''
+        export STACK_YAML=stack-nix.yaml
+      '';
+    };
+  };
+in project.shell
+</code></pre>
+<p>Stack then needs a configuration that uses that GHC instead of
+installing its own, and that does not start its own Nix shell.  Keep it
+next to <code>stack.yaml</code>, with the same <code>resolver:</code> and <code>packages:</code>:</p>
+<pre><code class="language-yaml"># stack-nix.yaml: stack.yaml for use inside the haskell.nix shell.
+resolver: lts-24.67
+packages:
+- .
+# Use the shell's GHC, whose global package database already holds
+# every dependency (built by haskell.nix), instead of installing one.
+system-ghc: true
+install-ghc: false
+# The shell already provides everything; don't let Stack start its own.
+nix:
+  enable: false
+notify-if-nix-on-path: false
+</code></pre>
+<p>The shell sets <code>STACK_YAML</code> to it, so inside the shell</p>
+<pre><code class="language-shell">nix-shell
+stack build
+stack exec hello-stack
+</code></pre>
+<p>builds only the project’s own packages: Stack finds every dependency
+(here <code>split</code> and <code>text</code>) in the global package database and neither
+downloads nor rebuilds it.  Outside the shell, <code>stack</code> keeps using
+<code>stack.yaml</code> as before.</p>
+<p><a href="https://haskell-language-server.readthedocs.io">Haskell Language Server</a>
+(HLS), started from the shell (or from an editor that picks up the
+shell’s environment, e.g. through <a href="https://direnv.net">direnv</a>), loads
+the project with its stack cradle, so it gets the same GHC, flags and
+language extensions as <code>stack build</code>.  That cradle passes
+<code>--stack-yaml</code> to Stack itself, so it does not see <code>STACK_YAML</code>: without
+a <code>hie.yaml</code> it uses <code>stack.yaml</code>, and Stack then tries to install a GHC
+or start its own Nix shell.  Name the shell’s configuration in a
+<code>hie.yaml</code> next to <code>stack.yaml</code>:</p>
+<pre><code class="language-yaml"># HLS's stack cradle passes `--stack-yaml` itself, so it does not see
+# STACK_YAML: name the shell's configuration here.
+cradle:
+  stack:
+    stackYaml: "./stack-nix.yaml"
+</code></pre>
+<p>Only commit that <code>hie.yaml</code> if everyone works on the project from the
+shell; outside it, <code>stack-nix.yaml</code> finds no suitable GHC.</p>
+<p>Some things to watch for:</p>
+<ul>
+<li>HLS must be built with exactly the project’s GHC, which is why it
+comes from <code>tools</code> (<code>haskell-language-server = "latest"</code> is built with
+the GHC from the snapshot).  Stack is an ordinary executable, so
+nixpkgs’ <code>stack</code> works with any GHC and is already in
+cache.nixos.org.  <code>tools.stack</code> also works, but builds Stack and its
+many dependencies with your GHC, and newer Hackage releases of those
+dependencies can break that build.</li>
+<li>Filter <code>.stack-work</code> out of <code>src</code> as above.  Otherwise each
+<code>stack build</code> changes the project’s source and the next shell
+re-runs <code>stack-to-nix</code>.</li>
+<li>A dependency missing from the shell (for instance after adding one to
+<code>package.yaml</code> without leaving and re-entering the shell) is
+downloaded and built by Stack as usual.  Re-enter the shell to get it
+from Haskell.nix instead.</li>
+</ul>
 <h2 id="how-to-get-packages-from-a-certain-stackage-snapshot"><a class="header" href="#how-to-get-packages-from-a-certain-stackage-snapshot">How to get packages from a certain Stackage snapshot</a></h2>
 <p>Haskell.nix knows about every released Stackage snapshot. You can use
 it to build packages from a given snapshot, without setting up a full

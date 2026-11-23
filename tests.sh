@@ -21,6 +21,7 @@ set -euo pipefail
 #   getting-started-flakes                        ghc96 -> 9.6.7
 #   shell-package, shell-stackage,
 #   hackage-stackage                              lts-23.28 -> ghc984
+#   development-stack                             lts-24.67 -> ghc9103
 
 # Tutorials
 pushd tutorials
@@ -43,6 +44,15 @@ nix-shell --pure --run ""
 nix-shell --pure shell-hoogle.nix --run ""
 nix-shell --pure shell-package.nix --run ""
 nix-shell --pure shell-stackage.nix --run ""
+popd
+
+## Development with Stack (and HLS)
+# Stack only fetches the snapshot description here; every dependency comes
+# from the shell's GHC.  `--pure` keeps HOME, so it uses a throwaway
+# STACK_ROOT rather than the runner's ~/.stack.
+pushd development-stack
+nix-shell --pure --run 'export STACK_ROOT=$PWD/.stack-root; stack build && stack exec hello-stack && haskell-language-server src/Lib.hs app/Main.hs'
+rm -rf .stack-root .stack-work
 popd
 
 ## Bumping Hackage and Stackage snapshots

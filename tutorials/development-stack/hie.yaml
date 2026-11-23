@@ -1,0 +1,5 @@
+# HLS's stack cradle passes `--stack-yaml` itself, so it does not see
+# STACK_YAML: name the shell's configuration here.
+cradle:
+  stack:
+    stackYaml: "./stack-nix.yaml"
