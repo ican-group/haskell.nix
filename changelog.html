@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-733a7674.js";
+            window.path_to_searchindex_js = "searchindex-26ebac6a.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-556adea0.js"></script>
@@ -208,6 +208,21 @@ longer run hpack for them), so plan and build agree.  Editing a source
 file does not re-plan the project unless a generated <code>.cabal</code> file
 changes.  Stack projects ignore it.  Projects that do not set it build
 exactly what they did before.</p>
+</li>
+<li>
+<p>New <code>stackProject</code> option <code>gitExtraDepsLocal</code> (default <code>false</code>).  When
+set, the packages from the stack.yaml’s git <code>extra-deps</code> get
+<code>package.isLocal</code> (but not <code>package.isProject</code>), the same as a
+<code>cabal.project</code> <code>source-repository-package</code>; git packages from a custom
+snapshot do not (they are told apart by url, commit and subdir, and a
+package whose source comes from a later snapshot entry of the same name
+stays non-local).  <code>selectLocalPackages</code>, and so <code>shellFor</code>’s default
+<code>packages</code>, then include them: the shell provides their dependencies
+(and those of their test suites and benchmarks) and leaves out the
+packages themselves and the packages that depend on them, for cabal to
+build from the source a <code>cabal.project</code> next to the stack.yaml points
+at.  <code>localPackages</code> module options apply to them too.  Without the
+option nothing changes.</p>
 </li>
 </ul>
 <h2 id="november-20-2026"><a class="header" href="#november-20-2026">November 20, 2026</a></h2>
