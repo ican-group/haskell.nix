@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-eea71735.js";
+            window.path_to_searchindex_js = "../searchindex-621ec956.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-a339c369.js"></script>
+        <script src="../toc-287b71b6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -181,30 +181,70 @@
 <p>If you have an existing Haskell project that you want to build with <code>haskell.nix</code>, you might <a href="#getting-started-with-hix">prefer to use <code>hix</code></a>. <code>hix</code> is a more easy and user-friendly way to use <code>haskell.nix</code>, using it reduce considerably the size of the Nix expression you will have to maintain in your project codebase.</p>
 <h2 id="setting-up-the-binary-cache"><a class="header" href="#setting-up-the-binary-cache">Setting up the binary cache</a></h2>
 <p><strong>IMPORTANT:</strong> you <em>must</em> do this or you <em>will</em> build several copies of GHC!</p>
-<p>You can configure Nix to use our binary cache, which is pushed to by CI, so should contain the artifacts that you need.</p>
-<p>You need to add the following sections to <code>/etc/nix/nix.conf</code> or, if you are a trusted user, <code>~/.config/nix/nix.conf</code> (if you don’t know what a “trusted user” is, you probably want to do the former). <code>[...]</code> denote any existing entries.</p>
-<pre><code>extra-trusted-public-keys = [...] hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= [...]
-extra-substituters = [...] https://cache.iog.io [...]
+<p><code>haskell.nix</code> CI pushes its GHCs and boot libraries to two binary caches:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Cache</th><th>Public key</th><th>Holds</th></tr>
+</thead>
+<tbody>
+<tr><td><code>https://cache.zw3rk.com</code></td><td><code>loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=</code></td><td>every compiler and platform <code>haskell.nix</code> CI tests, including cross compilers (see the table in the <a href="https://github.com/ican-group/haskell.nix#compiler-ci-status">README</a>)</td></tr>
+<tr><td><code>https://cache.iog.io</code></td><td><code>hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ=</code></td><td>the GHC versions IOG’s own projects use</td></tr>
+</tbody>
+</table>
+</div>
+<p>Each cache only works with its own key: a substitute that is not signed by
+one of your <code>trusted-public-keys</code> is ignored (with a warning like
+<code>ignoring substitute for '...', as it's not signed by any of the keys in 'trusted-public-keys'</code>).</p>
+<p>Add both to <code>/etc/nix/nix.conf</code>. <code>[...]</code> denote any existing entries.</p>
+<pre><code>extra-substituters = [...] https://cache.zw3rk.com https://cache.iog.io [...]
+extra-trusted-public-keys = [...] loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk= hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ= [...]
 </code></pre>
-<p>If you’re running NixOS, you need to add/update the following in your <code>/etc/nixos/configuration.nix</code> files instead.</p>
-<pre><code class="language-nix"># Binary Cache for haskell.nix
-nix.settings.trusted-public-keys = [
-  "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
-];
+<ul>
+<li>Use the <code>extra-</code> settings.  Plain <code>substituters = ...</code> and
+<code>trusted-public-keys = ...</code> <em>replace</em> the defaults, so unless you list
+<code>https://cache.nixos.org</code> and <code>cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=</code>
+there too, Nix stops using the nixpkgs cache and builds much of nixpkgs
+(including the bootstrap GHC) from source.</li>
+<li>With a multi-user install (the default on macOS and on most Linux
+installs), the settings are read by the Nix daemon, so restart it after
+editing the file: <code>sudo systemctl restart nix-daemon</code> on Linux,
+<code>sudo launchctl kickstart -k system/org.nixos.nix-daemon</code> on macOS (or
+reboot).</li>
+<li><code>~/.config/nix/nix.conf</code> and <code>--option</code> on the command line only add
+substituters for <a href="https://nix.dev/manual/nix/latest/command-ref/conf-file.html#conf-trusted-users">trusted users</a>.
+For anyone else Nix prints <code>ignoring untrusted substituter</code> and carries
+on without them, which is why <code>/etc/nix/nix.conf</code> is the place for them.</li>
+<li>The <code>nixConfig</code> of a flake (such as the one in the
+<a href="#create-a-project-using-flakes">template</a>) is the same, and even a
+trusted user has to accept it, when Nix asks or with
+<code>--accept-flake-config</code>; otherwise Nix prints
+<code>ignoring untrusted flake configuration setting 'extra-substituters'</code>.</li>
+</ul>
+<p>If you’re running NixOS, add the following to <code>/etc/nixos/configuration.nix</code>
+instead.  NixOS keeps <code>cache.nixos.org</code> in these lists for you.</p>
+<pre><code class="language-nix"># Binary caches for haskell.nix
 nix.settings.substituters = [
+  "https://cache.zw3rk.com"
   "https://cache.iog.io"
 ];
-</code></pre>
-<p>NixOS-21.11 and older use slightly different settings.</p>
-<pre><code class="language-nix"># Binary Cache for haskell.nix  
-nix.binaryCachePublicKeys = [
+nix.settings.trusted-public-keys = [
+  "loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk="
   "hydra.iohk.io:f/Ea+s+dFdN+3Y/G+FDgSq+a5NEWhJGzdjvKNGv0/EQ="
 ];
-nix.binaryCaches = [
-  "https://cache.iog.io"
-];   
 </code></pre>
+<p>To check what the daemon ended up with, run:</p>
+<pre><code>nix config show substituters
+nix config show trusted-public-keys
+</code></pre>
+<p>Once you have a project (see below), <code>nix build --dry-run</code> lists what would
+be fetched from a cache and what would be built (it still has to build the
+project’s evaluation-time dependencies, such as its plan, to get that far).
+If a <code>ghc</code> derivation is in the <code>will be built</code> list, the caches are not set
+up correctly.</p>
 <p>This can be tricky to get setup properly. If you’re still having trouble getting cache hits, consult the corresponding <a href="../troubleshooting.html#why-am-i-building-ghc">troubleshooting section</a>.</p>
+<p>To push your own project’s builds to a cache, see
+<a href="caching-your-project.html">Caching your project’s builds</a>.</p>
 <h2 id="create-a-project-using-flakes"><a class="header" href="#create-a-project-using-flakes">Create a project using Flakes</a></h2>
 <p>This section assumes you choose to uses the experimental flakes features, and so that you have added <code>experimental-features = [ "nix-command" "flakes" ];</code> in your Nix configuration. You can look at <a href="https://nixos.wiki/wiki/Flakes">the Wiki</a> for more instructions.</p>
 <p>The following <code>nix flake init</code> command creates a template <code>hello</code> package containing a <code>flake.nix</code> and <code>nix/hix.nix</code> file. The project can be used with
@@ -357,7 +397,7 @@ hix-build -A hsPkgs.hello.components.exes.hello
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                             </a>
 
-                            <a rel="next prefetch" href="../tutorials/clean-git.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                            <a rel="next prefetch" href="../tutorials/caching-your-project.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                                 <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                             </a>
 
@@ -371,7 +411,7 @@ hix-build -A hsPkgs.hello.components.exes.hello
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
                     </a>
 
-                    <a rel="next prefetch" href="../tutorials/clean-git.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                    <a rel="next prefetch" href="../tutorials/caching-your-project.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
                         <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
                     </a>
             </nav>

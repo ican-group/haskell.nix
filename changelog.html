@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-eea71735.js";
+            window.path_to_searchindex_js = "searchindex-621ec956.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-a339c369.js"></script>
+        <script src="toc-287b71b6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -203,6 +203,15 @@ it.  It stays in the flake’s <code>packages</code> (so
 uses at all is still built, since it may be a public one.  Stack
 projects leave nothing out.  Set <code>flake.ciSkip = [];</code> in the project
 (or pass <code>ciSkip = [];</code> to <code>project.flake</code>) to build them all.</li>
+<li>The flake template (<code>nix flake init --template github:ican-group/haskell.nix</code>)
+and <code>hix init</code> now list <code>https://cache.zw3rk.com</code> (key
+<code>loony-tools:pr9m4BkM/5/eSTZlkQyRt57Jz7OMBxNSUiMC4FkcNfk=</code>) next to
+<code>https://cache.iog.io</code> in their <code>nixConfig</code>.  It holds every compiler
+<code>haskell.nix</code> CI tests; <code>cache.iog.io</code> only has the ones IOG uses.  The
+getting started guide’s binary cache section covers both caches, and a
+new “Caching your project’s builds” page explains how to push a
+project’s evaluation-time builds (<code>plan-nix</code>, <code>roots</code>) along with its
+packages.</li>
 </ul>
 <h2 id="november-19-2026"><a class="header" href="#november-19-2026">November 19, 2026</a></h2>
 <ul>

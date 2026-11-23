@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-eea71735.js";
+            window.path_to_searchindex_js = "searchindex-621ec956.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-a339c369.js"></script>
+        <script src="toc-287b71b6.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -179,9 +179,31 @@
 <h3 id="why-am-i-building-ghc"><a class="header" href="#why-am-i-building-ghc">Why am I building GHC?</a></h3>
 <p>It’s easier to list the reverse: when will you <em>not</em> build GHC?</p>
 <ul>
-<li>You have configured the <a href="tutorials/getting-started.html">binary cache</a> correctly.</li>
+<li>You have configured the <a href="tutorials/getting-started.html#setting-up-the-binary-cache">binary cache</a> correctly.</li>
 <li>You are using one of the GHC versions which <a href="reference/supported-ghc-versions.html">we support</a>.</li>
 <li>You are using one of the nixpkgs versions used by our CI (you can access the sources for these <a href="tutorials/getting-started.html">through haskell.nix</a>.</li>
+</ul>
+<p>Common binary cache mistakes:</p>
+<ul>
+<li><code>nix config show substituters</code> does not list <code>https://cache.zw3rk.com</code>
+(or <code>https://cache.iog.io</code>): the settings went into a file the Nix daemon
+does not read, or the daemon was not restarted after editing
+<code>/etc/nix/nix.conf</code>.</li>
+<li>Nix warns <code>ignoring untrusted substituter</code>: the cache was added in
+<code>~/.config/nix/nix.conf</code> or on the command line, which only counts for
+trusted users.  Put it in <code>/etc/nix/nix.conf</code> instead.</li>
+<li>Nix warns <code>ignoring untrusted flake configuration setting 'extra-substituters'</code>:
+the caches in the flake’s <code>nixConfig</code> were not accepted (answer yes when
+Nix asks, or pass <code>--accept-flake-config</code>; this too needs a trusted
+user).  <code>/etc/nix/nix.conf</code> avoids the question.</li>
+<li>Nix warns <code>ignoring substitute for '...', as it's not signed by any of the keys</code>:
+the key for that cache is missing from <code>trusted-public-keys</code>.  Each cache
+has its own key (<code>loony-tools:...</code> for <code>cache.zw3rk.com</code>,
+<code>hydra.iohk.io:...</code> for <code>cache.iog.io</code>).</li>
+<li><code>https://cache.nixos.org</code> is missing from <code>nix config show substituters</code>:
+<code>substituters =</code> (rather than <code>extra-substituters =</code>) replaced the default
+list.  Add it back, with its key <code>cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=</code>,
+or switch to the <code>extra-</code> settings.</li>
 </ul>
 <p>If you think you are doing all of these and you still find you’re building GHC, drop us a line.</p>
 <h3 id="why-am-i-building-lots-of-haskell-packages"><a class="header" href="#why-am-i-building-lots-of-haskell-packages">Why am I building lots of Haskell packages?</a></h3>
