@@ -766,6 +766,58 @@ in {
         value = coverageProject.hsPkgs.${packageName}.coverageReport;
       }]) (packageNames coverageProject));
 
+  # The sub-libraries `mkFlake` leaves out of `ciJobs` (#2028), as component
+  # ids: those only components that are not built depend on, e.g. a private
+  # library used just by test suites when the plan disables them
+  # (`configureArgs = "--disable-tests"`), or ones made non-buildable.
+  # cabal still plans such a sub-library, but nothing built uses it.  One
+  # that nothing depends on is kept, since it may be a public sub-library
+  # (part of the package's API, which `plan.json` cannot tell apart from a
+  # private one), as is one a built component uses.  `packages` is the
+  # flake's packages, keyed by component id; a component in it is built,
+  # unless it is itself left out.  The dependencies come from the packages'
+  # `componentDependNames`.
+  #
+  # When any dependencies are unknown, nothing is left out: that is when a
+  # built component has no entry (e.g. a stack project, which has no
+  # `componentDependNames`).
+  subLibrariesOnlyForUnbuilt = haskellPackages: packages:
+    let
+      allDependNames = map (p: p.componentDependNames or {})
+        (lib.attrValues haskellPackages);
+      # The union over all units: every unit of a package, and a two-stage
+      # plan's build-machine twin, can only add dependencies, so they can
+      # only keep more sub-libraries.
+      dependNames = lib.zipAttrsWith (_: lib.concatLists) allDependNames;
+      isComponentId = id:
+        builtins.match "[^:]+:(lib|flib|exe|test|bench):[^:]+" id != null;
+      unknown = lib.any (id: isComponentId id && !(dependNames ? ${id}))
+        (lib.attrNames packages);
+      # `pkg:sublib` names the component `pkg:lib:sublib`; a bare `pkg` (or
+      # `pkg:pkg`) is the main library, which is never left out.
+      subLibId = dep:
+        let m = builtins.match "([^:]+):([^:]+)" dep;
+        in if m == null || lib.head m == lib.elemAt m 1 then null
+          else "${lib.head m}:lib:${lib.elemAt m 1}";
+      # The sub-libraries to leave out, given those already left out
+      # (`skip`), which count as unbuilt: a sub-library only another left
+      # out one uses is left out too.  Leaving one out never brings one back
+      # (built components only lose dependants), so iterating from nothing
+      # reaches the fixed point.
+      step = skip:
+        let
+          built = id: packages ? ${id} && !(skip ? ${id});
+          depsOf = pred: lib.concatLists
+            (lib.attrValues (lib.filterAttrs (id: _: pred id) dependNames));
+          usedByBuilt = lib.genAttrs (depsOf built) (_: null);
+        in lib.genAttrs (lib.filter (id: id != null && packages ? ${id})
+          (map subLibId (lib.filter (dep: !(usedByBuilt ? ${dep}))
+            (depsOf (id: !built id))))) (_: null);
+      fixpoint = skip:
+        let next = step skip;
+        in if lib.attrNames next == lib.attrNames skip then skip else fixpoint next;
+    in if unknown then [] else lib.attrNames (fixpoint {});
+
   # Flake package names that are flat and match the cabal component names.
   mkFlakePackages =
     foldrAttrVals
@@ -929,7 +981,21 @@ in {
         , devShell ? project.shell
         , devShells ? { default = devShell; }
         , checkedProject ? project.appendModule { checkMaterialization = true; }
-        , ciJobs ? mkFlakeCiJobs project { inherit checks coverage packages haddock devShells checkedProject; }
+        # Component ids left out of `ciJobs` (but kept in `packages`): by
+        # default the sub-libraries only unbuilt components use, see
+        # `subLibrariesOnlyForUnbuilt` (also when `null`, as the project's
+        # `flake.ciSkip` option passes by default).  Pass `[]` to build them
+        # in CI too.
+        , ciSkip ? null
+        , ciJobs ? let
+            skip = if ciSkip == null
+              then subLibrariesOnlyForUnbuilt haskellPackages packages
+              else ciSkip;
+          in mkFlakeCiJobs project {
+            inherit checks coverage devShells checkedProject;
+            packages = removeAttrs packages skip;
+            haddock = removeAttrs haddock skip;
+          }
         , hydraJobs ? ciJobs
         # The component for `packages.default` (`nix build`) and
         # `apps.default` (`nix run`).  By default these come from the
