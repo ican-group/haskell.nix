@@ -26,6 +26,9 @@ let
   }).optionsNix;
 
   cabal = optionsNix ../modules/cabal-project.nix;
+  # `project'` adds `projectFileName` (modules/project.nix) to the others.
+  projectOnly = lib.filterAttrs (_: v: builtins.elem "haskell.nix/modules/project.nix" v.declarations)
+    (optionsNix ../modules/project.nix);
   stack = optionsNix ../modules/stack-project.nix;
 
   inherit (import ./render-options-doc.nix { inherit lib; }) renderOptions;
@@ -37,10 +40,9 @@ let
     !builtins.elem n [ "shell" "flake" ] && !inSubmodule "shell" n && !inSubmodule "flake" n);
   submodule = prefix: lib.filterAttrs (n: _: inSubmodule prefix n) cabal;
 
-  section = prefix: renderOptions {
-    headingLevel = 3;
-    nameOf = n: if prefix == null then n else lib.removePrefix "${prefix}." n;
-  };
+  # Anchors such as `#stack-modules` and `#shell-crossplatforms`; the
+  # options of every project get no prefix.
+  section = idPrefix: renderOptions { headingLevel = 3; inherit idPrefix; };
 
 in builtins.toFile "project-options.md" ''
 # Project options
@@ -69,15 +71,19 @@ set, which are on the [Module options](modules.md) page.
 
 ## Options of every project
 
-${section null (lib.filterAttrs isCommon (topLevel cabal))}
+${section "" (lib.filterAttrs isCommon (topLevel cabal))}
+
+## `project'` options
+
+${section "" projectOnly}
 
 ## `cabalProject'` options
 
-${section null (lib.filterAttrs (n: v: !isCommon n v) (topLevel cabal))}
+${section "cabal-" (lib.filterAttrs (n: v: !isCommon n v) (topLevel cabal))}
 
 ## `stackProject'` options
 
-${section null (lib.filterAttrs (n: v: !isCommon n v) (topLevel stack))}
+${section "stack-" (lib.filterAttrs (n: v: !isCommon n v) (topLevel stack))}
 
 ## `shell`
 
@@ -85,12 +91,12 @@ The project's `shell` argument: the arguments of `shellFor` that make the
 project's `shell` attribute (and the flake's default `devShell`).
 `p.shellFor { ... }` takes the same arguments, and merges them with these.
 
-${section "shell" (submodule "shell")}
+${section "" (submodule "shell")}
 
 ## `flake`
 
 The project's `flake` argument: the defaults for `p.flake { ... }`, which
 takes the same arguments and merges them with these.
 
-${section "flake" (submodule "flake")}
+${section "" (submodule "flake")}
 ''

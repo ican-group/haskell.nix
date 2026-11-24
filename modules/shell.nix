@@ -24,7 +24,7 @@
       defaultText = lib.literalExpression "ps: lib.concatMap haskellLib.getAllComponents (config.packages ps)";
       description = ''
         Like `packages`, but selects components.  By default, all the
-        components of the selected packages.
+        components of the selected packages.  Not used with `builderVersion = 2`.
       '';
     };
     additional = lib.mkOption {
@@ -33,7 +33,7 @@
       defaultText = lib.literalExpression "_: [ ]";
       description = ''
         Like `packages`, but the selected packages themselves are built and
-        included in the shell's package db (not just their dependencies).
+        included in the shell's package db (not just their dependencies).  Not used with `builderVersion = 2`.
       '';
     };
     includeExtraPackages = lib.mkOption {
@@ -51,14 +51,18 @@
       default = true;
       description = ''
         Build a Hoogle index of the shell's packages and provide the
-        `hoogle` command.
+        `hoogle` command.  With `builderVersion = 2` it only provides
+        `hoogle` (run `hoogle generate` for an index).
       '';
     };
     withHaddock = lib.mkOption {
       type = lib.types.bool;
       default = config.withHoogle;
       defaultText = lib.literalExpression "config.withHoogle";
-      description = "Include the documentation of the shell's packages.";
+      description = ''
+        Include the documentation of the shell's packages.  Has no effect
+        with `builderVersion = 2`.
+      '';
     };
     exactDeps = lib.mkOption {
       type = lib.types.bool;
@@ -66,7 +70,7 @@
       description = ''
         Stop the cabal solver from choosing any dependency that is not in
         the package set.  This sets `CABAL_CONFIG`, which also turns off the
-        remote package servers.
+        remote package servers.  Not used with `builderVersion = 2`.
       '';
     };
     allToolDeps = lib.mkOption {
@@ -170,21 +174,21 @@
     packageSetupDeps = lib.mkOption {
       type = lib.types.unspecified;
       default = true;
-      description = "Set to `false` to leave out custom-setup dependencies.";
+      description = "Set to `false` to leave out custom-setup dependencies.  Not used with `builderVersion = 2`.";
     };
     enableDWARF = lib.mkOption {
       type = lib.types.unspecified;
       default = false;
-      description = "Include debug info.";
+      description = "Include debug info.  Not used with `builderVersion = 2`.";
     };
     crossPlatforms = lib.mkOption {
       type = lib.types.unspecified;
       default = projectConfig.crossPlatforms;
-      defaultText = lib.literalExpression "config.crossPlatforms # of the project";
+      defaultText = lib.literalMD "the project's `crossPlatforms`";
       example = lib.literalExpression "p: [ p.ghcjs p.mingwW64 ]";
       description = ''
         Cross-compilation platforms to add to the shell (their GHC and
-        cabal wrappers, such as `js-unknown-ghcjs-cabal`).
+        cabal wrappers, such as `javascript-unknown-ghcjs-cabal`).
       '';
     };
 
