@@ -35,10 +35,10 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-21eb71f5.js";
+            window.path_to_searchindex_js = "../searchindex-22836668.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="../toc-ff041463.js"></script>
+        <script src="../toc-310822d8.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -217,13 +217,16 @@ in pkgs.pkgsCross.aarch64-multiplatform.haskell-nix.project {
 first build.  Use a GHC version that haskell.nix CI builds for your target
 (see below) and the cache to avoid building GHC yourself.</p>
 <h3 id="with-flakes"><a class="header" href="#with-flakes">With flakes</a></h3>
-<p>Pass <code>crossPlatforms</code> to the project’s <code>flake</code> function to add the cross
-compiled components to the flake outputs.  Starting from the flake in
-<a href="getting-started-flakes.html">Getting started with flakes</a>:</p>
-<pre><code class="language-nix">flake = pkgs.helloProject.flake {
-  crossPlatforms = p: [ p.musl64 p.ucrt64 ];
+<p>Set the project’s <code>flake.crossPlatforms</code> to add the cross compiled
+components to the flake outputs.  Starting from the flake in
+<a href="getting-started.html#scaffolding">Getting started</a>, add it to the project:</p>
+<pre><code class="language-nix">haskellNix.projects.default = {
+  # ...
+  flake.crossPlatforms = p: [ p.musl64 p.ucrt64 ];
 };
 </code></pre>
+<p>(Without flake-parts, pass it to the project’s <code>flake</code> function instead:
+<code>project.flake { crossPlatforms = p: [ p.musl64 p.ucrt64 ]; }</code>.)</p>
 <p>Each cross compiled component is named after the target platform’s
 <code>config</code> triple:</p>
 <pre><code class="language-shell">nix build .#hello:exe:hello                            # native

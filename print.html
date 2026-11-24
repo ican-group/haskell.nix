@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-21eb71f5.js";
+            window.path_to_searchindex_js = "searchindex-22836668.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ff041463.js"></script>
+        <script src="toc-310822d8.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -738,7 +738,10 @@ up correctly.</p>
 <h2 id="create-a-project-using-flakes"><a class="header" href="#create-a-project-using-flakes">Create a project using Flakes</a></h2>
 <p>This section assumes you choose to uses the experimental flakes features, and so that you have added <code>experimental-features = [ "nix-command" "flakes" ];</code> in your Nix configuration. You can look at <a href="https://nixos.wiki/wiki/Flakes">the Wiki</a> for more instructions.</p>
 <p>The following <code>nix flake init</code> command creates a template <code>hello</code> package containing a <code>flake.nix</code> and <code>nix/hix.nix</code> file. The project can be used with
-regular <code>nix</code> tools. This template is defined in the <a href="https://github.com/ican-group/haskell.nix/tree/master/templates/haskell-nix">haskell.nix repository</a>, so it always matches the current <code>hix init</code> output and supported GHC versions.</p>
+regular <code>nix</code> tools. This template is defined in the <a href="https://github.com/ican-group/haskell.nix/tree/master/templates/haskell-nix">haskell.nix repository</a>, so it always matches the current <code>hix init</code> output and supported GHC versions.
+Its <code>flake.nix</code> uses <a href="https://flake.parts">flake-parts</a> and haskell.nix’s
+flake-parts module (see <a href="#using-flake-parts">Using flake-parts</a>); the project’s
+settings are in <code>nix/hix.nix</code>.</p>
 <pre><code class="language-bash">nix flake init --template github:ican-group/haskell.nix
 nix develop
 cabal build
@@ -753,53 +756,41 @@ cabal build
 <pre><code>nix run .#hello:exe:hello
 </code></pre>
 <h2 id="scaffolding"><a class="header" href="#scaffolding">Scaffolding</a></h2>
-<p>The following code could be capy-pasted and will work with <code>stack.yaml</code> and <code>cabal.project</code> based projects.</p>
+<p>The following code could be copy-pasted and will work with <code>stack.yaml</code> and <code>cabal.project</code> based projects.
+It uses haskell.nix’s <a href="#using-flake-parts">flake-parts module</a>, which also
+shows how to write the same flake without flake-parts.</p>
 <p>Edit your <code>flake.nix</code> as:</p>
 <pre><code class="language-nix">{
   description = "A very basic flake";
   inputs.haskellNix.url = "github:ican-group/haskell.nix";
-  inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
-  # nixpkgs unstable (26.11) dropped x86_64-darwin, and `eachSystem` below
-  # evaluates *every* listed system to collect its output names — so one
-  # unimportable system breaks `nix build` on all of them.  Keep the last
-  # pin that supports it and use it for that system only.
-  inputs.nixpkgs-2605.follows = "haskellNix/nixpkgs-2605";
-  inputs.flake-utils.url = "github:numtide/flake-utils";
-  outputs = { self, nixpkgs, nixpkgs-2605, flake-utils, haskellNix }:
-    flake-utils.lib.eachSystem [ "x86_64-linux" "x86_64-darwin" ] (system:
-    let
-      overlays = [ haskellNix.overlay
-        (final: _prev: {
-          # This overlay adds our project to pkgs
-          helloProject =
-            final.haskell-nix.project' {
-              src = ./.;
-              compiler-nix-name = "ghc96";
-              # This is used by `nix develop .` to open a shell for use with
-              # `cabal`, `hlint` and `haskell-language-server`
-              shell.tools = {
-                cabal = {};
-                # hlint = {};
-                # haskell-language-server = {};
-              };
-              # Non-Haskell shell tools go here
-              shell.buildInputs = with pkgs; [
-                nixpkgs-fmt
-              ];
-              # This adds `js-unknown-ghcjs-cabal` to the shell.
-              # shell.crossPlatforms = p: [p.ghcjs];
-            };
-        })
-      ];
-      pkgs = import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs)
-        { inherit system overlays; inherit (haskellNix) config; };
-      flake = pkgs.helloProject.flake {
-        # This adds support for `nix build .#js-unknown-ghcjs:hello:exe:hello`
-        # crossPlatforms = p: [p.ghcjs];
+  inputs.flake-parts.url = "github:hercules-ci/flake-parts";
+  outputs = inputs@{ flake-parts, haskellNix, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      # See "Using flake-parts" in the haskell.nix documentation.
+      imports = [ haskellNix.flakeModules.default ];
+      systems = [ "x86_64-linux" "x86_64-darwin" "aarch64-linux" "aarch64-darwin" ];
+      perSystem = { ... }: {
+        haskellNix.projects.default = { pkgs, ... }: {
+          src = ./.;
+          compiler-nix-name = "ghc96";
+          # This is used by `nix develop .` to open a shell for use with
+          # `cabal`, `hlint` and `haskell-language-server`
+          shell.tools = {
+            cabal = {};
+            # hlint = {};
+            # haskell-language-server = {};
+          };
+          # Non-Haskell shell tools go here
+          shell.buildInputs = with pkgs; [
+            nixpkgs-fmt
+          ];
+          # This adds `javascript-unknown-ghcjs-cabal` to the shell.
+          # shell.crossPlatforms = p: [p.ghcjs];
+          # This adds support for `nix build .#javascript-unknown-ghcjs:hello:exe:hello`
+          # flake.crossPlatforms = p: [p.ghcjs];
+        };
       };
-      # `nix build .` builds `hello:exe:hello` (`packages.default`), as
-      # `hello` is the package in the project directory.
-    in flake);
+    };
 }
 </code></pre>
 <blockquote>
@@ -878,6 +869,148 @@ hix-build -A hsPkgs.hello.components.exes.hello
 <h2 id="going-forward"><a class="header" href="#going-forward">Going forward</a></h2>
 <p>Read through <a href="#project">project</a> function reference to see how the API works.</p>
 <p>There are a number of things to explore further in the tutorials section.</p>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="using-flake-parts"><a class="header" href="#using-flake-parts">Using flake-parts</a></h1>
+<p>haskell.nix has a <a href="https://flake.parts">flake-parts</a> module,
+<code>haskellNix.flakeModules.default</code>.  It adds haskell.nix projects to a
+flake-parts flake, and their packages, apps, checks and dev shells to the
+flake’s outputs.  It does the work of the overlay, <code>import nixpkgs</code>,
+<code>flake-utils.lib.eachSystem</code> and <code>project.flake</code> boilerplate of a plain
+haskell.nix <code>flake.nix</code>, and it works alongside other flake-parts modules
+(treefmt, pre-commit hooks and so on).</p>
+<p>The <a href="#create-a-project-using-flakes">template</a> and
+<code>hix init</code> use it.</p>
+<h2 id="a-minimal-flake"><a class="header" href="#a-minimal-flake">A minimal flake</a></h2>
+<pre><code class="language-nix">{
+  inputs.haskellNix.url = "github:ican-group/haskell.nix";
+  inputs.flake-parts.url = "github:hercules-ci/flake-parts";
+  outputs = inputs@{ flake-parts, haskellNix, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      imports = [ haskellNix.flakeModules.default ];
+      systems = [ "x86_64-linux" "aarch64-darwin" ];
+      perSystem = { ... }: {
+        haskellNix.projects.default = {
+          src = ./.;
+          compiler-nix-name = "ghc912";
+          shell.tools.cabal = "latest";
+        };
+      };
+    };
+}
+</code></pre>
+<p>Then, for a package <code>hello</code> with an executable <code>hello</code>:</p>
+<pre><code class="language-shell">nix build .#hello:exe:hello
+nix run .#hello:exe:hello
+nix develop
+nix flake check
+</code></pre>
+<p>When the project directory is itself a package’s directory, <code>nix build</code> and
+<code>nix run</code> use that package (see <code>flake.doDefaults</code> in
+<a href="#flake">Project options</a>).</p>
+<p>Add the haskell.nix binary caches to the flake’s <code>nixConfig</code> (or the Nix
+configuration) as the <a href="#getting-started">getting started guide</a> describes.</p>
+<h2 id="haskellnixprojectsname"><a class="header" href="#haskellnixprojectsname"><code>haskellNix.projects.&lt;name&gt;</code></a></h2>
+<p>Each project takes the arguments of
+<a href="#project"><code>project'</code></a>, listed in
+<a href="#project-options">Project options</a>.  <code>project'</code> makes a
+Stack project when <code>src</code> has a <code>stack.yaml</code> and no <code>cabal.project</code>, and a
+cabal project otherwise.</p>
+<p>A project is a module, so it can be a function, and it can be defined in
+more than one place; the definitions merge the way project modules do:</p>
+<pre><code class="language-nix">perSystem = { ... }: {
+  haskellNix.projects.default = { pkgs, ... }: {
+    src = ./.;
+    shell.buildInputs = [ pkgs.nixpkgs-fmt ];
+  };
+};
+</code></pre>
+<p>The template and <code>hix init</code> keep the project’s settings in <code>nix/hix.nix</code>,
+which the <code>hix</code> commands read too:</p>
+<pre><code class="language-nix">haskellNix.projects.default = {
+  src = ./.;
+  imports = [ haskellNix.projectModules.hix ./nix/hix.nix ];
+};
+</code></pre>
+<p><code>haskellNix.projectModules.hix</code> declares the options that only the <code>hix</code>
+commands use (<code>nixpkgsPin</code>, <code>overlays</code> and so on, which a <code>nix/hix.nix</code> may
+set) and gives <code>compiler-nix-name</code> the default <code>hix</code> gives it.</p>
+<p>Reading <code>config.haskellNix.projects.&lt;name&gt;</code> gives the project itself:</p>
+<pre><code class="language-nix">perSystem = { config, ... }: {
+  haskellNix.projects.default = { ... };
+  # `nix build .#docs`: the haddock docs of the project's libraries
+  packages.docs = config.haskellNix.projects.default.projectHaddock;
+};
+</code></pre>
+<h2 id="outputs"><a class="header" href="#outputs">Outputs</a></h2>
+<p>The outputs of the <code>default</code> project keep the names <code>project.flake</code> gives
+them (<code>hello:exe:hello</code>, the <code>default</code> dev shell).  Those of any other
+project get its name and <code>:</code> in front: <code>other:hello:exe:hello</code>, and the dev
+shell <code>devShells.other</code>; only the <code>default</code> project gives <code>packages.default</code>
+and <code>apps.default</code>.  The project’s <code>flake</code> arguments apply as usual, so
+<code>flake.crossPlatforms</code> adds outputs such as <code>javascript-unknown-ghcjs:hello:exe:hello</code>
+and <code>flake.variants</code> adds variants.</p>
+<p>The projects’ <code>hydraJobs</code> and <code>ciJobs</code> are set on the flake too, with the
+system first as <code>flake-utils.lib.eachSystem</code> lays them out
+(<code>hydraJobs.&lt;system&gt;.&lt;job&gt;</code>).  They come from each system’s
+<code>haskellNix.hydraJobs</code>, and other jobs can be added there; they merge with
+the projects’ job by job:</p>
+<pre><code class="language-nix">perSystem = { config, pkgs, ... }: {
+  checks.smoke-test = pkgs.callPackage ./nix/smoke-test.nix { };
+  # Also a Hydra job, next to the projects' checks.
+  haskellNix.hydraJobs.checks = { inherit (config.checks) smoke-test; };
+};
+</code></pre>
+<p>To set the flake’s <code>hydraJobs</code> and <code>ciJobs</code> yourself, set
+<code>haskellNix.addHydraJobs = false</code> (outside <code>perSystem</code>).</p>
+<p>To choose the outputs yourself, set <code>haskellNix.addFlakeOutputs = false</code> and
+take what you want from <code>config.haskellNix.outputs</code>, which has the
+<code>packages</code>, <code>apps</code>, <code>checks</code>, <code>devShells</code>, <code>hydraJobs</code> and <code>ciJobs</code> of all the
+projects.</p>
+<p><code>nix flake show</code> and <code>nix flake check</code> evaluate every system in <code>systems</code>.
+haskell.nix plans each project with import-from-derivation, so that needs
+builders for those systems, or an <code>evalSystem</code> that you have (see
+<a href="#project-options">Project options</a>).  <code>nix build</code>, <code>nix run</code>
+and <code>nix develop</code> only evaluate the current system.</p>
+<h2 id="haskellnixpkgs"><a class="header" href="#haskellnixpkgs"><code>haskellNix.pkgs</code></a></h2>
+<p>The nixpkgs the projects are made with.  By default it is the one
+haskell.nix is tested and cached with (<code>haskellNix.legacyPackages.${system}</code>),
+with the haskell.nix overlay.  It is separate from flake-parts’ <code>pkgs</code>
+argument, which other modules expect to be plain nixpkgs.  To use your own
+nixpkgs:</p>
+<pre><code class="language-nix">perSystem = { system, ... }: {
+  haskellNix.pkgs = import inputs.nixpkgs {
+    inherit system;
+    inherit (inputs.haskellNix) config;
+    overlays = [ inputs.haskellNix.overlay ];
+  };
+};
+</code></pre>
+<p>A nixpkgs haskell.nix does not test with can mean building GHC and
+other tools rather than getting them from the cache.</p>
+<h2 id="without-flake-parts"><a class="header" href="#without-flake-parts">Without flake-parts</a></h2>
+<p>A flake can also call haskell.nix directly.  <code>project.flake {}</code> gives one
+system’s outputs, so <code>flake-utils.lib.eachSystem</code> is the usual way to put
+them together:</p>
+<pre><code class="language-nix">{
+  inputs.haskellNix.url = "github:ican-group/haskell.nix";
+  inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
+  inputs.flake-utils.url = "github:numtide/flake-utils";
+  outputs = { self, nixpkgs, flake-utils, haskellNix }:
+    flake-utils.lib.eachSystem [ "x86_64-linux" "aarch64-darwin" ] (system:
+      let
+        pkgs = import nixpkgs {
+          inherit system;
+          inherit (haskellNix) config;
+          overlays = [ haskellNix.overlay ];
+        };
+        project = pkgs.haskell-nix.project' {
+          src = ./.;
+          compiler-nix-name = "ghc912";
+          shell.tools.cabal = "latest";
+        };
+      in project.flake {});
+}
+</code></pre>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="caching-your-projects-builds"><a class="header" href="#caching-your-projects-builds">Caching your project’s builds</a></h1>
 <p>Pushing your project’s builds to your own binary cache (for instance
@@ -1517,13 +1650,16 @@ in pkgs.pkgsCross.aarch64-multiplatform.haskell-nix.project {
 first build.  Use a GHC version that haskell.nix CI builds for your target
 (see below) and the cache to avoid building GHC yourself.</p>
 <h3 id="with-flakes"><a class="header" href="#with-flakes">With flakes</a></h3>
-<p>Pass <code>crossPlatforms</code> to the project’s <code>flake</code> function to add the cross
-compiled components to the flake outputs.  Starting from the flake in
-<a href="tutorials/getting-started-flakes.html">Getting started with flakes</a>:</p>
-<pre><code class="language-nix">flake = pkgs.helloProject.flake {
-  crossPlatforms = p: [ p.musl64 p.ucrt64 ];
+<p>Set the project’s <code>flake.crossPlatforms</code> to add the cross compiled
+components to the flake outputs.  Starting from the flake in
+<a href="#scaffolding">Getting started</a>, add it to the project:</p>
+<pre><code class="language-nix">haskellNix.projects.default = {
+  # ...
+  flake.crossPlatforms = p: [ p.musl64 p.ucrt64 ];
 };
 </code></pre>
+<p>(Without flake-parts, pass it to the project’s <code>flake</code> function instead:
+<code>project.flake { crossPlatforms = p: [ p.musl64 p.ucrt64 ]; }</code>.)</p>
 <p>Each cross compiled component is named after the target platform’s
 <code>config</code> triple:</p>
 <pre><code class="language-shell">nix build .#hello:exe:hello                            # native
@@ -7761,6 +7897,17 @@ description now have one.  The Module options page now lists the
 package options once (as <code>packages.&lt;name&gt;.*</code>), not once for each
 package that a built-in module configures, and lists the component
 options under <code>components.library</code> only.</p>
+</li>
+<li>
+<p>New flake-parts module, <code>haskellNix.flakeModules.default</code> (see
+“Using flake-parts” in the docs).  <code>perSystem.haskellNix.projects.&lt;name&gt;</code>
+takes the arguments of <code>project'</code>, and the projects’ packages, apps,
+checks, dev shells, <code>hydraJobs</code> and <code>ciJobs</code> become the flake’s (the
+<code>default</code> project’s under their own names, the others’ with
+<code>&lt;name&gt;:</code> in front).  <code>perSystem.haskellNix.hydraJobs</code> adds more
+jobs.  The flake template (<code>nix flake init --template github:ican-group/haskell.nix</code>) and <code>hix init</code> now write a flake-parts
+<code>flake.nix</code>, which also no longer needs its own <code>nixpkgs</code> and
+<code>nixpkgs-2605</code> inputs.  Existing <code>flake.nix</code> files are unaffected.</p>
 </li>
 </ul>
 <h2 id="november-20-2026"><a class="header" href="#november-20-2026">November 20, 2026</a></h2>

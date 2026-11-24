@@ -35,10 +35,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-21eb71f5.js";
+            window.path_to_searchindex_js = "searchindex-22836668.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-ff041463.js"></script>
+        <script src="toc-310822d8.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -315,6 +315,17 @@ description now have one.  The Module options page now lists the
 package options once (as <code>packages.&lt;name&gt;.*</code>), not once for each
 package that a built-in module configures, and lists the component
 options under <code>components.library</code> only.</p>
+</li>
+<li>
+<p>New flake-parts module, <code>haskellNix.flakeModules.default</code> (see
+“Using flake-parts” in the docs).  <code>perSystem.haskellNix.projects.&lt;name&gt;</code>
+takes the arguments of <code>project'</code>, and the projects’ packages, apps,
+checks, dev shells, <code>hydraJobs</code> and <code>ciJobs</code> become the flake’s (the
+<code>default</code> project’s under their own names, the others’ with
+<code>&lt;name&gt;:</code> in front).  <code>perSystem.haskellNix.hydraJobs</code> adds more
+jobs.  The flake template (<code>nix flake init --template github:ican-group/haskell.nix</code>) and <code>hix init</code> now write a flake-parts
+<code>flake.nix</code>, which also no longer needs its own <code>nixpkgs</code> and
+<code>nixpkgs-2605</code> inputs.  Existing <code>flake.nix</code> files are unaffected.</p>
 </li>
 </ul>
 <h2 id="november-20-2026"><a class="header" href="#november-20-2026">November 20, 2026</a></h2>
