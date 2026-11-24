@@ -4,6 +4,7 @@
 - [Tutorials](./tutorials/index.md)
     - [Creating a development environment](./tutorials/development.md)
     - [Getting started](./tutorials/getting-started.md)
+    - [Using flake-parts](./tutorials/flake-parts.md)
     - [Caching your project's builds](./tutorials/caching-your-project.md)
     - [Sourcing files only part of git repository using cleanGit](./tutorials/clean-git.md)
     - [Handling git repositories in projects](./tutorials/source-repository-hashes.md)

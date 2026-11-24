@@ -33,9 +33,12 @@ nix-shell --pure --run "cabal build hello"
 popd
 
 ## Getting started with flakes
+# Use this checkout of haskell.nix, not the one on GitHub: the example uses
+# haskell.nix's flake-parts module, so it tests that as well.
 pushd getting-started-flakes
-nix build --accept-flake-config
-nix develop . --accept-flake-config -c cabal build hello
+haskellNix="git+file://$(git rev-parse --show-toplevel)"
+nix build --accept-flake-config --override-input haskellNix "$haskellNix"
+nix develop . --accept-flake-config --override-input haskellNix "$haskellNix" -c cabal build hello
 popd
 
 ## Development

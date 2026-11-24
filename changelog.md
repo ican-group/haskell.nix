@@ -125,6 +125,17 @@ that will impact users.
     package that a built-in module configures, and lists the component
     options under `components.library` only.
 
+  * New flake-parts module, `haskellNix.flakeModules.default` (see
+    "Using flake-parts" in the docs).  `perSystem.haskellNix.projects.<name>`
+    takes the arguments of `project'`, and the projects' packages, apps,
+    checks, dev shells, `hydraJobs` and `ciJobs` become the flake's (the
+    `default` project's under their own names, the others' with
+    `<name>:` in front).  `perSystem.haskellNix.hydraJobs` adds more
+    jobs.  The flake template (`nix flake init --template
+    github:ican-group/haskell.nix`) and `hix init` now write a flake-parts
+    `flake.nix`, which also no longer needs its own `nixpkgs` and
+    `nixpkgs-2605` inputs.  Existing `flake.nix` files are unaffected.
+
 ## November 20, 2026
 
   * `source-repository-package`s with an ssh location (`ssh://...`,
