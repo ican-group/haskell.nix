@@ -46,20 +46,75 @@ nixpkgs.overlays = [
 ];
 ```
 
-### Replace libraries of components
+### Adding dependencies the `.cabal` file does not declare
 
-If a component is missing a dependency it can be added via modules. For example:
+Some packages need things from nixpkgs that their `.cabal` file does not
+name: a custom `Setup.hs` that runs a tool such as `mysql_config` or
+`pg_config`, a library found by a `configure` script, or a tool a test
+suite runs.  Give them to the component that needs them with a module.
+Each component has these options:
 
-``` nix
+| Option | Goes to | Use it for |
+|---|---|---|
+| `libs` | `buildInputs` | C libraries to link against (what `extra-libraries` would name) |
+| `pkgconfig` | `propagatedBuildInputs` | Libraries found with `pkg-config`; a list of lists, one list per `pkgconfig-depends` entry |
+| `frameworks` | `propagatedBuildInputs` | macOS frameworks |
+| `build-tools` | `nativeBuildInputs` | Programs run during the build: `Setup.hs` helpers, code generators, tools a test runs |
+
+For example, the `mysql` package from Hackage runs `mysql_config` from its
+`Setup.hs` (it fails with "The program 'mysql_config' is required but it
+could not be found"), and the libraries `mysql_config` names are needed
+when linking anything that uses it:
+
+```nix
 project = pkgs.haskell-nix.project' {
-  src = self;
-  compiler-nix-name = "ghc8102";
+  src = ./.;
+  compiler-nix-name = "ghc96";
   modules = [{
-    # Replace `extra-libraries` dependencies
-    packages.X11.components.library.libs = pkgs.lib.mkForce (with pkgs.xorg;
-        [ libX11 libXrandr libXext libXScrnSaver libXinerama ]);
+    # `mysql_config`, run by mysql's Setup.hs
+    packages.mysql.components.library.build-tools = [ pkgs.libmysqlclient ];
+    # The libraries `mysql_config --libs` lists
+    packages.mysql.components.library.libs =
+      [ pkgs.libmysqlclient pkgs.zlib pkgs.openssl ];
   }];
 };
+```
+
+These definitions are added to the ones haskell.nix makes from the `.cabal`
+file.  To replace those instead, use `lib.mkForce`:
+
+```nix
+modules = [{
+  packages.X11.components.library.libs = pkgs.lib.mkForce (with pkgs.xorg;
+    [ libX11 libXrandr libXext libXScrnSaver libXinerama ]);
+}];
+```
+
+The same options apply to the other components (`components.exes.<name>`,
+`components.tests.<name>`, `components.setup` and so on); see
+[Module options](../reference/modules.md).
+
+For the development shell, which builds nothing itself, add tools and
+libraries with the project's `shell.nativeBuildInputs` and
+`shell.buildInputs` (see [Project options](../reference/project-options.md)).
+
+#### The `nix:` section of `stack.yaml`
+
+`stack.yaml` can list nixpkgs packages under `nix: packages:`.  Only
+`stack --nix` reads that list; `stackProject` and `stack-to-nix` ignore it.
+Give each of those packages to the components that need it, as above, and
+to the shell if you build with `cabal` or `stack` in it:
+
+```nix
+pkgs.haskell-nix.stackProject' {
+  src = ./.;
+  modules = [{
+    packages.mysql.components.library.build-tools = [ pkgs.libmysqlclient ];
+    packages.mysql.components.library.libs =
+      [ pkgs.libmysqlclient pkgs.zlib pkgs.openssl ];
+  }];
+  shell.buildInputs = [ pkgs.libmysqlclient pkgs.zlib pkgs.openssl ];
+}
 ```
 
 ### Mapping in Haskell.nix
