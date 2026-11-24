@@ -89,9 +89,12 @@ in {
       type = lines;
       default = "";
       description = ''
-        Text added to the project as `cabal.project.local`, after
-        `cabalProject`.  A `cabal.project.local` file in `src` is not read;
-        use `builtins.readFile ./cabal.project.local` for that.
+        Text appended to the `cabalProject` text, for settings that would
+        otherwise go in a `cabal.project.local`.  (It is not a separate
+        `cabal.project.local`, so `cabalProjectFreeze` constraints, which
+        are in a `cabal.project.freeze`, come after it.)  A
+        `cabal.project.local` file in `src` is not read; use
+        `builtins.readFile ./cabal.project.local` for that.
       '';
     };
     cabalProjectFreeze = mkOption {
@@ -143,13 +146,14 @@ in {
               = "0dxx8cp2xndpw3jwiawch2dkrkp15mil7pyx7dvd810pwc22pm2q"; };
       '';
     };
+    # FIXME is the last part of the description (`revision` blocks) still
+    # relevant?
     inputMap = mkOption {
       type = nullOr attrs;
       default = {};
       description = ''
         Specifies the contents of urls in the cabal.project file.
         The `.rev` attribute is checked against the `tag` for `source-repository-packages`.
-        # FIXME is the following still relevant?
         For `revision` blocks the `inputMap.<url>` will be used and
         they `.tar.gz` for the `packages` used will also be looked up
         in the `inputMap`.

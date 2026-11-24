@@ -15,12 +15,12 @@
     crossPlatforms = lib.mkOption {
       type = lib.types.unspecified;
       default = projectConfig.crossPlatforms;
-      defaultText = lib.literalExpression "config.crossPlatforms # of the project";
+      defaultText = lib.literalMD "the project's `crossPlatforms`";
       example = lib.literalExpression "p: [ p.ghcjs ]";
       description = ''
         Cross-compilation platforms to add flake outputs for.  Their names
         get the platform as a prefix, for instance
-        `nix build .#js-unknown-ghcjs:hello:exe:hello`.
+        `nix build .#javascript-unknown-ghcjs:hello:exe:hello`.
       '';
     };
     variants = lib.mkOption {

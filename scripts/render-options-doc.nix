@@ -17,11 +17,14 @@ let
     let d = value.description or null;
     in lib.removeSuffix "\n" (if d == null then "" else d.text or d);
 
-  # `headingLevel` is the number of `#`s; `nameOf` lets a section strip a
-  # common prefix (`shell.`) from the names it shows.
-  renderOption = { headingLevel ? 2, nameOf ? lib.id }: name: value:
+  # `headingLevel` is the number of `#`s.  `idPrefix` makes the headings'
+  # anchors unique (and stable) when a page lists options of the same name
+  # in different sections.
+  renderOption = { headingLevel ? 2, idPrefix ? null }: name: value:
     lib.concatStringsSep "\n\n" (lib.filter (x: x != "") [
-      "${lib.fixedWidthString headingLevel "#" ""} `${nameOf name}`"
+      ("${lib.fixedWidthString headingLevel "#" ""} `${name}`"
+        + lib.optionalString (idPrefix != null)
+            " {#${idPrefix}${lib.toLower (lib.replaceStrings [ "." "<" ">" ] [ "-" "" "" ] name)}}")
       (description value)
       "**Type**: ${lib.replaceStrings [ "<" ">" ] [ "&lt;" "&gt;" ] value.type}"
       (lib.optionalString (value ? default) "**Default**:${renderValue value.default}")
