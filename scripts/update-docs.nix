@@ -1,5 +1,5 @@
 { stdenv, lib, writeScript, coreutils, glibc, git, openssh, gnused, mdbook
-, generatedOptions }:
+, generatedOptions, generatedProjectOptions }:
 
 with lib;
 
@@ -18,12 +18,13 @@ with lib;
 
     echo "Preprocessing..."
     cat ${generatedOptions} > docs/reference/modules.md
+    cat ${generatedProjectOptions} > docs/reference/project-options.md
 
     echo "Building..."
     rm -rf book
     mdbook build
     touch book/.nojekyll
-    rm docs/reference/modules.md
+    rm docs/reference/modules.md docs/reference/project-options.md
 
     echo "Updating git index..."
     git fetch origin

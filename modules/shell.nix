@@ -1,21 +1,40 @@
 { projectConfig }:
 { lib, config, pkgs, haskellLib, ... }: {
+  _file = "haskell.nix/modules/shell.nix";
   options = {
     name = lib.mkOption {
       type = lib.types.nullOr lib.types.str;
       default = null;
+      description = "The name of the shell derivation.";
     };
     packages = lib.mkOption {
       type = lib.types.unspecified;
       default = ps: builtins.attrValues (haskellLib.selectLocalPackages ps);
+      defaultText = lib.literalExpression "ps: builtins.attrValues (haskellLib.selectLocalPackages ps)";
+      example = lib.literalExpression "ps: [ ps.my-lib ps.my-exe ]";
+      description = ''
+        The packages being worked on: a function from the project's
+        package set to a list of packages.  The shell provides their
+        dependencies, but not the packages themselves.
+      '';
     };
     components = lib.mkOption {
       type = lib.types.unspecified;
       default = ps: lib.concatMap haskellLib.getAllComponents (config.packages ps);
+      defaultText = lib.literalExpression "ps: lib.concatMap haskellLib.getAllComponents (config.packages ps)";
+      description = ''
+        Like `packages`, but selects components.  By default, all the
+        components of the selected packages.
+      '';
     };
     additional = lib.mkOption {
       type = lib.types.unspecified;
       default = _: [];
+      defaultText = lib.literalExpression "_: [ ]";
+      description = ''
+        Like `packages`, but the selected packages themselves are built and
+        included in the shell's package db (not just their dependencies).
+      '';
     };
     includeExtraPackages = lib.mkOption {
       type = lib.types.bool;
@@ -30,14 +49,25 @@
     withHoogle = lib.mkOption {
       type = lib.types.bool;
       default = true;
+      description = ''
+        Build a Hoogle index of the shell's packages and provide the
+        `hoogle` command.
+      '';
     };
     withHaddock = lib.mkOption {
       type = lib.types.bool;
       default = config.withHoogle;
+      defaultText = lib.literalExpression "config.withHoogle";
+      description = "Include the documentation of the shell's packages.";
     };
     exactDeps = lib.mkOption {
       type = lib.types.bool;
       default = false;
+      description = ''
+        Stop the cabal solver from choosing any dependency that is not in
+        the package set.  This sets `CABAL_CONFIG`, which also turns off the
+        remote package servers.
+      '';
     };
     allToolDeps = lib.mkOption {
       type = lib.types.bool;
@@ -122,27 +152,55 @@
             else lib.mergeDefaultOption loc pinDefs;
       });
       default = {};
+      example = lib.literalExpression ''
+        {
+          cabal = "latest";
+          hlint = "3.8";
+          haskell-language-server = { version = "latest"; index-state = "2025-01-10T00:00:00Z"; };
+        }
+      '';
+      description = ''
+        Tools to put on `PATH`, by name.  A tool is a version, the arguments
+        of [`haskell-nix.tool`](tools.md) (an attribute set, for instance
+        with `version`, `index-state` or `materialized`), or a derivation
+        used as it is.  See [Tools](tools.md), including how a tool given
+        in more than one place is merged.
+      '';
     };
     packageSetupDeps = lib.mkOption {
       type = lib.types.unspecified;
       default = true;
+      description = "Set to `false` to leave out custom-setup dependencies.";
     };
     enableDWARF = lib.mkOption {
       type = lib.types.unspecified;
       default = false;
+      description = "Include debug info.";
     };
     crossPlatforms = lib.mkOption {
       type = lib.types.unspecified;
       default = projectConfig.crossPlatforms;
+      defaultText = lib.literalExpression "config.crossPlatforms # of the project";
+      example = lib.literalExpression "p: [ p.ghcjs p.mingwW64 ]";
+      description = ''
+        Cross-compilation platforms to add to the shell (their GHC and
+        cabal wrappers, such as `js-unknown-ghcjs-cabal`).
+      '';
     };
 
     # mkShell args
     inputsFrom = lib.mkOption {
       type = lib.types.listOf lib.types.unspecified;
       default = [];
+      description = ''
+        Other shells whose `buildInputs` and `nativeBuildInputs` are
+        included (see `mkShell`).
+      '';
     };
     shellHook = lib.mkOption {
       type = lib.types.str;
+      defaultText = lib.literalMD "sets `EM_CACHE` for ghcjs shells; otherwise empty";
+      description = "Bash statements that are run when the shell starts.";
       # Shell hook to set EM_CACHE to a writable temporary directory if not already set
       default = lib.optionalString pkgs.stdenv.hostPlatform.isGhcjs ''
         if [ -z "$EM_CACHE" ]; then
@@ -168,14 +226,20 @@
     buildInputs = lib.mkOption {
       type = lib.types.listOf lib.types.unspecified;
       default = [];
+      description = "Passed to `mkDerivation` (via `mkShell`).";
     };
     nativeBuildInputs = lib.mkOption {
       type = lib.types.listOf lib.types.unspecified;
       default = [];
+      description = ''
+        Passed to `mkDerivation` (via `mkShell`).  Non-Haskell tools for the
+        shell go here.
+      '';
     };
     passthru = lib.mkOption {
       type = lib.types.attrsOf lib.types.unspecified;
       default = {};
+      description = "Passed to `mkDerivation` (via `mkShell`).";
     };
   };
 }
