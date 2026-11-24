@@ -17,8 +17,6 @@ let
   };
 
   # `run` uses the setup-depends as ordinary packages of a native shell.
-  # (A cross shell's db holds host builds of them, which `runghc` cannot
-  # run.)
   nativeDisabled = stdenv.buildPlatform != stdenv.hostPlatform
     || compiler-nix-name == "ghc901" || compiler-nix-name == "ghc902" ||
     # TH breaks for ghc 9.4.3 cross compile for macOS with this test
@@ -26,23 +24,35 @@ let
     # Segfaults in ghc-pkg on aarc64-linux for GHC 8.10
     (stdenv.hostPlatform.isLinux && stdenv.hostPlatform.isAarch64 && compiler-nix-name == "ghc8107");
 
-  # `cross-setup` does what a cross shell's `cabal` does for a custom
-  # `Setup.hs` (#1388): compile it with the cross compiler against the
-  # shell's package db, then run it.  Only the JavaScript backend can run
-  # the result on the build machine (with node), and only from GHC 9.12,
-  # whose JS rts exports `HEAP8` (see overlays/bootstrap.nix).  Stable
-  # Haskell compilers use the v2 builder's shell, which this does not cover.
+  # `cross-setup` builds the package with a v2 cross shell's own `cabal`
+  # (#1388), from the project's prepopulated index and without network
+  # access: cabal compiles the custom `Setup.hs` with the cross compiler,
+  # so the shell has to provide host builds of its `setup-depends` where
+  # that cabal finds them.  Only the JavaScript backend can run the
+  # compiled `Setup` on the build machine (with node), and only from
+  # GHC 9.12, whose JS rts exports `HEAP8` (see overlays/bootstrap.nix).
+  # The v1 shell is not covered: its plan solves the setup scope
+  # differently from the shell's cabal.  Stable Haskell compilers are not
+  # covered either: their plan can put the setup in the build stage.
   compiler = buildPackages.haskell-nix.compiler.${compiler-nix-name};
   crossSetupDisabled = !stdenv.hostPlatform.isGhcjs
     || (compiler.isStableHaskell or false)
     || builtins.compareVersions compiler.version "9.12" < 0;
 
+  projectV2 = project.appendModule {
+    builderVersion = 2;
+    shell.tools.cabal = {};
+  };
+  envV2 = projectV2.shellFor { withHoogle = false; };
+  targetPrefix = stdenv.hostPlatform.config + "-";
+
 in lib.recurseIntoAttrs ({
   meta.disabled = nativeDisabled && crossSetupDisabled;
-  ifdInputs = {
+  ifdInputs = lib.optionalAttrs (!nativeDisabled) {
     inherit (project) plan-nix;
+  } // lib.optionalAttrs (!crossSetupDisabled) {
+    plan-nix-v2 = projectV2.plan-nix;
   };
-  inherit env;
   run = stdenv.mkDerivation {
     name = "shell-for-setup-deps-test";
 
@@ -76,20 +86,43 @@ in lib.recurseIntoAttrs ({
 
   cross-setup = stdenv.mkDerivation {
     name = "shell-for-setup-deps-cross-setup-test";
-    nativeBuildInputs = [ pkgsBuildBuild.nodejs ];
+
+    nativeBuildInputs = envV2.nativeBuildInputs ++ [ pkgsBuildBuild.nodejs ];
+    buildInputs = envV2.buildInputs;
 
     buildCommand = ''
-      cp ${./pkg/Setup.hs} Setup.hs
+      set -o pipefail
+      export HOME=$PWD/home
+      export CABAL_DIR=$HOME/.cabal
+      mkdir -p "$HOME/.cabal"
+      # Dereference: the index cache may need regenerating for this cabal.
+      cp -RL ${projectV2.dotCabalDir}/. "$HOME/.cabal/"
+      chmod -R u+w "$HOME/.cabal"
+      cp -r ${testSrc "shell-for-setup-deps"} ./src
+      chmod -R +w src
+      cd src
+      # The shell hook as a user gets it on entering the shell: it seeds
+      # ~/.cabal/store from the shell's composed store.
+      source ${buildPackages.writeText "v2-shell-hook" envV2.shellHook}
 
-      printf "checking the shell's package db...\n" >& 2
-      ${env.ghc}/bin/${env.ghc.targetPrefix}ghc-pkg list -v
-      ${env.ghc}/bin/${env.ghc.targetPrefix}ghc-pkg check
+      # Outside the build sandbox this builds `pkg`.  In it, cabal compiles
+      # and links the custom `Setup` but cannot start it: a JavaScript
+      # program starts with `#!/usr/bin/env node`, and the sandbox has no
+      # /usr/bin/env (cabal relinks it on every run, so patching the line
+      # does not stick).  That failure is accepted, and the Setup is run
+      # with node below instead.
+      ${targetPrefix}cabal v2-build -v2 lib:pkg 2>&1 | tee build.log \
+        || grep -q "/setup/setup: createProcess: execvpe: does not exist" build.log
 
-      printf "compiling Setup.hs with the cross compiler...\n" >& 2
-      ${env.ghc}/bin/${env.ghc.targetPrefix}ghc Setup.hs -o setup
-
-      printf "running it...\n" >& 2
-      node ./setup --version
+      if grep -qE "^ - (async|conduit)-[0-9.]+ " build.log; then
+        echo "FAIL: cabal planned a setup-depends from source instead of reusing the shell's" >&2
+        exit 1
+      fi
+      grep -qE "^Running: [^ ]*/${targetPrefix}ghc .*--make .*setup" build.log || {
+        echo "FAIL: cabal did not compile Setup.hs with the cross compiler" >&2
+        exit 1
+      }
+      node dist-newstyle/build/*/*/pkg-*/setup/setup --version
 
       touch $out
     '';
@@ -100,7 +133,7 @@ in lib.recurseIntoAttrs ({
     };
 
     passthru = {
-      inherit project env;
+      inherit projectV2 envV2;
     };
   };
-})
+} // lib.optionalAttrs (!nativeDisabled) { inherit env; })

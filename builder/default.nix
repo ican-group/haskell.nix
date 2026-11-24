@@ -180,12 +180,12 @@ let
   # anyway, so build-platform mkShell is the right choice for both
   # cross and native (where buildPackages == pkgs).
   shellForV1 = haskellLib.weakCallPackage pkgs ./shell-for.nix {
-    inherit hsPkgs ghcForComponent makeConfigFiles hoogleLocal haskellLib pkgsBuildBuild evalPackages compiler ghc extraPackageUnitIds planJsonById;
+    inherit hsPkgs ghcForComponent makeConfigFiles hoogleLocal haskellLib pkgsBuildBuild evalPackages compiler ghc extraPackageUnitIds;
     inherit (buildPackages) mkShell glibcLocales llvmPackages;
   };
   shellForV2 = haskellLib.weakCallPackage pkgs ./shell-for-v2.nix {
     inherit hsPkgs haskellLib ghc compiler composeStore makeGhcShim cabalProjectLocal
-            v2CabalInstall v2CabalInstallVersion withBuildCompiler extraPackageUnitIds;
+            v2CabalInstall v2CabalInstallVersion withBuildCompiler extraPackageUnitIds planJsonById;
     inherit (buildPackages) mkShell;
     haskell-nix = pkgs.haskell-nix;
   };

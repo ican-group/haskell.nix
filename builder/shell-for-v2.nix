@@ -26,6 +26,9 @@
   # The cabal-install the v2 slice builder used, and its version.  See
   # `toolDrvs` below for why the shell's `cabal` has to be that one.
 , v2CabalInstall, v2CabalInstallVersion, withBuildCompiler ? false
+  # The project's plan by unit id (`plan-json-by-id`), for a cross shell's
+  # custom-setup `setup-depends` (see `hostSetupDepSlices`).
+, planJsonById ? {}
   # Unit ids of the project's `extra-packages` (see
   # `haskellLib.extraPackageUnitIds`).
 , extraPackageUnitIds ? [] }:
@@ -110,9 +113,61 @@ let
   # shell env.  Without this, `runghc script.hs` inside the shell
   # can't see conduit, because pkg's library `build-depends` lists
   # only `base`.
+  setupPackages =
+    lib.filter (p: (p.buildType or "Simple") != "Simple") selectedPackages;
   selectedSetupConfigs = lib.filter (c: c != null)
     (map (p: p.setup.config or null)
-      (lib.filter (p: (p.buildType or "Simple") != "Simple") selectedPackages));
+      (lib.filter (p: hostSetupUnitIds p == null) setupPackages));
+
+  # A cross shell's cabal compiles a custom `Setup.hs` with the shell's
+  # (cross) compiler, for the host, unless the plan puts the setup in the
+  # build stage (the stable-haskell fork's `--with-build-compiler`).  The
+  # `setup` component's own `depends` are build-platform slices (the
+  # component is built to run on the build machine), which that compiler
+  # cannot use: cabal rebuilt every non-boot `setup-depends` from Hackage
+  # for the host, or failed offline (#1388).  The plan records the units
+  # cabal solves for the setup as the `setup` component of the package's
+  # plan entry, so a cross shell gets host slices of those (their unit ids
+  # are the ones cabal looks for in the store).  `pre-existing` units are
+  # the compiler's own and are left to its package db.
+  isCrossShell = stdenv.hostPlatform != stdenv.buildPlatform;
+  # The package's (host) plan entry: by unit id when the package carries
+  # one, otherwise by name and version.
+  planEntryOf = p:
+    planJsonById.${p.identifier.unit-id or ""} or (lib.findFirst
+      (e: (e.pkg-name or null) == (p.identifier.name or null)
+        && (e.pkg-version or null) == (p.identifier.version or null)
+        && e ? components.setup
+        && haskellLib.planUnitStage e != "build")
+      null (builtins.attrValues planJsonById));
+  # The host setup's unit ids, or `null` to keep the `setup` component's
+  # (build-platform) `depends`: native shells, packages with no plan entry,
+  # and setups the plan builds in the build stage.
+  hostSetupUnitIds = p:
+    let
+      entry = planEntryOf p;
+      ids = if entry == null then null else entry.components.setup.depends or null;
+    in
+      if !isCrossShell || ids == null
+        || lib.any (id: haskellLib.planUnitStage (planJsonById.${id} or {}) == "build") ids
+      then null else ids;
+  hostSetupUnitSlices = id:
+    let
+      d = hsPkgs.${id} or null;
+      entry = planJsonById.${id} or {};
+      cname = entry.component-name or "lib";
+    in
+      if d == null || !(d ? components) || (entry.type or null) == "pre-existing"
+        || pkgIsSelected d
+      then []
+      else if lib.hasPrefix "lib:" cname
+        then lib.optional (d.components.sublibs ? ${lib.removePrefix "lib:" cname})
+          d.components.sublibs.${lib.removePrefix "lib:" cname}
+      else lib.optional ((d.components.library or null) != null) d.components.library;
+  hostSetupDepSlices = lib.concatMap (p:
+      let ids = hostSetupUnitIds p;
+      in lib.optionals (ids != null) (lib.concatMap hostSetupUnitSlices ids))
+    setupPackages;
 
   # Resolve a `component.depends` entry to its haskell.nix package
   # value (`hsPkgs.<name>`).  A dep is either:
@@ -195,7 +250,8 @@ let
           in if p == null || pkgIsSelected p then null
              else p.components.library or null)
         extraPackageUnitIds));
-  ownDepSlices = ownLibDepSlices ++ ownBuildToolSlices ++ extraPackageSlices;
+  ownDepSlices = ownLibDepSlices ++ ownBuildToolSlices ++ extraPackageSlices
+    ++ hostSetupDepSlices;
 
   # When the user combines this shell with other v2 shells via
   # `inputsFrom` (notably the cross shells the haskell-nix overlay

@@ -3,13 +3,16 @@ that will impact users.
 
 ## November 24, 2026
 
-  * A cross-compiling `shellFor` (for instance `crossPlatforms = p: [
-    p.ghcjs ]`, or `projectCross.<platform>.shellFor`) now puts host
-    builds of a custom `Setup.hs`'s `setup-depends` in its package db.
-    It used to add the build-platform builds the `setup` component itself
-    is made with, which the cross compiler cannot use, so the cross
-    `cabal` could not compile the `Setup.hs`.  Native shells are
-    unchanged.
+  * With `builderVersion = 2`, a cross-compiling `shellFor` (for
+    instance `crossPlatforms = p: [ p.ghcjs ]`) now puts host builds of
+    a custom `Setup.hs`'s `setup-depends` in the shell's cabal store.
+    The shell's cabal compiles that `Setup.hs` with the cross compiler;
+    it used to find only the build-platform builds the `setup` component
+    itself is made with, so it rebuilt every non-boot `setup-depends`
+    from Hackage (or failed offline).  Native shells, and setups the plan
+    builds in the build stage, are unchanged.  The v1 cross `cabal`
+    wrapper (`<target>-cabal`) also passes `--with-hc-pkg`, without
+    which cabal could not find the cross `ghc-pkg`.
 
   * `shellFor` and `ghcWithPackages` (including on Stackage snapshots,
     `haskell-nix.snapshots."lts-…".ghcWithPackages`) no longer expose two
