@@ -102,9 +102,9 @@ and `apps.default`.  The project's `flake` arguments apply as usual, so
 `flake.crossPlatforms` adds outputs such as `javascript-unknown-ghcjs:hello:exe:hello`
 and `flake.variants` adds variants.
 
-The projects' `hydraJobs` and `ciJobs` are set on the flake too, laid out as
-`flake-utils.lib.eachSystem` lays them out: `hydraJobs.<job>.<system>` and
-`ciJobs.<system>.<job>`.  They come from each system's
+The projects' `hydraJobs` and `ciJobs` are set on the flake too, with the
+system first as `flake-utils.lib.eachSystem` lays them out
+(`hydraJobs.<system>.<job>`).  They come from each system's
 `haskellNix.hydraJobs`, and other jobs can be added there; they merge with
 the projects' job by job:
 

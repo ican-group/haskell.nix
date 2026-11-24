@@ -173,20 +173,21 @@ in
     default = true;
     description = ''
       Set the flake's `hydraJobs` and `ciJobs` from each system's
-      `haskellNix.hydraJobs`, laid out the way flake-utils' `eachSystem` lays
-      them out: `hydraJobs.<job>.<system>` and `ciJobs.<system>.<job>`.  Turn
-      this off to set those outputs yourself.
+      `haskellNix.hydraJobs`, with the system first
+      (`hydraJobs.<system>.<job>`, the same for `ciJobs`), as flake-utils'
+      `eachSystem` lays them out.  Turn this off to set those outputs
+      yourself.
     '';
   };
 
   # The condition only reads this option, so evaluating any flake output does
   # not evaluate every system's `perSystem`; the jobs themselves are only
   # evaluated when they are used.
-  config.flake = lib.mkIf topConfig.haskellNix.addHydraJobs {
-    ciJobs = lib.mapAttrs (_: perSystem: perSystem.haskellNix.hydraJobs) topConfig.allSystems;
-    hydraJobs = lib.foldlAttrs (acc: system: perSystem:
-        lib.recursiveUpdate acc
-          (lib.mapAttrs (_: job: { ${system} = job; }) perSystem.haskellNix.hydraJobs))
-      { } topConfig.allSystems;
-  };
+  #
+  # (flake-utils once put the system last in `hydraJobs`, and
+  # `haskellLib.mkFlake`'s comments still describe that; current flake-utils
+  # puts it first, like every other output.)
+  config.flake = lib.mkIf topConfig.haskellNix.addHydraJobs (
+    let jobs = lib.mapAttrs (_: perSystem: perSystem.haskellNix.hydraJobs) topConfig.allSystems;
+    in { ciJobs = jobs; hydraJobs = jobs; });
 }

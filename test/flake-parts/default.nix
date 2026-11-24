@@ -76,19 +76,19 @@ let
     # The `default` project's jobs are not under a name of their own.
     assert expect "ciJobs is laid out `ciJobs.<system>.<job>`"
       (hasAll [ "packages" "other" ] flake.ciJobs.${system});
-    assert expect "hydraJobs is laid out `hydraJobs.<job>.<system>`"
-      (flake.hydraJobs.packages ? ${system} && flake.hydraJobs.other ? ${system});
+    assert expect "hydraJobs is laid out `hydraJobs.<system>.<job>`, like ciJobs"
+      (hasAll [ "packages" "other" ] flake.hydraJobs.${system});
     assert expect "`haskellNix.hydraJobs` definitions add to the projects' jobs"
-      (hasAll [ "extra" "cabal-simple:lib:cabal-simple" ] flake.hydraJobs.packages.${system}
+      (hasAll [ "extra" "cabal-simple:lib:cabal-simple" ] flake.hydraJobs.${system}.packages
         && hasAll [ "extra" "cabal-simple:lib:cabal-simple" ] flake.ciJobs.${system}.packages);
     assert expect "a job defined twice is an error when it is used"
-      (!(builtins.tryEval (builtins.seq flake.hydraJobs.packages.${system}.${exe} null)).success);
+      (!(builtins.tryEval (builtins.seq flake.hydraJobs.${system}.packages.${exe} null)).success);
     assert expect "the option's value is the project, with both definitions merged"
       (perSystem.haskellNix.projects.default.args.name == "flake-parts-default"
         && perSystem.haskellNix.projects.default ? hsPkgs);
     assert expect "`addFlakeOutputs = false` adds nothing to the flake"
       (disabledEval.config.flake.packages.${system} == { }
-        && disabledEval.config.flake.hydraJobs == { }
+        && disabledEval.config.flake.hydraJobs.${system} == { }
         && disabledEval.config.allSystems.${system}.haskellNix.outputs.packages ? ${exe});
     assert expect "`addHydraJobs = false` leaves `hydraJobs` and `ciJobs` unset"
       (!(noJobsEval.config.flake ? hydraJobs) && !(noJobsEval.config.flake ? ciJobs)
