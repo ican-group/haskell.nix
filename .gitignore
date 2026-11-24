@@ -1,6 +1,7 @@
 # The output of "mdbook build"
 /book/
 /docs/reference/modules.md
+/docs/reference/project-options.md
 /docs/**/index.html
 
 # Nix build results

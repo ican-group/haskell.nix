@@ -116,6 +116,15 @@ that will impact users.
     to the plain twin's (missing) docs.  This rebuilds the doc slices of
     projects that set `documentation: True`; nothing else.
 
+  * New docs page, Project options: every argument of `cabalProject'`,
+    `stackProject'` and `project'`, and of their `shell` and `flake`
+    submodules, with its type, default and description.  It is generated
+    from the modules, like the Module options page.  Options that had no
+    description now have one.  The Module options page now lists the
+    package options once (as `packages.<name>.*`), not once for each
+    package that a built-in module configures, and lists the component
+    options under `components.library` only.
+
 ## November 20, 2026
 
   * `source-repository-package`s with an ssh location (`ssh://...`,

@@ -175,6 +175,9 @@ Function that accepts attribute set with a `src` attribute and looks for `stack.
 
 If file exists, it calls [stackProject](#stackproject') function. Otherwise it will call [cabalProject](#cabalproject') function.
 
+All the arguments of the project functions are listed in
+[Project options](./project-options.md).
+
 **Example**:
 
 ```nix
@@ -557,7 +560,9 @@ shellFor =
 | `nativeBuildInputs` | | Passed to [`mkDerivation`](https://nixos.org/nixpkgs/manual/#sec-using-stdenv) (via [mkShell](https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell)). |
 | `passthru`     | | Passed to [`mkDerivation`](https://nixos.org/nixpkgs/manual/#sec-using-stdenv)  (via [mkShell](https://nixos.org/manual/nixpkgs/stable/#sec-pkgs-mkShell)). |
 
-The arguments are checked using the module `modules/shell.nix`.
+The arguments are checked using the module `modules/shell.nix`; they are
+also listed, with their defaults, under [`shell`](./project-options.md#shell)
+in Project options.
 
 To set environment variables in the shell use:
 

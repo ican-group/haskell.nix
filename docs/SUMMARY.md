@@ -23,6 +23,7 @@
     - [Supported GHC versions](./reference/supported-ghc-versions.md)
     - [Command-line tools](./reference/commands.md)
     - [Haskell.nix Library](./reference/library.md)
+    - [Project options](./reference/project-options.md)
     - [Module options](./reference/modules.md)
     - [Tools](./reference/tools.md)
     - [Troubleshooting](./troubleshooting.md)

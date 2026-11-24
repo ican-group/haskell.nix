@@ -1,13 +1,27 @@
 { projectConfig }:
 { lib, config, pkgs, haskellLib, ... }: {
+  _file = "haskell.nix/modules/flake.nix";
   options = {
     packages = lib.mkOption {
       type = lib.types.unspecified;
       default = haskellLib.selectProjectPackages;
+      defaultText = lib.literalExpression "haskellLib.selectProjectPackages";
+      description = ''
+        The packages the flake outputs are made for: a function from the
+        project's package set to an attribute set of packages.  By default,
+        the project's own packages.
+      '';
     };
     crossPlatforms = lib.mkOption {
       type = lib.types.unspecified;
       default = projectConfig.crossPlatforms;
+      defaultText = lib.literalMD "the project's `crossPlatforms`";
+      example = lib.literalExpression "p: [ p.ghcjs ]";
+      description = ''
+        Cross-compilation platforms to add flake outputs for.  Their names
+        get the platform as a prefix, for instance
+        `nix build .#javascript-unknown-ghcjs:hello:exe:hello`.
+      '';
     };
     variants = lib.mkOption {
       type = lib.types.attrsOf lib.types.unspecified;

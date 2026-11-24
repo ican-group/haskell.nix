@@ -18,10 +18,23 @@ in
     };
     src = mkOption {
       type = either path package;
+      description = ''
+        The project's source: the directory with the `cabal.project` (or
+        `stack.yaml`) file and the packages.  Often filtered, for instance
+        with `haskellLib.cleanGit` or `haskellLib.cleanSourceWith`.
+      '';
     };
     crossPlatforms = mkOption {
       type = unspecified;
       default = _p: [ ];
+      defaultText = literalExpression "p: [ ]";
+      example = literalExpression "p: [ p.ghcjs p.mingwW64 ]";
+      description = ''
+        The cross-compilation platforms of the project, selected from
+        `pkgs.pkgsCross`-like platforms (see `lib.systems.examples` in
+        nixpkgs).  The default for `shell.crossPlatforms` and
+        `flake.crossPlatforms`.
+      '';
     };
     # Default shell arguments
     shell = mkOption {
@@ -87,6 +100,7 @@ in
       # (deprecated): then its system is the eval system.  Reading the
       # definition does not recurse -- only `evalPackages`' *default*
       # references `config.evalSystem`, and a definition replaces it.
+      defaultText = literalMD "the system of `pkgs.pkgsBuildBuild` (or of `evalPackages`, when that is set)";
       default =
         if evalPackagesIsSet
         then config.evalPackages.stdenv.hostPlatform.system
@@ -112,6 +126,7 @@ in
       # given, and `evalSystem` follows it.  The default is cycle-free
       # because `evalSystem` only reads `evalPackages` when it is set.
       default = pkgs.haskell-nix.evalPackages.${config.evalSystem};
+      defaultText = literalExpression "pkgs.haskell-nix.evalPackages.\${config.evalSystem}";
       apply = v:
         if evalPackagesIsSet
         then lib.warn
@@ -132,6 +147,7 @@ in
     evalSrc = mkOption {
       type = either path package;
       default = config.src;
+      defaultText = literalExpression "config.src";
       description = ''
         Allows a different version of the src to be used at eval time.
         This is useful when building the source may require a build machine.
@@ -141,8 +157,11 @@ in
           * A version of the source that does not require building
       '';
     };
+    # Set by the project functions (`lib.evalProjectModule`) to the
+    # project's package set, so that modules can refer to it.
     hsPkgs = lib.mkOption {
       type = lib.types.unspecified;
+      internal = true;
     };
     # Used by stack and cabal projects via
     # - ./lib/call-cabal-project-to-nix.nix
