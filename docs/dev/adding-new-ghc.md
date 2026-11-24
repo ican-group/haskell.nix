@@ -38,9 +38,22 @@ nix-build scripts/check-compiler-materialization \
   --arg systems '["x86_64-linux" "aarch64-linux"]'
 ```
 
+To check every compiler that still uses materialized files and that CI builds
+(the latest release of each series older than GHC 9.11, and its `llvm`
+variant), pass `all`, on its own or in `compiler-nix-names`:
+
+```shell
+nix-build scripts/check-compiler-materialization --argstr compiler-nix-name all --keep-going
+```
+
 The ghcjs and cross entries in `scripts/check-compiler-materialization` are
 gated on hard-coded lists of compilers, so extend those if the `-ghcjs`
 directory of the compiler you changed is not covered.
+
+The plans are built at evaluation time, so a compiler whose plan cannot be
+built at all (rather than one whose materialized files are out of date) stops
+the whole `nix-build`, `--keep-going` or not.  Check that compiler on its own
+to see the error.
 
 The script turns on `checkMaterialization` for everything it evaluates, so it
 also checks the bootstrap tool plans above.  Updating those can change the
@@ -53,6 +66,15 @@ Materialized nix used for ghc967-boot-packages-nix.nix incorrect. To fix run: /n
 ```
 
 Run the `updateMaterialized` script and repeat the `nix-build` until it no longer fails.
+`scripts/check-compiler-materialization/update.sh` does that for you: it takes
+the same arguments as the `nix-build`, runs every `updateMaterialized` script
+a check asks for, and checks again, until nothing is left to update (it stops
+if a failure names no script, or if updating does not help):
+
+```shell
+scripts/check-compiler-materialization/update.sh --argstr compiler-nix-name all
+```
+
 If the failure is not a problem with materialization and no `updateMaterialized` script
 is provided then you may need to fix the failure another way or (if it only relates to
 one of the cross compilers) modify `scripts/check-compiler-materialization/default.nix`

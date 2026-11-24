@@ -1,8 +1,27 @@
 # This is for checking the materialization of new GHC versions
 # See docs/dev/adding-new-ghc.md for more details.
+#
+# `compiler-nix-name` (or an entry of `compiler-nix-names`) may be "all": the
+# compilers that still use materialized files (older than GHC 9.11, the test
+# `overlays/ghc-packages.nix` uses) and that CI builds, which is the latest
+# release of each of those series (as `ci.nix` picks them) and its llvm
+# variant.  Older releases of those series can still be named on their own,
+# but some no longer evaluate with the current nixpkgs.  For example:
+#
+#   nix-build scripts/check-compiler-materialization --argstr compiler-nix-name all --keep-going
+#
+# `./update.sh` runs that and the `updateMaterialized` scripts it asks for until
+# nothing is left to update.
 { compiler-nix-name ? throw "Please pass `compiler-nix-name` or `compiler-nix-names`", compiler-nix-names ? [ compiler-nix-name ], systems ? [ builtins.currentSystem ] }:
 let
   eval = (import ../../. {}).pkgs;
+  allCompilers = builtins.concatMap (series:
+      let name = eval.haskell-nix.resolve-compiler-name series;
+      in [ name ] ++ eval.lib.optional (eval.haskell-nix.compiler ? "${name}llvm") "${name}llvm")
+    [ "ghc96" "ghc98" "ghc910" ];
+  compiler-nix-names' = builtins.concatMap
+    (name: if name == "all" then allCompilers else [ name ])
+    compiler-nix-names;
 in builtins.listToAttrs (builtins.concatMap (system: builtins.concatMap (compiler-nix-name:
   let haskellNix = import ../../. { checkMaterialization = true; inherit system; };
       pkgs = haskellNix.pkgs-unstable;
@@ -44,4 +63,4 @@ in builtins.listToAttrs (builtins.concatMap (system: builtins.concatMap (compile
   { name = "${prefix}-boot-ghcjs";         value = pkgs.pkgsCross.ghcjs.ghc-boot-packages-nix.${compiler-nix-name}; }
   { name = "${prefix}-ghcjs";              value = (pkgs.pkgsCross.ghcjs.haskell-nix.roots' { inherit compiler-nix-name; }).ghc-extra-projects-nix or {}; }
   { name = "${prefix}-hello-ghcjs";        value = (pkgs.pkgsCross.ghcjs.haskell-nix.tool compiler-nix-name "hello" {}).project.plan-nix; }
-])) compiler-nix-names) systems)
+])) compiler-nix-names') systems)
