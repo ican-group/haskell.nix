@@ -63,11 +63,24 @@ more than one place; the definitions merge the way project modules do:
 perSystem = { ... }: {
   haskellNix.projects.default = { pkgs, ... }: {
     src = ./.;
-    imports = [ ./nix/hix.nix ];   # the settings `hix` uses
     shell.buildInputs = [ pkgs.nixpkgs-fmt ];
   };
 };
 ```
+
+The template and `hix init` keep the project's settings in `nix/hix.nix`,
+which the `hix` commands read too:
+
+```nix
+haskellNix.projects.default = {
+  src = ./.;
+  imports = [ haskellNix.projectModules.hix ./nix/hix.nix ];
+};
+```
+
+`haskellNix.projectModules.hix` declares the options that only the `hix`
+commands use (`nixpkgsPin`, `overlays` and so on, which a `nix/hix.nix` may
+set) and gives `compiler-nix-name` the default `hix` gives it.
 
 Reading `config.haskellNix.projects.<name>` gives the project itself:
 
@@ -84,13 +97,15 @@ perSystem = { config, ... }: {
 The outputs of the `default` project keep the names `project.flake` gives
 them (`hello:exe:hello`, the `default` dev shell).  Those of any other
 project get its name and `:` in front: `other:hello:exe:hello`, and the dev
-shell `devShells.other`.  The project's `flake` arguments apply as usual, so
-`flake.crossPlatforms` adds outputs such as `js-unknown-ghcjs:hello:exe:hello`
+shell `devShells.other`; only the `default` project gives `packages.default`
+and `apps.default`.  The project's `flake` arguments apply as usual, so
+`flake.crossPlatforms` adds outputs such as `javascript-unknown-ghcjs:hello:exe:hello`
 and `flake.variants` adds variants.
 
 The projects' `hydraJobs` and `ciJobs` are set on the flake too, laid out as
 `flake-utils.lib.eachSystem` lays them out: `hydraJobs.<job>.<system>` and
-`ciJobs.<system>.<job>`.
+`ciJobs.<system>.<job>`.  To set those outputs yourself, set
+`haskellNix.addHydraJobs = false` (outside `perSystem`).
 
 To choose the outputs yourself, set `haskellNix.addFlakeOutputs = false` and
 take what you want from `config.haskellNix.outputs`, which has the

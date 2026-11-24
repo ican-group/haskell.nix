@@ -215,11 +215,22 @@
         # projects; see docs/tutorials/flake-parts.md.  It shares
         # `legacyPackages` on the systems that has, and imports the same
         # nixpkgs on the others (aarch64-linux, for instance).
-        flakeModules.default = lib.setDefaultModuleLocation ./flake-module.nix
-          (import ./flake-module.nix {
+        # The `key` lets the module system import it only once when several
+        # flake modules import it.
+        flakeModules.default = {
+          key = "haskell.nix#flakeModules.default";
+          _file = ./flake-module.nix;
+          imports = [ (import ./flake-module.nix {
             pkgsFor = system: self.legacyPackages.${system} or (pkgsFor system);
-          });
+          }) ];
+        };
         flakeModule = self.flakeModules.default;
+
+        # Project modules, for `haskellNix.projects.<name>.imports` (or any
+        # project).  `hix` declares the options `nix/hix.nix` files may set
+        # for the `hix` commands (`nixpkgsPin`, `overlays`, ...) and gives
+        # `compiler-nix-name` the default `hix` gives it.
+        projectModules.hix = ./modules/hix-project.nix;
 
         internal = {
           nixpkgsArgs = {

@@ -54,15 +54,19 @@ first build.  Use a GHC version that haskell.nix CI builds for your target
 
 ### With flakes
 
-Pass `crossPlatforms` to the project's `flake` function to add the cross
-compiled components to the flake outputs.  Starting from the flake in
-[Getting started with flakes](getting-started-flakes.md):
+Set the project's `flake.crossPlatforms` to add the cross compiled
+components to the flake outputs.  Starting from the flake in
+[Getting started](getting-started.md#scaffolding), add it to the project:
 
 ```nix
-flake = pkgs.helloProject.flake {
-  crossPlatforms = p: [ p.musl64 p.ucrt64 ];
+haskellNix.projects.default = {
+  # ...
+  flake.crossPlatforms = p: [ p.musl64 p.ucrt64 ];
 };
 ```
+
+(Without flake-parts, pass it to the project's `flake` function instead:
+`project.flake { crossPlatforms = p: [ p.musl64 p.ucrt64 ]; }`.)
 
 Each cross compiled component is named after the target platform's
 `config` triple:

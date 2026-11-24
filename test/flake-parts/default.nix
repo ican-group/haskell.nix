@@ -3,11 +3,12 @@
 #
 #  * `default`, from two definitions (they merge like project modules), whose
 #    outputs keep their names;
-#  * `other`, whose outputs get `other:` in front.
+#  * `other`, whose outputs get `other:` in front (and no `other:default`).
 #
 # It checks the output names at evaluation time (as the flake would have them
 # for this system), that reading the option gives the project, that
-# `addFlakeOutputs = false` leaves the flake alone, and builds and runs the
+# `addFlakeOutputs = false` and `addHydraJobs = false` leave the flake alone,
+# and builds and runs the
 # `default` project's executable from the flake's `packages`.
 { stdenv, lib, pkgs, haskell-nix, runCommand, testSrc, compiler-nix-name, evalSystem, testCabalProjectLocal, testInputMap, ... }:
 
@@ -29,10 +30,10 @@ let
     modules = [{ packages.cabal-simple.doHaddock = false; }];
   };
 
-  evalFlake = extraPerSystem: flake-parts.lib.evalFlakeModule
+  evalFlake = extraPerSystem: extraTop: flake-parts.lib.evalFlakeModule
     { inputs.self = { outPath = ./.; }; }
     {
-      imports = [ module ];
+      imports = [ module extraTop ];
       systems = [ system ];
       perSystem = {
         imports = [ extraPerSystem ];
@@ -44,11 +45,12 @@ let
   eval = evalFlake {
     # A second definition of the same project.
     haskellNix.projects.default = { name = "flake-parts-default"; };
-  };
+  } { };
   flake = eval.config.flake;
   perSystem = eval.config.allSystems.${system};
 
-  disabledEval = evalFlake { haskellNix.addFlakeOutputs = false; };
+  disabledEval = evalFlake { haskellNix.addFlakeOutputs = false; } { };
+  noJobsEval = evalFlake { } { haskellNix.addHydraJobs = false; };
 
   exe = "cabal-simple:exe:cabal-simple";
 
@@ -56,8 +58,10 @@ let
   hasAll = names: attrs: lib.all (n: attrs ? ${n}) names;
 
   checked =
-    assert expect "packages has both projects' executables and defaults"
-      (hasAll [ exe "other:${exe}" "default" "other:default" ] flake.packages.${system});
+    assert expect "packages has both projects' executables, and the default project's default"
+      (hasAll [ exe "other:${exe}" "default" ] flake.packages.${system}
+        && !(flake.packages.${system} ? "other:default")
+        && !(flake.apps.${system} ? "other:default"));
     assert expect "apps has both projects' executables"
       (hasAll [ exe "other:${exe}" ] flake.apps.${system}
         && flake.apps.${system}.${exe}.type == "app");
@@ -73,8 +77,11 @@ let
         && perSystem.haskellNix.projects.default ? hsPkgs);
     assert expect "`addFlakeOutputs = false` adds nothing to the flake"
       (disabledEval.config.flake.packages.${system} == { }
-        && !(disabledEval.config.flake ? hydraJobs)
+        && disabledEval.config.flake.hydraJobs == { }
         && disabledEval.config.allSystems.${system}.haskellNix.outputs.packages ? ${exe});
+    assert expect "`addHydraJobs = false` leaves `hydraJobs` and `ciJobs` unset"
+      (!(noJobsEval.config.flake ? hydraJobs) && !(noJobsEval.config.flake ? ciJobs)
+        && noJobsEval.config.flake.packages.${system} ? ${exe});
     true;
 
 in lib.recurseIntoAttrs {

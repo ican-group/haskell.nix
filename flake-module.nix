@@ -29,7 +29,7 @@ in
           description = "haskell.nix project module";
           descriptionClass = "noun";
           check = x: builtins.isAttrs x || builtins.isFunction x
-            || builtins.isList x || builtins.isPath x;
+            || builtins.isList x || builtins.isPath x || builtins.isString x;
           merge = _loc: defs: cfg.pkgs.haskell-nix.project' (map
             (def: { _file = def.file; imports = lib.toList def.value; })
             defs);
@@ -83,7 +83,8 @@ in
               `haskellNix.addFlakeOutputs`): the `default` project's under
               their own names (`hello:exe:hello`), and the others' with the
               project name in front (`other:hello:exe:hello`, and the
-              `devShells.other` shell).
+              `devShells.other` shell).  Only the `default` project gives
+              `packages.default` and `apps.default`.
             '';
           };
 
@@ -102,15 +103,26 @@ in
             default = true;
             description = ''
               Add the projects' `packages`, `apps`, `checks` and `devShells`
-              to the flake, and their `hydraJobs` and `ciJobs` too.  Turn
-              this off to pick outputs from `haskellNix.outputs` yourself.
+              to the flake (and their jobs to `hydraJobs` and `ciJobs`, see
+              `haskellNix.addHydraJobs`).  Turn this off to pick outputs from
+              `haskellNix.outputs` yourself.
             '';
           };
         };
 
         config = {
+          # `packages.default` and `apps.default` come from the `default`
+          # project only: for the others they would just be second names
+          # (`other:default`) for components they already have (`project.flake`
+          # leaves them out of cross and variant outputs for the same reason).
           haskellNix.outputs = cfg.pkgs.haskell-nix.haskellLib.combineFlakes ":"
-            (lib.mapAttrs (_: project: project.flake') cfg.projects);
+            (lib.mapAttrs (name: project:
+                if name == "default" then project.flake'
+                else project.flake' // {
+                  packages = removeAttrs (project.flake'.packages or { }) [ "default" ];
+                  apps = removeAttrs (project.flake'.apps or { }) [ "default" ];
+                })
+              cfg.projects);
           packages = lib.mkIf cfg.addFlakeOutputs (cfg.outputs.packages or { });
           apps = lib.mkIf cfg.addFlakeOutputs (cfg.outputs.apps or { });
           checks = lib.mkIf cfg.addFlakeOutputs (cfg.outputs.checks or { });
@@ -119,23 +131,31 @@ in
       });
   };
 
-  # `hydraJobs` and `ciJobs` are laid out the way flake-utils' `eachSystem`
-  # does it (and haskell.nix's `project.flake` documentation expects):
-  # `hydraJobs.<job>.<system>` and `ciJobs.<system>.<job>`.  They are only
-  # set when some system has a project, so a flake that imports this module
-  # without using it can still set them itself.
-  config.flake =
+  options.haskellNix.addHydraJobs = mkOption {
+    type = types.bool;
+    default = true;
+    description = ''
+      Set the flake's `hydraJobs` and `ciJobs` to the projects' jobs (for the
+      systems where `haskellNix.addFlakeOutputs` is on), laid out the way
+      flake-utils' `eachSystem` lays them out: `hydraJobs.<job>.<system>` and
+      `ciJobs.<system>.<job>`.  Turn this off to set them yourself; each
+      system's are in `haskellNix.outputs`.
+    '';
+  };
+
+  # The condition only reads this option, so evaluating any flake output does
+  # not evaluate every system's `perSystem`; the jobs themselves are only
+  # evaluated when they are used.
+  config.flake = lib.mkIf topConfig.haskellNix.addHydraJobs (
     let
-      systems = lib.filterAttrs
-        (_: perSystem: perSystem.haskellNix.addFlakeOutputs
-          && lib.attrNames perSystem.haskellNix.projects != [ ])
+      systems = lib.filterAttrs (_: perSystem: perSystem.haskellNix.addFlakeOutputs)
         topConfig.allSystems;
-    in lib.mkIf (systems != { }) {
+    in {
       ciJobs = lib.mapAttrs (_: perSystem: perSystem.haskellNix.outputs.ciJobs or { }) systems;
       hydraJobs = lib.foldlAttrs (acc: system: perSystem:
           lib.recursiveUpdate acc
             (lib.mapAttrs (_: job: { ${system} = job; })
               (perSystem.haskellNix.outputs.hydraJobs or { })))
         { } systems;
-    };
+    });
 }

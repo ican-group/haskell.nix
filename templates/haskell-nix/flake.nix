@@ -19,7 +19,7 @@
         # `nix build` and `nix run` use the package in this directory.
         haskellNix.projects.default = {
           src = ./.;
-          imports = [ ./nix/hix.nix ];
+          imports = [ haskellNix.projectModules.hix ./nix/hix.nix ];
           # uncomment with your current system for `nix flake show` to work:
           #evalSystem = "x86_64-linux";
         };

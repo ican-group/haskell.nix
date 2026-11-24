@@ -22,9 +22,9 @@
           shell.buildInputs = with pkgs; [
             nixpkgs-fmt
           ];
-          # This adds `js-unknown-ghcjs-cabal` to the shell.
+          # This adds `javascript-unknown-ghcjs-cabal` to the shell.
           # shell.crossPlatforms = p: [p.ghcjs];
-          # This adds support for `nix build .#js-unknown-ghcjs:hello:exe:hello`
+          # This adds support for `nix build .#javascript-unknown-ghcjs:hello:exe:hello`
           # flake.crossPlatforms = p: [p.ghcjs];
         };
       };
