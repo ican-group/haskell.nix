@@ -1,0 +1,934 @@
+<!DOCTYPE HTML>
+<html lang="en" class="light sidebar-visible" dir="ltr">
+    <head>
+        <!-- Book generated using mdBook -->
+        <meta charset="UTF-8">
+        <title>Project options - Haskell.nix</title>
+
+
+        <!-- Custom HTML head -->
+
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <meta name="theme-color" content="#ffffff">
+
+        <link rel="icon" href="../favicon-de23e50b.svg">
+        <link rel="shortcut icon" href="../favicon-8114d1fc.png">
+        <link rel="stylesheet" href="../css/variables-8adf115d.css">
+        <link rel="stylesheet" href="../css/general-e96d0476.css">
+        <link rel="stylesheet" href="../css/chrome-d279d366.css">
+        <link rel="stylesheet" href="../css/print-9e4910d8.css" media="print">
+
+        <!-- Fonts -->
+        <link rel="stylesheet" href="../fonts/fonts-9644e21d.css">
+
+        <!-- Highlight.js Stylesheets -->
+        <link rel="stylesheet" id="mdbook-highlight-css" href="../highlight-493f70e1.css">
+        <link rel="stylesheet" id="mdbook-tomorrow-night-css" href="../tomorrow-night-4c0ae647.css">
+        <link rel="stylesheet" id="mdbook-ayu-highlight-css" href="../ayu-highlight-3fdfc3ac.css">
+
+        <!-- Custom theme stylesheets -->
+
+
+        <!-- Provide site root and default themes to javascript -->
+        <script>
+            const path_to_root = "../";
+            const default_light_theme = "light";
+            const default_dark_theme = "navy";
+            window.path_to_searchindex_js = "../searchindex-21eb71f5.js";
+        </script>
+        <!-- Start loading toc.js asap -->
+        <script src="../toc-ff041463.js"></script>
+    </head>
+    <body>
+    <div id="mdbook-help-container">
+        <div id="mdbook-help-popup">
+            <h2 class="mdbook-help-title">Keyboard shortcuts</h2>
+            <div>
+                <p>Press <kbd>←</kbd> or <kbd>→</kbd> to navigate between chapters</p>
+                <p>Press <kbd>S</kbd> or <kbd>/</kbd> to search in the book</p>
+                <p>Press <kbd>?</kbd> to show this help</p>
+                <p>Press <kbd>Esc</kbd> to hide this help</p>
+            </div>
+        </div>
+    </div>
+    <div id="mdbook-body-container">
+        <!-- Work around some values being stored in localStorage wrapped in quotes -->
+        <script>
+            try {
+                let theme = localStorage.getItem('mdbook-theme');
+                let sidebar = localStorage.getItem('mdbook-sidebar');
+
+                if (theme.startsWith('"') && theme.endsWith('"')) {
+                    localStorage.setItem('mdbook-theme', theme.slice(1, theme.length - 1));
+                }
+
+                if (sidebar.startsWith('"') && sidebar.endsWith('"')) {
+                    localStorage.setItem('mdbook-sidebar', sidebar.slice(1, sidebar.length - 1));
+                }
+            } catch (e) { }
+        </script>
+
+        <!-- Set the theme before any content is loaded, prevents flash -->
+        <script>
+            const default_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? default_dark_theme : default_light_theme;
+            let theme;
+            try { theme = localStorage.getItem('mdbook-theme'); } catch(e) { }
+            if (theme === null || theme === undefined) { theme = default_theme; }
+            const html = document.documentElement;
+            html.classList.remove('light')
+            html.classList.add(theme);
+            html.classList.add("js");
+        </script>
+
+        <input type="checkbox" id="mdbook-sidebar-toggle-anchor" class="hidden">
+
+        <!-- Hide / unhide sidebar before it is displayed -->
+        <script>
+            let sidebar = null;
+            const sidebar_toggle = document.getElementById("mdbook-sidebar-toggle-anchor");
+            if (document.body.clientWidth >= 1080) {
+                try { sidebar = localStorage.getItem('mdbook-sidebar'); } catch(e) { }
+                sidebar = sidebar || 'visible';
+            } else {
+                sidebar = 'hidden';
+                sidebar_toggle.checked = false;
+            }
+            if (sidebar === 'visible') {
+                sidebar_toggle.checked = true;
+            } else {
+                html.classList.remove('sidebar-visible');
+            }
+        </script>
+
+        <nav id="mdbook-sidebar" class="sidebar" aria-label="Table of contents">
+            <!-- populated by js -->
+            <mdbook-sidebar-scrollbox class="sidebar-scrollbox"></mdbook-sidebar-scrollbox>
+            <noscript>
+                <iframe class="sidebar-iframe-outer" src="../toc.html"></iframe>
+            </noscript>
+            <div id="mdbook-sidebar-resize-handle" class="sidebar-resize-handle">
+                <div class="sidebar-resize-indicator"></div>
+            </div>
+        </nav>
+
+        <div id="mdbook-page-wrapper" class="page-wrapper">
+
+            <div class="page">
+                <div id="mdbook-menu-bar-hover-placeholder"></div>
+                <div id="mdbook-menu-bar" class="menu-bar sticky">
+                    <div class="left-buttons">
+                        <label id="mdbook-sidebar-toggle" class="icon-button" for="mdbook-sidebar-toggle-anchor" title="Toggle Table of Contents" aria-label="Toggle Table of Contents" aria-controls="mdbook-sidebar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M0 96C0 78.3 14.3 64 32 64H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32C14.3 128 0 113.7 0 96zM0 256c0-17.7 14.3-32 32-32H416c17.7 0 32 14.3 32 32s-14.3 32-32 32H32c-17.7 0-32-14.3-32-32zM448 416c0 17.7-14.3 32-32 32H32c-17.7 0-32-14.3-32-32s14.3-32 32-32H416c17.7 0 32 14.3 32 32z"/></svg></span>
+                        </label>
+                        <button id="mdbook-theme-toggle" class="icon-button" type="button" title="Change theme" aria-label="Change theme" aria-haspopup="true" aria-expanded="false" aria-controls="mdbook-theme-list">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M371.3 367.1c27.3-3.9 51.9-19.4 67.2-42.9L600.2 74.1c12.6-19.5 9.4-45.3-7.6-61.2S549.7-4.4 531.1 9.6L294.4 187.2c-24 18-38.2 46.1-38.4 76.1L371.3 367.1zm-19.6 25.4l-116-104.4C175.9 290.3 128 339.6 128 400c0 3.9 .2 7.8 .6 11.6c1.8 17.5-10.2 36.4-27.8 36.4H96c-17.7 0-32 14.3-32 32s14.3 32 32 32H240c61.9 0 112-50.1 112-112c0-2.5-.1-5-.2-7.5z"/></svg></span>
+                        </button>
+                        <ul id="mdbook-theme-list" class="theme-popup" aria-label="Themes" role="menu">
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-default_theme">Auto</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-light">Light</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-rust">Rust</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-coal">Coal</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-navy">Navy</button></li>
+                            <li role="none"><button role="menuitem" class="theme" id="mdbook-theme-ayu">Ayu</button></li>
+                        </ul>
+                        <button id="mdbook-search-toggle" class="icon-button" type="button" title="Search (`/`)" aria-label="Toggle Searchbar" aria-expanded="false" aria-keyshortcuts="/ s" aria-controls="mdbook-searchbar">
+                            <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M416 208c0 45.9-14.9 88.3-40 122.7L502.6 457.4c12.5 12.5 12.5 32.8 0 45.3s-32.8 12.5-45.3 0L330.7 376c-34.4 25.2-76.8 40-122.7 40C93.1 416 0 322.9 0 208S93.1 0 208 0S416 93.1 416 208zM208 352c79.5 0 144-64.5 144-144s-64.5-144-144-144S64 128.5 64 208s64.5 144 144 144z"/></svg></span>
+                        </button>
+                    </div>
+
+                    <h1 class="menu-title">Haskell.nix</h1>
+
+                    <div class="right-buttons">
+                        <a href="../print.html" title="Print this book" aria-label="Print this book">
+                            <span class=fa-svg id="print-button"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M128 0C92.7 0 64 28.7 64 64v96h64V64H354.7L384 93.3V160h64V93.3c0-17-6.7-33.3-18.7-45.3L400 18.7C388 6.7 371.7 0 354.7 0H128zM384 352v32 64H128V384 368 352H384zm64 32h32c17.7 0 32-14.3 32-32V256c0-35.3-28.7-64-64-64H64c-35.3 0-64 28.7-64 64v96c0 17.7 14.3 32 32 32H64v64c0 35.3 28.7 64 64 64H384c35.3 0 64-28.7 64-64V384zm-16-88c-13.3 0-24-10.7-24-24s10.7-24 24-24s24 10.7 24 24s-10.7 24-24 24z"/></svg></span>
+                        </a>
+
+                    </div>
+                </div>
+
+                <div id="mdbook-search-wrapper" class="hidden">
+                    <form id="mdbook-searchbar-outer" class="searchbar-outer">
+                        <div class="search-wrapper">
+                            <input type="search" id="mdbook-searchbar" name="searchbar" placeholder="Search this book ..." aria-controls="mdbook-searchresults-outer" aria-describedby="searchresults-header">
+                            <div class="spinner-wrapper">
+                                <span class=fa-svg id="fa-spin"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M304 48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zm0 416c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM48 304c26.5 0 48-21.5 48-48s-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48zm464-48c0-26.5-21.5-48-48-48s-48 21.5-48 48s21.5 48 48 48s48-21.5 48-48zM142.9 437c18.7-18.7 18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zm0-294.2c18.7-18.7 18.7-49.1 0-67.9S93.7 56.2 75 75s-18.7 49.1 0 67.9s49.1 18.7 67.9 0zM369.1 437c18.7 18.7 49.1 18.7 67.9 0s18.7-49.1 0-67.9s-49.1-18.7-67.9 0s-18.7 49.1 0 67.9z"/></svg></span>
+                            </div>
+                        </div>
+                    </form>
+                    <div id="mdbook-searchresults-outer" class="searchresults-outer hidden">
+                        <div id="mdbook-searchresults-header" class="searchresults-header"></div>
+                        <ul id="mdbook-searchresults">
+                        </ul>
+                    </div>
+                </div>
+
+                <!-- Apply ARIA attributes after the sidebar and the sidebar toggle button are added to the DOM -->
+                <script>
+                    document.getElementById('mdbook-sidebar-toggle').setAttribute('aria-expanded', sidebar === 'visible');
+                    document.getElementById('mdbook-sidebar').setAttribute('aria-hidden', sidebar !== 'visible');
+                    Array.from(document.querySelectorAll('#mdbook-sidebar a')).forEach(function(link) {
+                        link.setAttribute('tabIndex', sidebar === 'visible' ? 0 : -1);
+                    });
+                </script>
+
+                <div id="mdbook-content" class="content">
+                    <main>
+                        <h1 id="project-options"><a class="header" href="#project-options">Project options</a></h1>
+<p>These are the arguments of <a href="library.html#cabalproject"><code>cabalProject'</code></a>,
+<a href="library.html#stackproject"><code>stackProject'</code></a> and
+<a href="library.html#project"><code>project'</code></a> (and their unprimed versions).  The project
+functions take a module, so an argument can also be a list of modules or a
+function of <code>{ config, pkgs, lib, ... }</code>, and
+<a href="library.html#cabalproject"><code>appendModule</code></a> adds more modules to a project:</p>
+<pre><code class="language-nix">pkgs.haskell-nix.cabalProject' [
+  { src = ./.; compiler-nix-name = "ghc912"; }
+  ({ config, ... }: { shell.tools.cabal = "latest"; })
+]
+</code></pre>
+<p>The <code>modules</code> argument is different: it sets the options of the package
+set, which are on the <a href="modules.html">Module options</a> page.</p>
+<p>!!! note “Generated”
+This page is generated from the Nix sources in
+<a href="https://github.com/ican-group/haskell.nix/tree/master/modules"><code>modules</code></a>
+by <code>scripts/project-options-doc.nix</code>.</p>
+<h2 id="options-of-every-project"><a class="header" href="#options-of-every-project">Options of every project</a></h2>
+<h3 id="builderversion"><a class="header" href="#builderversion"><code>builderVersion</code></a></h3>
+<p>Selects which component builder is used for per-component derivations.</p>
+<ul>
+<li><code>1</code> (default) — the Setup.hs-based builder (comp-builder.nix).</li>
+<li><code>2</code> — the cabal v2-build-based slicing builder
+(comp-v2-builder.nix).
+This is project-wide.  Set it on the project module to switch
+builders; there is no per-component opt-in.</li>
+</ul>
+<p><strong>Type</strong>: signed integer</p>
+<p><strong>Default</strong>: <code>1</code></p>
+<h3 id="crossplatforms"><a class="header" href="#crossplatforms"><code>crossPlatforms</code></a></h3>
+<p>The cross-compilation platforms of the project, selected from
+<code>pkgs.pkgsCross</code>-like platforms (see <code>lib.systems.examples</code> in
+nixpkgs).  The default for <code>shell.crossPlatforms</code> and
+<code>flake.crossPlatforms</code>.</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: <code>p: [ ]</code></p>
+<p><strong>Example</strong>: <code>p: [ p.ghcjs p.mingwW64 ]</code></p>
+<h3 id="evalpackages"><a class="header" href="#evalpackages"><code>evalPackages</code></a></h3>
+<p>Packages used to run <code>cabal</code> and <code>nix-tools</code>, derived from
+<code>evalSystem</code> via the memoised <code>haskell-nix.evalPackages</code> attrset.
+Defaults to <code>pkgs.pkgsBuildBuild</code> when <code>evalSystem</code> matches the
+<code>pkgsBuildBuild</code> system (the common case), otherwise a shared
+nixpkgs imported for <code>evalSystem</code> from the same path and overlays.
+Select the eval platform with <code>evalSystem</code> rather than setting this
+directly; setting it is deprecated and gives a warning.</p>
+<p><strong>Type</strong>: attribute set</p>
+<p><strong>Default</strong>: <code>pkgs.haskell-nix.evalPackages.${config.evalSystem}</code></p>
+<h3 id="evalsrc"><a class="header" href="#evalsrc"><code>evalSrc</code></a></h3>
+<p>Allows a different version of the src to be used at eval time.
+This is useful when building the source may require a build machine.
+To avoid an eval time dependency on a build machine set <code>evalSrc</code>
+to either:</p>
+<ul>
+<li>A version of the source built using <code>evalPackages</code></li>
+<li>A version of the source that does not require building</li>
+</ul>
+<p><strong>Type</strong>: absolute path or package</p>
+<p><strong>Default</strong>: <code>config.src</code></p>
+<h3 id="evalsystem"><a class="header" href="#evalsystem"><code>evalSystem</code></a></h3>
+<p>Specifies the system on which <code>cabal</code> and <code>nix-tools</code> should run.
+If not specified the <code>pkgsBuildBuild</code> system will be used.
+If there are no builders for the <code>pkgsBuildBuild</code> system
+specifying a system for which there are builders will
+allow the evaluation of the haskell project to work.</p>
+<p><strong>Type</strong>: string</p>
+<p><strong>Default</strong>: the system of <code>pkgs.pkgsBuildBuild</code> (or of <code>evalPackages</code>, when that is set)</p>
+<h3 id="hpack"><a class="header" href="#hpack"><code>hpack</code></a></h3>
+<p>The <code>hpack</code> that turns <code>package.yaml</code> files into <code>.cabal</code> files, for
+the packages of a cabal project (<code>supportHpack = true</code>) that have no
+<code>.cabal</code> file.  When it is set, it runs on the project source (the
+whole source, as the source filter leaves it) in a step of its own,
+and the <code>.cabal</code> files it writes are what <code>plan-to-nix</code> reads and
+what the packages are built with (the builders do not run hpack
+again), so the plan and the build always agree.  Editing a source
+file re-runs only that hpack step; the project is only planned again
+when a generated <code>.cabal</code> file changes.</p>
+<p>A version string (pin it, e.g. <code>"0.38.1"</code>), or other
+<code>haskell-nix.tool</code> arguments (an attribute set, a module list or a
+function), builds that hpack with <code>haskell-nix.tool</code> and the
+project’s compiler, on <code>evalSystem</code> (so each compiler builds its
+own hpack before the project can be planned).  A derivation with
+<code>bin/hpack</code> is used as it is; it must run on <code>evalSystem</code>.  <code>null</code>
+(the default) uses the hpack that ships with nix-tools, which the
+builders also run.</p>
+<p>Stack projects ignore it (with a warning): <code>stack-to-nix</code> plans with
+its own built-in hpack.</p>
+<p><strong>Type</strong>: null or package or string or (attribute set) or list of unspecified value or function that evaluates to a(n) unspecified value</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<p><strong>Example</strong>: <code>"0.38.1"</code></p>
+<h3 id="ignorepackageyaml"><a class="header" href="#ignorepackageyaml"><code>ignorePackageYaml</code></a></h3>
+<p>If set, prevents nix-tools from attempting to load package.yaml even if it is present.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="injectstablehaskellbootpackages"><a class="header" href="#injectstablehaskellbootpackages"><code>injectStableHaskellBootPackages</code></a></h3>
+<p>Inject the stable-haskell GHC’s boot package sources
+(source-repository-package on the configured GHC tree, exact
+version pins for the hackage-resolved boot deps, and the
+stage3-style project configuration) into the project’s
+cabal.project, so cabal plans and builds rts, base, … from
+source alongside the project’s own packages.</p>
+<p><code>null</code> (the default) auto-detects: the injection is applied
+exactly when the selected compiler is a stable-haskell
+<code>-target</code> cross wrapper (<code>passthru.emptyGlobalPackageDb</code>),
+whose global package db ships no boot libraries.  See
+<code>modules/cabal-project.nix</code> for the wiring.</p>
+<p><strong>Type</strong>: null or boolean</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="name"><a class="header" href="#name"><code>name</code></a></h3>
+<p>Optional name for better error messages</p>
+<p><strong>Type</strong>: null or string</p>
+<p><strong>Default</strong>: <code>"haskell-project"</code></p>
+<h3 id="silenceorgmovewarning"><a class="header" href="#silenceorgmovewarning"><code>silenceOrgMoveWarning</code></a></h3>
+<p>Hide the warning shown when the project’s flake.lock, niv or npins
+pins still reference haskell.nix (or hackage.nix / stackage.nix)
+under its old GitHub owner.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="src"><a class="header" href="#src"><code>src</code></a></h3>
+<p>The project’s source: the directory with the <code>cabal.project</code> (or
+<code>stack.yaml</code>) file and the packages.  Often filtered, for instance
+with <code>haskellLib.cleanGit</code> or <code>haskellLib.cleanSourceWith</code>.</p>
+<p><strong>Type</strong>: absolute path or package</p>
+<h3 id="uselocalghclib"><a class="header" href="#uselocalghclib"><code>useLocalGhcLib</code></a></h3>
+<p>Expose the GHC compiler tree (configured-src + generated, the
+<code>compiler/</code> subdir thereof) to the planner as a regular
+reinstallable package source.  Use this when the project
+depends on / constrains the <code>ghc</code> package — e.g.
+<code>ghc-lib-reinstallable</code>.</p>
+<p>The project-level wiring differs by builder:</p>
+<ul>
+<li>Cabal projects (see <code>modules/cabal-project.nix</code>) inject a
+<code>source-repository-package</code> block into <code>cabalProjectLocal</code>
+so cabal hashes the wrapped repo’s content into
+<code>pkg-src-sha256</code>.  Both plan-to-nix and the v2 slice see
+the same repo, so UnitIds align.</li>
+<li>Stack projects (see <code>modules/stack-project.nix</code>) re-add
+the post-plan <code>packages.ghc.src</code> override that
+<code>modules/configuration-nix.nix</code> used to apply
+unconditionally — stack only supports the v1 builder for
+now, so the post-plan override is harmless (v1 doesn’t
+enforce UnitId alignment).</li>
+</ul>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="v2localpackageslicenames"><a class="header" href="#v2localpackageslicenames"><code>v2LocalPackageSliceNames</code></a></h3>
+<p>Package names whose LIBRARY slices are built in cabal <code>packages:</code>
+mode, as <code>v2LocalPackageSlices</code> does for every local unit, but
+without that option’s other project-wide effects (the solver’s
+view of the compiler’s global db).  Set by the stable-haskell
+boot injection for <code>ghc</code>, whose unit id GHC itself hard-codes.
+Only meaningful with <code>builderVersion = 2</code>.</p>
+<p><strong>Type</strong>: list of string</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="v2localpackageslices"><a class="header" href="#v2localpackageslices"><code>v2LocalPackageSlices</code></a></h3>
+<p>Build v2 slices for <code>style: "local"</code> plan units in cabal
+<code>packages:</code> mode instead of <code>extra-packages:</code> mode, so each
+slice’s cabal elaborates — and REGISTERS — the same
+deterministic local unit id the project plan records
+(<code>base-4.22.0.0</code>, <code>rts-1.0.3-threaded-nodebug</code>, …), and the
+slice/plan unit-id equality check is enforced for them.</p>
+<p>Set by the stable-haskell stage2 boot-library project: its
+slices’ registered ids become the compiler’s global package db,
+which consumer projects’ plan-time dummy <code>ghc-pkg dump</code> must be
+able to predict (an <code>extra-packages:</code> slice registers an
+unpredictable hashed id instead).  Only meaningful with
+<code>builderVersion = 2</code>.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h2 id="project-options-1"><a class="header" href="#project-options-1"><code>project'</code> options</a></h2>
+<h3 id="projectfilename"><a class="header" href="#projectfilename"><code>projectFileName</code></a></h3>
+<p>Only for <code>project'</code>: the project file in <code>src</code> to use, which makes
+it a Stack project when it ends in <code>.yaml</code> and a cabal project
+otherwise (with this file as <code>cabalProjectFileName</code>).  By default
+<code>project'</code> uses <code>cabal.project</code> when <code>src</code> has one, and otherwise
+<code>stack.yaml</code> when it has that.</p>
+<p><strong>Type</strong>: null or string</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<p><strong>Example</strong>: <code>"stack.yaml"</code></p>
+<h2 id="cabalproject-options"><a class="header" href="#cabalproject-options"><code>cabalProject'</code> options</a></h2>
+<h3 id="cabal-cabalproject"><a class="header" href="#cabal-cabalproject"><code>cabalProject</code></a></h3>
+<p>The contents of the <code>cabal.project</code> file.  <code>null</code> (when there is no
+project file) plans the packages in the root of <code>src</code>.</p>
+<p><strong>Type</strong>: null or strings concatenated with “\n”</p>
+<p><strong>Default</strong>: the contents of <code>cabalProjectFileName</code> in <code>evalSrc</code>, if there is one</p>
+<h3 id="cabal-cabalprojectfilename"><a class="header" href="#cabal-cabalprojectfilename"><code>cabalProjectFileName</code></a></h3>
+<p>The name of the project file in <code>src</code> that <code>cabalProject</code> is read
+from.</p>
+<p><strong>Type</strong>: string</p>
+<p><strong>Default</strong>: <code>"cabal.project"</code></p>
+<h3 id="cabal-cabalprojectfreeze"><a class="header" href="#cabal-cabalprojectfreeze"><code>cabalProjectFreeze</code></a></h3>
+<p>Text added to the project as <code>cabal.project.freeze</code>.  A
+<code>cabal.project.freeze</code> file in <code>src</code> is not read; use
+<code>builtins.readFile ./cabal.project.freeze</code> for that.</p>
+<p><strong>Type</strong>: strings concatenated with “\n”</p>
+<p><strong>Default</strong>: <code>""</code></p>
+<h3 id="cabal-cabalprojectlocal"><a class="header" href="#cabal-cabalprojectlocal"><code>cabalProjectLocal</code></a></h3>
+<p>Text appended to the <code>cabalProject</code> text, for settings that would
+otherwise go in a <code>cabal.project.local</code>.  (It is not a separate
+<code>cabal.project.local</code>, so <code>cabalProjectFreeze</code> constraints, which
+are in a <code>cabal.project.freeze</code>, come after it.)  A
+<code>cabal.project.local</code> file in <code>src</code> is not read; use
+<code>builtins.readFile ./cabal.project.local</code> for that.</p>
+<p><strong>Type</strong>: strings concatenated with “\n”</p>
+<p><strong>Default</strong>: <code>""</code></p>
+<h3 id="cabal-checkmaterialization"><a class="header" href="#cabal-checkmaterialization"><code>checkMaterialization</code></a></h3>
+<p>If true the nix files will be generated used to check plan-sha256 and material</p>
+<p><strong>Type</strong>: null or boolean</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="cabal-compiler-nix-name"><a class="header" href="#cabal-compiler-nix-name"><code>compiler-nix-name</code></a></h3>
+<p>The name of the ghc compiler to use eg. “ghc884”</p>
+<p><strong>Type</strong>: string</p>
+<h3 id="cabal-compilerselection"><a class="header" href="#cabal-compilerselection"><code>compilerSelection</code></a></h3>
+<p>Use GHC from pkgs.haskell instead of pkgs.haskell-nix</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: <code>p.haskell-nix.compiler</code>, with each compiler set up to run <code>evalSystem</code> tools</p>
+<h3 id="cabal-configureargs"><a class="header" href="#cabal-configureargs"><code>configureArgs</code></a></h3>
+<p>Extra arguments to pass to <code>cabal v2-configure</code>.
+<code>--enable-tests --enable-benchmarks</code> are included by default.
+If the tests and benchmarks are not needed and they
+cause the wrong plan to be chosen, then we can use
+<code>configureArgs = "--disable-tests --disable-benchmarks";</code></p>
+<p><strong>Type</strong>: null or strings concatenated with “ “</p>
+<p><strong>Default</strong>: <code>""</code></p>
+<h3 id="cabal-extra-hackage-tarballs"><a class="header" href="#cabal-extra-hackage-tarballs"><code>extra-hackage-tarballs</code></a></h3>
+<p>The <code>01-index.tar.gz</code> index of each extra Hackage repository the
+<code>cabal.project</code> uses, by repository name.  Use with
+<code>extra-hackages</code>.</p>
+<p><strong>Type</strong>: null or (attribute set)</p>
+<p><strong>Default</strong>: <code>{ }</code></p>
+<p><strong>Example</strong>: <code>{ my-hackage = ./01-index.tar.gz; }</code></p>
+<h3 id="cabal-extra-hackages"><a class="header" href="#cabal-extra-hackages"><code>extra-hackages</code></a></h3>
+<p>The Nix expressions (as generated by <code>hackage-to-nix</code>) of Hackage
+repositories the project uses besides the main one.  See also
+<code>extra-hackage-tarballs</code>.</p>
+<p><strong>Type</strong>: null or (list of unspecified value)</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="cabal-ghc"><a class="header" href="#cabal-ghc"><code>ghc</code></a></h3>
+<p>Deprecated in favour of <code>compiler-nix-name</code></p>
+<p><strong>Type</strong>: null or package</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="cabal-ghcoverride"><a class="header" href="#cabal-ghcoverride"><code>ghcOverride</code></a></h3>
+<p>Used when we need to set ghc explicitly during bootstrapping</p>
+<p><strong>Type</strong>: null or package</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="cabal-index-sha256"><a class="header" href="#cabal-index-sha256"><code>index-sha256</code></a></h3>
+<p>The hash of the truncated hackage index-state</p>
+<p><strong>Type</strong>: null or string</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="cabal-index-state"><a class="header" href="#cabal-index-state"><code>index-state</code></a></h3>
+<p>Hackage index-state, eg. “2019-10-10T00:00:00Z”</p>
+<p><strong>Type</strong>: null or string</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="cabal-inputmap"><a class="header" href="#cabal-inputmap"><code>inputMap</code></a></h3>
+<p>Specifies the contents of urls in the cabal.project file.
+The <code>.rev</code> attribute is checked against the <code>tag</code> for <code>source-repository-packages</code>.
+For <code>revision</code> blocks the <code>inputMap.&lt;url&gt;</code> will be used and
+they <code>.tar.gz</code> for the <code>packages</code> used will also be looked up
+in the <code>inputMap</code>.</p>
+<p><strong>Type</strong>: null or (attribute set)</p>
+<p><strong>Default</strong>: <code>{ }</code></p>
+<h3 id="cabal-materialized"><a class="header" href="#cabal-materialized"><code>materialized</code></a></h3>
+<p>Location of a materialized copy of the nix files</p>
+<p><strong>Type</strong>: null or absolute path or package</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="cabal-modules"><a class="header" href="#cabal-modules"><code>modules</code></a></h3>
+<p>Modules for the project’s package set, for instance to set the
+options of its packages and components (see
+<a href="modules.html">Module options</a>).</p>
+<p><strong>Type</strong>: null or (list of unspecified value)</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="cabal-nix-tools"><a class="header" href="#cabal-nix-tools"><code>nix-tools</code></a></h3>
+<p>nix-tools to use when converting the <code>plan.json</code> to nix</p>
+<p><strong>Type</strong>: null or package</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="cabal-pkg-def-extras"><a class="header" href="#cabal-pkg-def-extras"><code>pkg-def-extras</code></a></h3>
+<p>Extra packages to add to the package set (<code>pkg-def</code>).</p>
+<p><strong>Type</strong>: null or (list of unspecified value)</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="cabal-plan-sha256"><a class="header" href="#cabal-plan-sha256"><code>plan-sha256</code></a></h3>
+<p>The hash of the plan-to-nix output (makes the plan-to-nix step a fixed output derivation)</p>
+<p><strong>Type</strong>: null or string</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="cabal-prebuilt-depends"><a class="header" href="#cabal-prebuilt-depends"><code>prebuilt-depends</code></a></h3>
+<p>pre-built (perhaps proprietary) Haskell packages to make available as dependencies</p>
+<p>See Note [prebuilt dependencies] for more details</p>
+<p><strong>Type</strong>: list of package</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="cabal-prepopulatehackageindex"><a class="header" href="#cabal-prepopulatehackageindex"><code>prepopulateHackageIndex</code></a></h3>
+<p>Whether to prepopulate the full Hackage index (~1.2 GB, truncated to the
+project’s <code>index-state</code>) into the <code>CABAL_DIR</code> used for plan-to-nix.</p>
+<p>cabal parses this index at startup on every invocation — even with
+<code>active-repositories: :none</code> — so for projects that resolve nothing from
+Hackage (every dependency pinned as a local package or
+source-repository-package, e.g. via <code>replace-hackage-tarball-urls</code>), the
+full index is a large, needless cost (seconds natively, minutes under
+emulation).  Set this false for such projects to prepopulate an empty
+index instead, which cabal loads instantly.  Leave true (the default)
+for normal projects that resolve dependencies from Hackage.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>true</code></p>
+<h3 id="cabal-replace-hackage-tarball-urls"><a class="header" href="#cabal-replace-hackage-tarball-urls"><code>replace-hackage-tarball-urls</code></a></h3>
+<p>When enabled, rewrite direct Hackage tarball URLs in the cabal.project
+<code>packages:</code> stanza — of the form
+<code>https://hackage.haskell.org/package/NAME-VER/NAME-VER.tar.gz</code> — into
+local nix store paths fetched via hackage.nix (haskell-nix.hackageTarball).</p>
+<p>This lets cabal use the exact pinned versions without network access
+during plan-to-nix, and without the version needing to be present at the
+project’s <code>index-state</code> (hackage.nix carries the sha256 for the exact
+version).  Off by default; enable for projects (such as the stable
+Haskell GHC build) that pin dependencies via direct Hackage URLs.</p>
+<p>The plan-to-nix rewrite uses <code>evalPackages</code> (the tarballs are only read
+at eval time), while each found package’s build <code>src</code> is overridden to
+the content-identical <code>buildPackages</code> tarball, so the built derivation
+stays independent of the eval platform.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="cabal-sha256map"><a class="header" href="#cabal-sha256map"><code>sha256map</code></a></h3>
+<p>An alternative to adding <code>--sha256</code> comments into the
+cabal.project file:
+sha256map =
+{ “https://github.com/jgm/pandoc-citeproc”.“0.17”
+= “0dxx8cp2xndpw3jwiawch2dkrkp15mil7pyx7dvd810pwc22pm2q”; };</p>
+<p><strong>Type</strong>: null or (attribute set of (string or attribute set of string))</p>
+<p><strong>Default</strong>:</p>
+<pre><code class="language-nix">{
+  "https://github.com/pepeiborra/ekg-json" = {
+    "7a0af7a8fd38045fd15fb13445bdcc7085325460" = "sha256-fVwKxGgM0S4Kv/4egVAAiAjV7QB5PBqMVMCfsv7otIQ=";
+  };
+}
+</code></pre>
+<h3 id="cabal-source-repo-override"><a class="header" href="#cabal-source-repo-override"><code>source-repo-override</code></a></h3>
+<p>Changes to the <code>source-repository-package</code>s of the <code>cabal.project</code>:
+a function, by repository url, from the stanza’s data to its
+replacement.  Useful because cabal does not let a
+<code>cabal.project.local</code> replace a <code>source-repository-package</code> (for
+instance to test against the latest version of a dependency).</p>
+<p><strong>Type</strong>: attribute set of function that evaluates to a(n) (attribute set)</p>
+<p><strong>Default</strong>: <code>{ }</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-nix">{ "https://github.com/input-output-hk/plutus-apps" =
+    orig: orig // { subdirs = (orig.subdirs or [ "." ]) ++ [ "foo" ]; }; }
+</code></pre>
+<h3 id="cabal-supporthpack"><a class="header" href="#cabal-supporthpack"><code>supportHpack</code></a></h3>
+<p>Run hpack on the <code>package.yaml</code> of packages that have no <code>.cabal</code>
+file (see <code>hpack</code>).</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="cabal-usepatchedhsc2hs"><a class="header" href="#cabal-usepatchedhsc2hs"><code>usePatchedHsc2hs</code></a></h3>
+<p>Offer cabal’s solver haskell.nix’s patched hsc2hs as
+<code>hsc2hs-${pkgs.haskell-nix.hsc2hs-patched-version}</code>, from a small
+package repository added to the project (<code>haskell-nix-hsc2hs</code>).
+It is stable-haskell’s batch cross-compilation fork of hsc2hs with
+haskell.nix’s fix to it (see overlays/hsc2hs.nix), which makes
+cross-compiled <code>.hsc</code> files much faster to process – around 15x
+for the GHC JavaScript backend and 20x for wasm.</p>
+<p>It is only a candidate.  It is chosen when a plan needs hsc2hs as a
+build tool (<code>build-tool-depends</code> or the legacy <code>build-tools</code>) and
+the version satisfies the constraints on it; otherwise cabal picks
+another version as usual.  Packages that do not ask for hsc2hs keep
+using the compiler’s.</p>
+<p>A project that sets <code>active-repositories</code> has to list
+<code>haskell-nix-hsc2hs</code> itself for the repository to be used.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>true</code></p>
+<h3 id="cabal-withbuildcompiler"><a class="header" href="#cabal-withbuildcompiler"><code>withBuildCompiler</code></a></h3>
+<p>Pass a <em>build</em>-platform dummy <code>ghc</code> + <code>ghc-pkg</code> to <code>make-install-plan</code>
+during plan-to-nix, via <code>--with-build-compiler</code> / <code>--with-build-hc-pkg</code>
+(the stable-haskell cabal fork’s cross “stage” system,
+haskell/cabal#11179).</p>
+<p>The build dummy’s <code>ghc --info</code> reports the build (native) platform and
+its <code>ghc-pkg dump --global</code> lists the build boot libraries (especially
+<code>ghc-internal</code>) as installed.  That satisfies a source project’s
+<code>constraints: build:any.ghc-internal installed</code> and lets cabal resolve
+build-tool-depends (e.g. <code>hsc2hs</code>) in the build scope, reusing the
+installed build-stage <code>process</code>/<code>base</code> rather than rebuilding them —
+breaking cross build-tool cycles (e.g. the Windows
+<code>Win32 -&gt; hsc2hs -&gt; process -&gt; Win32</code> cycle) without the full Hackage
+index.  Off by default; projects that don’t set it get no
+<code>--with-build-compiler</code> (unchanged behaviour).</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h2 id="stackproject-options"><a class="header" href="#stackproject-options"><code>stackProject'</code> options</a></h2>
+<h3 id="stack-branchmap"><a class="header" href="#stack-branchmap"><code>branchMap</code></a></h3>
+<p>A way to specify in which branch a git commit can be found</p>
+<p><strong>Type</strong>: null or unspecified value</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="stack-cache"><a class="header" href="#stack-cache"><code>cache</code></a></h3>
+<p>The <code>stack-to-nix</code> cache entries (with the hashes) of the git
+packages of the <code>stack.yaml</code>.  By default they are generated, which
+fetches each repository at evaluation time.</p>
+<p><strong>Type</strong>: null or unspecified value</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="stack-checkmaterialization"><a class="header" href="#stack-checkmaterialization"><code>checkMaterialization</code></a></h3>
+<p>If true the nix files will be generated used to check plan-sha256 and material</p>
+<p><strong>Type</strong>: null or boolean</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="stack-compiler-nix-name"><a class="header" href="#stack-compiler-nix-name"><code>compiler-nix-name</code></a></h3>
+<p>The name of the ghc compiler to use eg. “ghc884”</p>
+<p><strong>Type</strong>: null or string</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="stack-extra-hackages"><a class="header" href="#stack-extra-hackages"><code>extra-hackages</code></a></h3>
+<p>The Nix expressions (as generated by <code>hackage-to-nix</code>) of Hackage
+repositories the project uses besides the main one.</p>
+<p><strong>Type</strong>: null or (list of unspecified value)</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="stack-ghc"><a class="header" href="#stack-ghc"><code>ghc</code></a></h3>
+<p>Deprecated in favour of <code>compiler-nix-name</code></p>
+<p><strong>Type</strong>: null or package</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="stack-gitextradepslocal"><a class="header" href="#stack-gitextradepslocal"><code>gitExtraDepsLocal</code></a></h3>
+<p>Treat the packages from git <code>extra-deps</code> in the stack.yaml file as
+local packages (<code>package.isLocal</code>, but not <code>package.isProject</code>), the
+same as a <code>cabal.project</code> <code>source-repository-package</code>.  Git packages
+that come from a custom snapshot (a <code>.yaml</code> resolver) are not
+affected, and nor is a package whose name is also given by a later
+snapshot entry (the snapshot’s source is the one used).</p>
+<p>Use this when a <code>cabal.project</code> next to the stack.yaml builds the
+git dependencies from their source (for instance with
+<code>source-repository-package</code> stanzas).  Then:</p>
+<ul>
+<li><code>shellFor</code> (and <code>selectLocalPackages</code>) include these packages, so
+the shell provides their dependencies and leaves out the packages
+themselves and every package that depends on them; cabal builds
+them from the source the <code>cabal.project</code> points at.  Without such
+a <code>cabal.project</code>, <code>cabal build</code> in the shell has nowhere to find
+them.</li>
+<li>The shell also provides the dependencies of their test suites and
+benchmarks (as for any local package), which may pull in test
+frameworks the project itself does not use.</li>
+<li><code>localPackages</code> module options (<code>-Werror</code> for instance) apply to
+them too.</li>
+</ul>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="stack-inputmap"><a class="header" href="#stack-inputmap"><code>inputMap</code></a></h3>
+<p>Specifies the contents of the git urls referenced by the
+<code>extra-deps</code> in the stack.yaml file.  This is the stack
+equivalent of the <code>cabalProject</code> <code>inputMap</code> argument and is
+the recommended way to make private git repositories (served
+over ssh/git) and fully offline builds work.</p>
+<p>Keys are the repository url (optionally suffixed with
+<code>/&lt;rev&gt;</code>) and values are the corresponding local path or flake
+input.  When a key of the form <code>&lt;url&gt;/&lt;rev&gt;</code> is present the
+value is used directly.  When a bare <code>&lt;url&gt;</code> key is used the
+value’s <code>.rev</code> attribute is checked against the <code>commit</code> in the
+stack.yaml file.</p>
+<p>For example:
+inputMap = { “https://github.com/jgm/pandoc-citeproc” = inputs.pandoc-citeproc; };</p>
+<p><strong>Type</strong>: null or (attribute set)</p>
+<p><strong>Default</strong>: <code>{ }</code></p>
+<h3 id="stack-lookupbranch"><a class="header" href="#stack-lookupbranch"><code>lookupBranch</code></a></h3>
+<p>A function from <code>{ location, tag, ... }</code> (a git <code>extra-dep</code>) to the
+branch its commit can be found in, or <code>null</code>.</p>
+<p><strong>Type</strong>: null or unspecified value</p>
+<p><strong>Default</strong>: looks the commit up in <code>branchMap</code></p>
+<h3 id="stack-materialized"><a class="header" href="#stack-materialized"><code>materialized</code></a></h3>
+<p>Location of a materialized copy of the nix files</p>
+<p><strong>Type</strong>: null or absolute path or package</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="stack-modules"><a class="header" href="#stack-modules"><code>modules</code></a></h3>
+<p>Modules for the project’s package set, for instance to set the
+options of its packages and components (see
+<a href="modules.html">Module options</a>).</p>
+<p><strong>Type</strong>: null or (list of unspecified value)</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="stack-nix-tools"><a class="header" href="#stack-nix-tools"><code>nix-tools</code></a></h3>
+<p>nix-tools to use when converting the <code>plan.json</code> to nix</p>
+<p><strong>Type</strong>: package</p>
+<p><strong>Default</strong>: <code>config.evalPackages.haskell-nix.nix-tools-unchecked</code></p>
+<h3 id="stack-pkg-def-extras"><a class="header" href="#stack-pkg-def-extras"><code>pkg-def-extras</code></a></h3>
+<p>Extra packages to add to the package set (<code>pkg-def</code>).</p>
+<p><strong>Type</strong>: null or (list of unspecified value)</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="stack-resolversha256"><a class="header" href="#stack-resolversha256"><code>resolverSha256</code></a></h3>
+<p>The hash of the <code>resolver</code> snapshot, when it is a url (a custom
+snapshot <code>.yaml</code>).</p>
+<p><strong>Type</strong>: null or string</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="stack-sha256map"><a class="header" href="#stack-sha256map"><code>sha256map</code></a></h3>
+<p>An alternative to adding <code># nix-sha256:</code> comments into the
+stack.yaml file:
+sha256map =
+{ “https://github.com/jgm/pandoc-citeproc”.“0.17”
+= “0dxx8cp2xndpw3jwiawch2dkrkp15mil7pyx7dvd810pwc22pm2q”; };</p>
+<p><strong>Type</strong>: null or unspecified value</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="stack-stack-sha256"><a class="header" href="#stack-stack-sha256"><code>stack-sha256</code></a></h3>
+<p>The hash of the <code>stack-to-nix</code> output, which makes that step a
+fixed-output derivation (see materialization).</p>
+<p><strong>Type</strong>: null or string</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="stack-stackyaml"><a class="header" href="#stack-stackyaml"><code>stackYaml</code></a></h3>
+<p>The name of the Stack project file in <code>src</code>.</p>
+<p><strong>Type</strong>: string</p>
+<p><strong>Default</strong>: <code>"stack.yaml"</code></p>
+<h2 id="shell"><a class="header" href="#shell"><code>shell</code></a></h2>
+<p>The project’s <code>shell</code> argument: the arguments of <code>shellFor</code> that make the
+project’s <code>shell</code> attribute (and the flake’s default <code>devShell</code>).
+<code>p.shellFor { ... }</code> takes the same arguments, and merges them with these.</p>
+<h3 id="shell-additional"><a class="header" href="#shell-additional"><code>shell.additional</code></a></h3>
+<p>Like <code>packages</code>, but the selected packages themselves are built and
+included in the shell’s package db (not just their dependencies).  Not used with <code>builderVersion = 2</code>.</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: <code>_: [ ]</code></p>
+<h3 id="shell-alltooldeps"><a class="header" href="#shell-alltooldeps"><code>shell.allToolDeps</code></a></h3>
+<p>Indicates if the shell should include all the tool dependencies
+of the haskell packages in the project.  Defaulted to <code>false</code> in
+stack projects (to avoid trying to build the tools used by
+every <code>stackage</code> package).</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>true</code></p>
+<h3 id="shell-buildinputs"><a class="header" href="#shell-buildinputs"><code>shell.buildInputs</code></a></h3>
+<p>Passed to <code>mkDerivation</code> (via <code>mkShell</code>).</p>
+<p><strong>Type</strong>: list of unspecified value</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="shell-components"><a class="header" href="#shell-components"><code>shell.components</code></a></h3>
+<p>Like <code>packages</code>, but selects components.  By default, all the
+components of the selected packages.  Not used with <code>builderVersion = 2</code>.</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: <code>ps: lib.concatMap haskellLib.getAllComponents (config.packages ps)</code></p>
+<h3 id="shell-crossplatforms"><a class="header" href="#shell-crossplatforms"><code>shell.crossPlatforms</code></a></h3>
+<p>Cross-compilation platforms to add to the shell (their GHC and
+cabal wrappers, such as <code>javascript-unknown-ghcjs-cabal</code>).</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: the project’s <code>crossPlatforms</code></p>
+<p><strong>Example</strong>: <code>p: [ p.ghcjs p.mingwW64 ]</code></p>
+<h3 id="shell-enabledwarf"><a class="header" href="#shell-enabledwarf"><code>shell.enableDWARF</code></a></h3>
+<p>Include debug info.  Not used with <code>builderVersion = 2</code>.</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="shell-exactdeps"><a class="header" href="#shell-exactdeps"><code>shell.exactDeps</code></a></h3>
+<p>Stop the cabal solver from choosing any dependency that is not in
+the package set.  This sets <code>CABAL_CONFIG</code>, which also turns off the
+remote package servers.  Not used with <code>builderVersion = 2</code>.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="shell-exposepackagesvia"><a class="header" href="#shell-exposepackagesvia"><code>shell.exposePackagesVia</code></a></h3>
+<p>How the v2 shell’s pre-built library deps are made visible to
+tools the user runs.  One of:</p>
+<ul>
+<li>“cabal-store” (default) — the composed store is linked
+into the cabal store (<code>cabal path --store-dir</code>) via a shellHook
+(or the explicit <code>haskell-nix-cabal-store-sync</code> command).
+<code>cabal v2-build</code> then reuses the units directly.  The
+shell’s <code>ghc</code> is left plain, so <code>runghc</code>/<code>ghci</code> will not
+see the deps.</li>
+<li>“ghc-pkg” — the shell’s <code>ghc</code> is wrapped with
+GHC_ENVIRONMENT pointing at the composed store’s
+package.db, so <code>ghc</code>/<code>ghci</code>/<code>runghc</code>/<code>ghc-pkg</code> see every
+dep directly.  No files are written outside the shell.
+Only affects <code>shellFor</code> under <code>builderVersion = 2</code>.</li>
+</ul>
+<p><strong>Type</strong>: one of “cabal-store”, “ghc-pkg”</p>
+<p><strong>Default</strong>: <code>"cabal-store"</code></p>
+<h3 id="shell-includeextrapackages"><a class="header" href="#shell-includeextrapackages"><code>shell.includeExtraPackages</code></a></h3>
+<p>Include the libraries of the project’s <code>extra-packages</code> in the
+shell’s package db, as if they were listed in <code>additional</code>.  They are
+in the plan, but nothing in the project depends on them, so <code>cabal build</code> does not build them.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>true</code></p>
+<h3 id="shell-inputsfrom"><a class="header" href="#shell-inputsfrom"><code>shell.inputsFrom</code></a></h3>
+<p>Other shells whose <code>buildInputs</code> and <code>nativeBuildInputs</code> are
+included (see <code>mkShell</code>).</p>
+<p><strong>Type</strong>: list of unspecified value</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="shell-name"><a class="header" href="#shell-name"><code>shell.name</code></a></h3>
+<p>The name of the shell derivation.</p>
+<p><strong>Type</strong>: null or string</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="shell-nativebuildinputs"><a class="header" href="#shell-nativebuildinputs"><code>shell.nativeBuildInputs</code></a></h3>
+<p>Passed to <code>mkDerivation</code> (via <code>mkShell</code>).  Non-Haskell tools for the
+shell go here.</p>
+<p><strong>Type</strong>: list of unspecified value</p>
+<p><strong>Default</strong>: <code>[ ]</code></p>
+<h3 id="shell-packagesetupdeps"><a class="header" href="#shell-packagesetupdeps"><code>shell.packageSetupDeps</code></a></h3>
+<p>Set to <code>false</code> to leave out custom-setup dependencies.  Not used with <code>builderVersion = 2</code>.</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: <code>true</code></p>
+<h3 id="shell-packages"><a class="header" href="#shell-packages"><code>shell.packages</code></a></h3>
+<p>The packages being worked on: a function from the project’s
+package set to a list of packages.  The shell provides their
+dependencies, but not the packages themselves.</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: <code>ps: builtins.attrValues (haskellLib.selectLocalPackages ps)</code></p>
+<p><strong>Example</strong>: <code>ps: [ ps.my-lib ps.my-exe ]</code></p>
+<h3 id="shell-passthru"><a class="header" href="#shell-passthru"><code>shell.passthru</code></a></h3>
+<p>Passed to <code>mkDerivation</code> (via <code>mkShell</code>).</p>
+<p><strong>Type</strong>: attribute set of unspecified value</p>
+<p><strong>Default</strong>: <code>{ }</code></p>
+<h3 id="shell-shellhook"><a class="header" href="#shell-shellhook"><code>shell.shellHook</code></a></h3>
+<p>Bash statements that are run when the shell starts.</p>
+<p><strong>Type</strong>: string</p>
+<p><strong>Default</strong>: sets <code>EM_CACHE</code> for ghcjs shells; otherwise empty</p>
+<h3 id="shell-tools"><a class="header" href="#shell-tools"><code>shell.tools</code></a></h3>
+<p>Tools to put on <code>PATH</code>, by name.  A tool is a version, the arguments
+of <a href="tools.html"><code>haskell-nix.tool</code></a> (an attribute set, for instance
+with <code>version</code>, <code>index-state</code> or <code>materialized</code>), or a derivation
+used as it is.  See <a href="tools.html">Tools</a>, including how a tool given
+in more than one place is merged.</p>
+<p><strong>Type</strong>: attribute set of (tool version, module spec or derivation)</p>
+<p><strong>Default</strong>: <code>{ }</code></p>
+<p><strong>Example</strong>:</p>
+<pre><code class="language-nix">{
+  cabal = "latest";
+  hlint = "3.8";
+  haskell-language-server = { version = "latest"; index-state = "2025-01-10T00:00:00Z"; };
+}
+</code></pre>
+<h3 id="shell-withhaddock"><a class="header" href="#shell-withhaddock"><code>shell.withHaddock</code></a></h3>
+<p>Include the documentation of the shell’s packages.  Has no effect
+with <code>builderVersion = 2</code>.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>config.withHoogle</code></p>
+<h3 id="shell-withhoogle"><a class="header" href="#shell-withhoogle"><code>shell.withHoogle</code></a></h3>
+<p>Build a Hoogle index of the shell’s packages and provide the
+<code>hoogle</code> command.  With <code>builderVersion = 2</code> it only provides
+<code>hoogle</code> (run <code>hoogle generate</code> for an index).</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>true</code></p>
+<h2 id="flake"><a class="header" href="#flake"><code>flake</code></a></h2>
+<p>The project’s <code>flake</code> argument: the defaults for <code>p.flake { ... }</code>, which
+takes the same arguments and merges them with these.</p>
+<h3 id="flake-ciskip"><a class="header" href="#flake-ciskip"><code>flake.ciSkip</code></a></h3>
+<p>Component ids (<code>pkg:lib:sublib</code>) to leave out of the flake <code>ciJobs</code>
+and <code>hydraJobs</code> (they stay in <code>packages</code>).  By default (<code>null</code>)
+these are the sub-libraries that only components which are not
+built use, such as a private library used only by test suites
+when the plan disables them (<code>configureArgs = "--disable-tests"</code>),
+see <code>haskellLib.subLibrariesOnlyForUnbuilt</code>.  Set it to <code>[]</code> to
+build them all.</p>
+<p><strong>Type</strong>: null or (list of string)</p>
+<p><strong>Default</strong>: <code>null</code></p>
+<h3 id="flake-coverageprojectmodule"><a class="header" href="#flake-coverageprojectmodule"><code>flake.coverageProjectModule</code></a></h3>
+<p>Project module for use when generating coverage reports.  The
+coverage jobs turn coverage on for the project packages:</p>
+<ul>
+<li><code>builderVersion = 1</code>: they set <code>packages.X.doCoverage</code>.  To
+leave a package out, give it a plain definition here
+(<code>modules = [{ packages.X.doCoverage = false; }]</code>); a
+<code>lib.mkDefault false</code> is not enough.</li>
+<li><code>builderVersion = 2</code>: <code>doCoverage</code> alone is ignored (coverage
+has to be in the plan), so they add
+<code>package X</code> / <code>coverage: True</code> to <code>cabalProjectLocal</code>.  To leave a
+package out, add <code>package X</code> / <code>coverage: False</code> to
+<code>cabalProjectLocal</code> here (it comes after theirs, so it wins).
+Setting <code>packages.X.doCoverage = false</code> conflicts with the
+plan’s <code>true</code>.</li>
+</ul>
+<p>Whether a project is v2 is read from the project with this module
+applied, so a module that sets <code>builderVersion</code> is honoured.</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: <code>{ }</code></p>
+<h3 id="flake-crossplatforms"><a class="header" href="#flake-crossplatforms"><code>flake.crossPlatforms</code></a></h3>
+<p>Cross-compilation platforms to add flake outputs for.  Their names
+get the platform as a prefix, for instance
+<code>nix build .#javascript-unknown-ghcjs:hello:exe:hello</code>.</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: the project’s <code>crossPlatforms</code></p>
+<p><strong>Example</strong>: <code>p: [ p.ghcjs ]</code></p>
+<h3 id="flake-docoverage"><a class="header" href="#flake-docoverage"><code>flake.doCoverage</code></a></h3>
+<p>Specifies if the flake <code>ciJobs</code> and <code>hydraJobs</code> should include code
+coverage reports.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="flake-dodefaults"><a class="header" href="#flake-dodefaults"><code>flake.doDefaults</code></a></h3>
+<p>Specifies if the flake should have <code>packages.default</code> and
+<code>apps.default</code> (for a bare <code>nix build</code> and <code>nix run</code>) when there is
+a package in the project directory: its executable if it has
+exactly one, and otherwise its library.  Only the flake without a
+cross or variant prefix gets them.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>true</code></p>
+<h3 id="flake-dohaddock"><a class="header" href="#flake-dohaddock"><code>flake.doHaddock</code></a></h3>
+<p>Specifies if the flake <code>ciJobs</code> and <code>hydraJobs</code> should include a
+<code>haddock</code> group building the documentation (<code>.doc</code>) of each
+library/test component that has haddock enabled, so that broken
+documentation is caught by CI (see #1932).  Packages with an empty
+library (no exposed modules) fail with “haddock: No input file(s)”;
+set <code>packages.&lt;name&gt;.doHaddock = false</code> for those.</p>
+<p><strong>Type</strong>: boolean</p>
+<p><strong>Default</strong>: <code>false</code></p>
+<h3 id="flake-packages"><a class="header" href="#flake-packages"><code>flake.packages</code></a></h3>
+<p>The packages the flake outputs are made for: a function from the
+project’s package set to an attribute set of packages.  By default,
+the project’s own packages.</p>
+<p><strong>Type</strong>: unspecified value</p>
+<p><strong>Default</strong>: <code>haskellLib.selectProjectPackages</code></p>
+<h3 id="flake-variants"><a class="header" href="#flake-variants"><code>flake.variants</code></a></h3>
+<p>This allows flakes to easily include variations of the
+project by with different project arguments.
+Anything you can pass to <code>project.addModule</code> can be used.
+For instance to include variants using ghc 9.2.6:</p>
+<pre><code>  flake.variants.ghc928.compiler-nix-name = pkgs.lib.mkForce "ghc928";
+</code></pre>
+<p>Then use it with:</p>
+<pre><code>  nix build .#ghc928:hello:exe:hello
+</code></pre>
+<p><strong>Type</strong>: attribute set of unspecified value</p>
+<p><strong>Default</strong>: <code>{ }</code></p>
+
+                    </main>
+
+                    <nav class="nav-wrapper" aria-label="Page navigation">
+                        <!-- Mobile navigation buttons -->
+                            <a rel="prev" href="../reference/library.html" class="mobile-nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                            </a>
+
+                            <a rel="next prefetch" href="../reference/modules.html" class="mobile-nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                                <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                            </a>
+
+                        <div style="clear: both"></div>
+                    </nav>
+                </div>
+            </div>
+
+            <nav class="nav-wide-wrapper" aria-label="Page navigation">
+                    <a rel="prev" href="../reference/library.html" class="nav-chapters previous" title="Previous chapter" aria-label="Previous chapter" aria-keyshortcuts="Left">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M41.4 233.4c-12.5 12.5-12.5 32.8 0 45.3l160 160c12.5 12.5 32.8 12.5 45.3 0s12.5-32.8 0-45.3L109.3 256 246.6 118.6c12.5-12.5 12.5-32.8 0-45.3s-32.8-12.5-45.3 0l-160 160z"/></svg></span>
+                    </a>
+
+                    <a rel="next prefetch" href="../reference/modules.html" class="nav-chapters next" title="Next chapter" aria-label="Next chapter" aria-keyshortcuts="Right">
+                        <span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M278.6 233.4c12.5 12.5 12.5 32.8 0 45.3l-160 160c-12.5 12.5-32.8 12.5-45.3 0s-12.5-32.8 0-45.3L210.7 256 73.4 118.6c-12.5-12.5-12.5-32.8 0-45.3s32.8-12.5 45.3 0l160 160z"/></svg></span>
+                    </a>
+            </nav>
+
+        </div>
+
+        <template id=fa-eye><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 576 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M288 32c-80.8 0-145.5 36.8-192.6 80.6C48.6 156 17.3 208 2.5 243.7c-3.3 7.9-3.3 16.7 0 24.6C17.3 304 48.6 356 95.4 399.4C142.5 443.2 207.2 480 288 480s145.5-36.8 192.6-80.6c46.8-43.5 78.1-95.4 93-131.1c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C433.5 68.8 368.8 32 288 32zM432 256c0 79.5-64.5 144-144 144s-144-64.5-144-144s64.5-144 144-144s144 64.5 144 144zM288 192c0 35.3-28.7 64-64 64c-11.5 0-22.3-3-31.6-8.4c-.2 2.8-.4 5.5-.4 8.4c0 53 43 96 96 96s96-43 96-96s-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6z"/></svg></span></template>
+        <template id=fa-eye-slash><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M38.8 5.1C28.4-3.1 13.3-1.2 5.1 9.2S-1.2 34.7 9.2 42.9l592 464c10.4 8.2 25.5 6.3 33.7-4.1s6.3-25.5-4.1-33.7L525.6 386.7c39.6-40.6 66.4-86.1 79.9-118.4c3.3-7.9 3.3-16.7 0-24.6c-14.9-35.7-46.2-87.7-93-131.1C465.5 68.8 400.8 32 320 32c-68.2 0-125 26.3-169.3 60.8L38.8 5.1zM223.1 149.5C248.6 126.2 282.7 112 320 112c79.5 0 144 64.5 144 144c0 24.9-6.3 48.3-17.4 68.7L408 294.5c5.2-11.8 8-24.8 8-38.5c0-53-43-96-96-96c-2.8 0-5.6 .1-8.4 .4c5.3 9.3 8.4 20.1 8.4 31.6c0 10.2-2.4 19.8-6.6 28.3l-90.3-70.8zm223.1 298L373 389.9c-16.4 6.5-34.3 10.1-53 10.1c-79.5 0-144-64.5-144-144c0-6.9 .5-13.6 1.4-20.2L83.1 161.5C60.3 191.2 44 220.8 34.5 243.7c-3.3 7.9-3.3 16.7 0 24.6c14.9 35.7 46.2 87.7 93 131.1C174.5 443.2 239.2 480 320 480c47.8 0 89.9-12.9 126.2-32.5z"/></svg></span></template>
+        <template id=fa-copy><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M502.6 70.63l-61.25-61.25C435.4 3.371 427.2 0 418.7 0H255.1c-35.35 0-64 28.66-64 64l.0195 256C192 355.4 220.7 384 256 384h192c35.2 0 64-28.8 64-64V93.25C512 84.77 508.6 76.63 502.6 70.63zM464 320c0 8.836-7.164 16-16 16H255.1c-8.838 0-16-7.164-16-16L239.1 64.13c0-8.836 7.164-16 16-16h128L384 96c0 17.67 14.33 32 32 32h47.1V320zM272 448c0 8.836-7.164 16-16 16H63.1c-8.838 0-16-7.164-16-16L47.98 192.1c0-8.836 7.164-16 16-16H160V128H63.99c-35.35 0-64 28.65-64 64l.0098 256C.002 483.3 28.66 512 64 512h192c35.2 0 64-28.8 64-64v-32h-47.1L272 448z"/></svg></span></template>
+        <template id=fa-play><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 384 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M73 39c-14.8-9.1-33.4-9.4-48.5-.9S0 62.6 0 80V432c0 17.4 9.4 33.4 24.5 41.9s33.7 8.1 48.5-.9L361 297c14.3-8.7 23-24.2 23-41s-8.7-32.2-23-41L73 39z"/></svg></span></template>
+        <template id=fa-clock-rotate-left><span class=fa-svg><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 6.2.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2022 Fonticons, Inc. --><path d="M75 75L41 41C25.9 25.9 0 36.6 0 57.9V168c0 13.3 10.7 24 24 24H134.1c21.4 0 32.1-25.9 17-41l-30.8-30.8C155 85.5 203 64 256 64c106 0 192 86 192 192s-86 192-192 192c-40.8 0-78.6-12.7-109.7-34.4c-14.5-10.1-34.4-6.6-44.6 7.9s-6.6 34.4 7.9 44.6C151.2 495 201.7 512 256 512c141.4 0 256-114.6 256-256S397.4 0 256 0C185.3 0 121.3 28.7 75 75zm181 53c-13.3 0-24 10.7-24 24V256c0 6.4 2.5 12.5 7 17l72 72c9.4 9.4 24.6 9.4 33.9 0s9.4-24.6 0-33.9l-65-65V152c0-13.3-10.7-24-24-24z"/></svg></span></template>
+
+
+
+        <script>
+            window.playground_copyable = true;
+        </script>
+
+
+        <script src="../elasticlunr-ef4e11c1.min.js"></script>
+        <script src="../mark-09e88c2c.min.js"></script>
+        <script src="../searcher-09f2665d.js"></script>
+
+        <script src="../clipboard-1626706a.min.js"></script>
+        <script src="../highlight-862e895d.js"></script>
+        <script src="../book-609e4cb8.js"></script>
+
+        <!-- Custom JS scripts -->
+
+
+
+    </div>
+    </body>
+</html>
