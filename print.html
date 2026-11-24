@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-29dd5646.js";
+            window.path_to_searchindex_js = "searchindex-1da2434c.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-310822d8.js"></script>
@@ -1312,17 +1312,68 @@ overlaying the <code>haskell-nix.extraPkgconfigMappings</code> attribute:</p>
   })
 ];
 </code></pre>
-<h3 id="replace-libraries-of-components"><a class="header" href="#replace-libraries-of-components">Replace libraries of components</a></h3>
-<p>If a component is missing a dependency it can be added via modules. For example:</p>
+<h3 id="adding-dependencies-the-cabal-file-does-not-declare"><a class="header" href="#adding-dependencies-the-cabal-file-does-not-declare">Adding dependencies the <code>.cabal</code> file does not declare</a></h3>
+<p>Some packages need things from nixpkgs that their <code>.cabal</code> file does not
+name: a custom <code>Setup.hs</code> that runs a tool such as <code>mysql_config</code> or
+<code>pg_config</code>, a library found by a <code>configure</code> script, or a tool a test
+suite runs.  Give them to the component that needs them with a module.
+Each component has these options:</p>
+<div class="table-wrapper">
+<table>
+<thead>
+<tr><th>Option</th><th>Goes to</th><th>Use it for</th></tr>
+</thead>
+<tbody>
+<tr><td><code>libs</code></td><td><code>buildInputs</code></td><td>C libraries to link against (what <code>extra-libraries</code> would name)</td></tr>
+<tr><td><code>pkgconfig</code></td><td><code>propagatedBuildInputs</code></td><td>Libraries found with <code>pkg-config</code>; a list of lists, one list per <code>pkgconfig-depends</code> entry</td></tr>
+<tr><td><code>frameworks</code></td><td><code>propagatedBuildInputs</code></td><td>macOS frameworks</td></tr>
+<tr><td><code>build-tools</code></td><td><code>nativeBuildInputs</code></td><td>Programs run during the build: <code>Setup.hs</code> helpers, code generators, tools a test runs</td></tr>
+</tbody>
+</table>
+</div>
+<p>For example, the <code>mysql</code> package from Hackage runs <code>mysql_config</code> from its
+<code>Setup.hs</code> (it fails with “The program ‘mysql_config’ is required but it
+could not be found”), and the libraries <code>mysql_config</code> names are needed
+when linking anything that uses it:</p>
 <pre><code class="language-nix">project = pkgs.haskell-nix.project' {
-  src = self;
-  compiler-nix-name = "ghc8102";
+  src = ./.;
+  compiler-nix-name = "ghc96";
   modules = [{
-    # Replace `extra-libraries` dependencies
-    packages.X11.components.library.libs = pkgs.lib.mkForce (with pkgs.xorg;
-        [ libX11 libXrandr libXext libXScrnSaver libXinerama ]);
+    # `mysql_config`, run by mysql's Setup.hs
+    packages.mysql.components.library.build-tools = [ pkgs.libmysqlclient ];
+    # The libraries `mysql_config --libs` lists
+    packages.mysql.components.library.libs =
+      [ pkgs.libmysqlclient pkgs.zlib pkgs.openssl ];
   }];
 };
+</code></pre>
+<p>These definitions are added to the ones haskell.nix makes from the <code>.cabal</code>
+file.  To replace those instead, use <code>lib.mkForce</code>:</p>
+<pre><code class="language-nix">modules = [{
+  packages.X11.components.library.libs = pkgs.lib.mkForce (with pkgs.xorg;
+    [ libX11 libXrandr libXext libXScrnSaver libXinerama ]);
+}];
+</code></pre>
+<p>The same options apply to the other components (<code>components.exes.&lt;name&gt;</code>,
+<code>components.tests.&lt;name&gt;</code>, <code>components.setup</code> and so on); see
+<a href="#configuration-options">Module options</a>.</p>
+<p>For the development shell, which builds nothing itself, add tools and
+libraries with the project’s <code>shell.nativeBuildInputs</code> and
+<code>shell.buildInputs</code> (see <a href="#project-options">Project options</a>).</p>
+<h4 id="the-nix-section-of-stackyaml"><a class="header" href="#the-nix-section-of-stackyaml">The <code>nix:</code> section of <code>stack.yaml</code></a></h4>
+<p><code>stack.yaml</code> can list nixpkgs packages under <code>nix: packages:</code>.  Only
+<code>stack --nix</code> reads that list; <code>stackProject</code> and <code>stack-to-nix</code> ignore it.
+Give each of those packages to the components that need it, as above, and
+to the shell if you build with <code>cabal</code> or <code>stack</code> in it:</p>
+<pre><code class="language-nix">pkgs.haskell-nix.stackProject' {
+  src = ./.;
+  modules = [{
+    packages.mysql.components.library.build-tools = [ pkgs.libmysqlclient ];
+    packages.mysql.components.library.libs =
+      [ pkgs.libmysqlclient pkgs.zlib pkgs.openssl ];
+  }];
+  shell.buildInputs = [ pkgs.libmysqlclient pkgs.zlib pkgs.openssl ];
+}
 </code></pre>
 <h3 id="mapping-in-haskellnix"><a class="header" href="#mapping-in-haskellnix">Mapping in Haskell.nix</a></h3>
 <p>Alternatively, if the name is commonly used, an alias can be added to
