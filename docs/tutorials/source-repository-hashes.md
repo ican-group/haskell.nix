@@ -50,6 +50,28 @@ extra-deps:
   # nix-sha256: 003lm3pm024vhbfmii7xcdd9v2rczpflxf7gdl2pyxia7p014i8z
 ```
 
+### Archives
+
+Archive `extra-deps` (an `archive:` or `url:` entry, or a bare `http(s)`
+URL) need a hash too.  Either pantry's `sha256` of the archive file, which
+stack itself checks, or a `# nix-sha256` comment with the hash of the
+unpacked archive will do (for a bare URL, use `sha256map`, below, with the
+URL as the key and the `nix-sha256` as the value):
+
+```
+extra-deps:
+- archive: https://hackage.haskell.org/package/acme-missiles-0.3/acme-missiles-0.3.tar.gz
+  sha256: e563d8b524017a06b32768c4db8eff1f822f3fb22a90320b7e414402647b735b
+- url: https://github.com/zoominsoftware/HaskellNet-SSL/archive/5b4f4ab49a6321b57f6dbeba64a7f4bb8ffa5cbc.tar.gz
+  # nix-sha256: <nix-prefetch-url --unpack <url>>
+```
+
+Without either, haskell.nix fetches the archive with `builtins.fetchTarball`,
+which only works outside pure evaluation (flakes and restricted mode need a
+hash).  An `archive:` path that is not a URL is a local archive file, relative
+to the `stack.yaml` file.  As with stack, `subdirs` are relative to the
+archive's top-level directory when it has just one.
+
 ## Avoiding modifying cabal.project and stack.yaml
 
 In some cases we cannot modify the `cabal.project` or `stack.yaml` file to add

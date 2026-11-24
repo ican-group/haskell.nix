@@ -677,7 +677,9 @@ final: prev: {
         # This handles private repositories with the `is-private` argument
         # (with `builtins.fetchGit`), as well as handling stack-based projects
         # with the `type` argument.
-        mkCacheLine = { name, url, rev, ref ? null, subdir ? ".", sha256 ? null, cabal-file ? "${name}.cabal", type ? "cabal", is-private ? false, input ? null }:
+        # `is-archive` marks an archive `extra-dep` (its unpacked source is the
+        # `input`); it is only read by `mkGitExtraDepsLocalModule`.
+        mkCacheLine = { name, url, rev, ref ? null, subdir ? ".", sha256 ? null, cabal-file ? "${name}.cabal", type ? "cabal", is-private ? false, input ? null, is-archive ? false }:
           let
             # Fetch the entire repo, using either pkgs.fetchgit or
             # builtins.fetchGit depending on whether the repo is private.
@@ -840,7 +842,8 @@ final: prev: {
             normUrl = url: lib.removeSuffix ".git" (lib.removeSuffix "/" url);
             normSubdir = s: if s == null || s == "" then "." else s;
             key = e: "${normUrl e.url} ${e.rev} ${normSubdir (e.subdir or null)}";
-            extraDepKeys = map key extraDeps;
+            # Only git repositories: archive `extra-deps` are not affected.
+            extraDepKeys = map key (builtins.filter (e: !(e.is-archive or false)) extraDeps);
             cacheKeys = map key cache;
             srcEntries = builtins.foldl' (acc: e: acc // { ${e.name} = e; }) {} cache;
             unmatched = builtins.filter (k: !(builtins.elem k cacheKeys)) extraDepKeys;

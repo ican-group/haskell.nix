@@ -113,12 +113,60 @@ let
     # `inputMap` may legitimately be `null` (the option type is
     # `nullOr attrs`); treat that the same as an empty map.
     inputMap' = if inputMap == null then {} else inputMap;
+
+    # Unpack an archive file (`.tar.gz`, `.zip`, ...).  Like pantry (and
+    # `fetchzip`), use the archive's top-level directory when it has just
+    # one, so `subdirs` are relative to that.
+    unpackArchive = archive: evalPackages.runCommand "stack-archive-source" {
+        nativeBuildInputs = [ evalPackages.unzip ];
+      } ''
+        mkdir unpack
+        cd unpack
+        unpackFile ${archive}
+        shopt -s dotglob
+        entries=( * )
+        if [ ''${#entries[@]} -eq 1 ] && [ -d "''${entries[0]}" ]; then
+          mv "''${entries[0]}" $out
+        else
+          mkdir $out
+          mv * $out/
+        fi
+      '';
+
+    # The unpacked source of an archive `extra-dep` (`archive:`/`url:`, or a
+    # bare http(s) URL, in the stack.yaml).  `stack-repos` gives its
+    # `nix-sha256` (from a `# nix-sha256:` comment) as `sha256` and pantry's
+    # `sha256` of the archive file as `archiveSha256`; a string
+    # `sha256map.<url>` is a `nix-sha256` too.  With neither,
+    # `builtins.fetchTarball` fetches it, which works only outside pure
+    # evaluation (Nix asks for a hash there).  A path that is not a URL is
+    # an archive file relative to the stack.yaml file.
+    archiveSource = dep:
+      let
+        nix-sha256 =
+          if dep.sha256 != null then dep.sha256
+          else if sha256map != null && builtins.isString (sha256map.${dep.url} or null)
+            then sha256map.${dep.url}
+          else null;
+        isUrl = evalPackages.lib.hasPrefix "http://" dep.url || evalPackages.lib.hasPrefix "https://" dep.url;
+        srcDir = src.origSrcSubDir or src;
+        stackYamlDir = builtins.dirOf stackYaml;
+      in
+        if !isUrl
+          then unpackArchive (srcDir + "/${stackYamlDir}/${dep.url}")
+        else if nix-sha256 != null
+          then evalPackages.fetchzip { inherit (dep) url; sha256 = nix-sha256; }
+        else if (dep.archiveSha256 or null) != null
+          then unpackArchive (evalPackages.fetchurl { inherit (dep) url; sha256 = dep.archiveSha256; })
+        else builtins.fetchTarball { inherit (dep) url; };
 in with evalPackages.lib;
 concatMap (dep:
         let
+            is-archive = (dep.type or "git") == "archive";
             is-private = private dep.url;
             sha256 =
-              if dep.sha256 != null
+              if is-archive then null
+              else if dep.sha256 != null
                 then dep.sha256
               else if sha256map != null && sha256map ? ${dep.url}
                 then sha256map.${dep.url}.${dep.rev}
@@ -132,7 +180,11 @@ concatMap (dep:
             # it.  This mirrors the `cabalProject` `inputMap` resolution in
             # `lib/call-cabal-project-to-nix.nix`.
             input =
-              if inputMap' ? "${dep.url}/${dep.rev}"
+              # An archive has no revision to check, so `inputMap.<url>` is
+              # used as it is.
+              if is-archive
+                then inputMap'.${dep.url} or (archiveSource dep)
+              else if inputMap' ? "${dep.url}/${dep.rev}"
                 then inputMap'."${dep.url}/${dep.rev}"
               else if inputMap' ? ${dep.url}
                 then
@@ -162,5 +214,6 @@ concatMap (dep:
                 # no need to compute a sha256 for it.
                 sha256 = if input == null && !is-private then hashPath pkgsrc else null;
             } // (optionalAttrs (subdir != "") { inherit subdir; })
-              // (optionalAttrs (input != null) { inherit input; }))
+              // (optionalAttrs (input != null) { inherit input; })
+              // (optionalAttrs is-archive { inherit is-archive; }))
         (dep.subdirs or [ "" ])) repos

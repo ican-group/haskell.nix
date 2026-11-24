@@ -7,6 +7,7 @@ module Stack2nix
   ) where
 
 import qualified Data.Text as T
+import Data.List (isPrefixOf)
 import Data.String (fromString)
 
 import Control.Monad.Trans.Maybe
@@ -26,7 +27,7 @@ import Prettyprinter (Doc)
 import Prettyprinter.Render.Text (hPutDoc)
 
 import Distribution.Types.PackageId (PackageIdentifier(..))
-import Distribution.Nixpkgs.Fetch (DerivationSource(..), Source(..), Hash(..), fetch)
+import Distribution.Nixpkgs.Fetch (DerivationSource(..), Source(..), Hash(..), fetch, fetchWith)
 import Distribution.Simple.Utils (shortRelativePath)
 import Distribution.Text (simpleParse)
 import Distribution.Pretty (Pretty(..))
@@ -38,7 +39,7 @@ import Cabal2Nix.Util
 import NixTools.Cache (appendCache, cacheHits)
 import Stack2nix.CLI (Args(..))
 import Stack2nix.Project
-import Stack2nix.Stack (Stack(..), Dependency(..), Location(..), PackageFlags, GhcOptions, GhcOptionsValue(..))
+import Stack2nix.Stack (Stack(..), Dependency(..), Location(..), PackageFlags, GhcOptions, GhcOptionsValue(..), archiveCacheRev)
 import Stack2nix.External.Resolve
 
 import qualified Data.HashMap.Strict as HM
@@ -186,8 +187,48 @@ packages2nix args pkgs =
                     -- generated too.
                     forM allHits $ \( pkg, nix ) ->
                       return (fromString pkg, fromString pkg $= mkPath False nix)
+       (Archive url _ nixSha256 subdirs) ->
+         do hits <- forM subdirs $ \subdir -> liftIO $ cacheHits (argCacheFile args) url archiveCacheRev subdir
+            let generateBindings
+                  | "http://" `isPrefixOf` url || "https://" `isPrefixOf` url =
+                      runMaybeT (fetchWith (False, "url", ["--unpack", "--print-path"])
+                                   (Source url "" (maybe UnknownHash Certain nixSha256))) >>= \case
+                        Just (DerivationSource{..}, dir) -> archiveBindings url derivHash subdirs dir
+                        Nothing -> error ("stack-to-nix: could not fetch the archive " ++ url)
+                  | otherwise =
+                      -- A local archive file is unpacked by haskell.nix
+                      -- (`stackProject`), which hands us the result in the cache.
+                      error ("stack-to-nix: the archive " ++ url ++ " is a local file;"
+                             ++ " use haskell.nix's `stackProject`, which unpacks it, for that")
+            if any null hits
+              then generateBindings
+              else do
+                let allHits = concat hits
+                (and <$> forM allHits (\( _, nix ) -> doesFileExist (argOutputDir args </> nix))) >>= \case
+                  False -> generateBindings
+                  True -> forM allHits $ \( pkg, nix ) ->
+                    return (fromString pkg, fromString pkg $= mkPath False nix)
        _ -> return []
   where relPath = shortRelativePath (argOutputDir args) (dropFileName (argStackYaml args))
+        -- The bindings for the packages of an unpacked archive (in @dir@,
+        -- whose unpacked tree has the hash @hash@), recording them in the
+        -- cache as for git repositories.
+        archiveBindings :: String -> String -> [FilePath] -> FilePath -> IO [(T.Text, Binding NExpr)]
+        archiveBindings url hash subdirs dir = fmap concat . forM subdirs $ \subdir -> do
+          cabalFiles <- findCabalFiles (argHpackUse args) (dir </> subdir)
+          forM cabalFiles $ \cabalFile -> do
+            let pkg = cabalFilePkgName cabalFile
+                nix = pkg <.> "nix"
+                nixFile = argOutputDir args </> nix
+                subdir' = if subdir == "." then Nothing else Just subdir
+                src = Just $ C2N.Tarball url hash subdir'
+            createDirectoryIfMissing True (takeDirectory nixFile)
+            writeDoc nixFile =<<
+              prettyNix <$> cabal2nix True (argDetailLevel args) src cabalFile
+            cacheHits (argCacheFile args) url archiveCacheRev subdir >>= \case
+              [hit] | hit == (pkg, nix) -> return ()
+              _ -> appendCache (argCacheFile args) url archiveCacheRev subdir hash pkg nix
+            return (fromString pkg, fromString pkg $= mkPath False nix)
         cabalFromPath
           :: String      -- URL
           -> String      -- Revision

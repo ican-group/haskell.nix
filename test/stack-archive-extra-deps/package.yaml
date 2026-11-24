@@ -1,0 +1,11 @@
+name: stack-archive-extra-deps
+license: BSD3
+
+dependencies:
+  - base
+  - acme-missiles
+  - acme-dont
+  - acme-box
+
+library:
+  source-dirs: src

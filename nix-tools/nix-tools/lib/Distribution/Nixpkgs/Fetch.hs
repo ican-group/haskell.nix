@@ -138,7 +138,10 @@ fetchWith (supportsRev, kind, addArgs) source = do
         let buf' = BS.unlines (reverse ls)
         case ls of
           [] -> return Nothing
-          [sha] -> return (Just (DerivationSource kind (sourceUrl source) "" (BS.unpack sha), sourceUrl source))
+          -- A hash and then the store path (`nix-prefetch-url --print-path`,
+          -- and the other scripts with PRINT_PATH set).  Return the path, as
+          -- the JSON case below does: the caller looks inside it.
+          [sha] -> return (Just (DerivationSource kind (sourceUrl source) "" (BS.unpack sha), BS.unpack l))
           _ -> case eitherDecode buf' of
                  Left err -> error ("invalid JSON: " ++ err ++ " in " ++ show buf')
                  Right ds -> return (Just (ds { derivKind = kind }, BS.unpack l))

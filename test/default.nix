@@ -291,6 +291,7 @@ let
     stack-source-repo = callTest ./stack-source-repo {};
     stack-git-extra-deps-local = callTest ./stack-git-extra-deps-local {};
     stack-inputMap = callTest ./stack-inputMap { inherit testSrcRoot; };
+    stack-archive-extra-deps = callTest ./stack-archive-extra-deps {};
     ghc-lib-reinstallable-cabal = callTest ./ghc-lib-reinstallable/cabal.nix {};
     ghc-lib-reinstallable-stack = callTest ./ghc-lib-reinstallable/stack.nix {};
     generated-light = callTest ./generated-light {};

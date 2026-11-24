@@ -1,0 +1,15 @@
+resolver: lts-23.7
+
+packages:
+- .
+
+extra-deps:
+# pantry's form, with its sha256 of the archive file
+- archive: https://hackage.haskell.org/package/acme-missiles-0.3/acme-missiles-0.3.tar.gz
+  sha256: e563d8b524017a06b32768c4db8eff1f822f3fb22a90320b7e414402647b735b
+  size: 1442
+# the older `url:` key, with the nix-sha256 of the unpacked tree
+- url: https://hackage.haskell.org/package/acme-dont-1.2/acme-dont-1.2.tar.gz
+  # nix-sha256: 08adj51c96jl80x503wlf35lgd11f5jh0r2kx79jid8kjzpg7gry
+# a bare URL (its hash is in the test's `sha256map`)
+- https://hackage.haskell.org/package/acme-box-0.0.0.0/acme-box-0.0.0.0.tar.gz

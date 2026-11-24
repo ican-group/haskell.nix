@@ -50,6 +50,9 @@ data Src
   = Path FilePath
   | Repo String (Maybe String)
   | Git String String (Maybe String) (Maybe String)
+  | Tarball String String (Maybe String)
+    -- ^ An archive fetched with @fetchzip@: its URL, the @sha256@ of the
+    -- unpacked tree and the subdirectory the package is in.
   deriving Show
 
 pkgs, hsPkgs, errorHandler, pkgconfPkgs, flags :: Text
@@ -267,6 +270,16 @@ srcToNix _ (Git url rev mbSha256 mbPath)
                       Just sha256 -> mkStr (fromString sha256)
                       Nothing     -> mkNull
       ]
+    ] <>
+    [ "postUnpack"
+      $= mkStr (fromString $ "sourceRoot+=/" <> root <> "; echo source root reset to $sourceRoot")
+    | Just root <- [mbPath] ]
+srcToNix _ (Tarball url sha256 mbPath)
+  = mkNonRecSet $
+    [ "src" $= applyMkDefault (mkSym pkgs @. "fetchzip" @@ mkNonRecSet
+      [ "url"    $= mkStr (fromString url)
+      , "sha256" $= mkStr (fromString sha256)
+      ])
     ] <>
     [ "postUnpack"
       $= mkStr (fromString $ "sourceRoot+=/" <> root <> "; echo source root reset to $sourceRoot")

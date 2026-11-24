@@ -12,6 +12,7 @@ module Stack2nix.Stack
   , Stack(..)
   , Dependency(..)
   , Location(..)
+  , archiveCacheRev
   , StackSnapshot(..)
   , PackageFlags
   , GhcOptions
@@ -120,9 +121,19 @@ data Dependency
   = PkgIndex PackageIdentifier (Maybe (Either Sha256 CabalRev)) -- ^ overridden package in the stackage index
   | LocalPath String -- ^ Some local package (potentially overriding a package in the index as well)
   | DVCS Location (Maybe Sha256) [FilePath] -- ^ One or more packages fetched from git or similar.
-  -- TODO: Support archives.
-  -- | Archive ...
+  | Archive URL (Maybe Sha256) (Maybe Sha256) [FilePath]
+    -- ^ One or more packages in an archive (a @.tar.gz@, @.zip@, ...): its
+    -- URL (or a path relative to the @stack.yaml@ file), pantry's @sha256@ (of
+    -- the archive file itself), our @nix-sha256@ (of the unpacked tree, as
+    -- @fetchzip@ wants it) and the subdirs holding the packages.
   deriving (Show)
+
+-- | Archives have no revision, so the @stack-to-nix@ cache (keyed on url,
+-- revision and subdir) and the @repos.json@ of @stack-repos@ use this in its
+-- place.  The haskell.nix side (lib/stack-cache-generator.nix) copies the
+-- @rev@ it is given into the cache, so the two always agree.
+archiveCacheRev :: Rev
+archiveCacheRev = "archive"
 
 -- flags are { pkg -> { flag -> bool } }
 type PackageFlags = HM.HashMap T.Text (HM.HashMap T.Text Bool)
@@ -265,7 +276,7 @@ instance FromJSON Dependency where
   -- Note: we will parse foo-X.Y.Z as a package.
   --       if we want it to be a localPath, it needs
   --       to be ./foo-X.Y.Z
-  parseJSON p = parsePkgIndex p <|> parseLocalPath p <|> parseHackage p <|> parseDVCS p
+  parseJSON p = parsePkgIndex p <|> parseLocalPath p <|> parseHackage p <|> parseArchive p <|> parseDVCS p
     where parsePkgIndex = withText "Package Index" $ \pi ->
             case parsePackageIdentifier (T.unpack pi) of
               -- Cabal will happily parse "foo" as a packageIdentifier,
@@ -281,8 +292,29 @@ instance FromJSON Dependency where
           -- The @hackage@ value is the bare package-index string.
           parseHackage = withObject "Hackage package" $ \o ->
             o .: "hackage" >>= parsePkgIndex
-          parseLocalPath = withText "Local Path" $
-            return . LocalPath . dropTrailingSlash . T.unpack
+          -- A bare http(s) URL is an archive (as for stack/pantry); anything
+          -- else is a local directory.
+          parseLocalPath = withText "Local Path" $ \t ->
+            let s = T.unpack t
+            in return $ if isURL s
+                 then Archive s Nothing Nothing ["."]
+                 else LocalPath (dropTrailingSlash s)
+          -- An archive, as pantry spells it (@archive:@, or the older @url:@,
+          -- or stack 1.x's @location:@ holding a URL):
+          --   - archive: https://example.com/foo-1.0.tar.gz
+          --     sha256: <sha256 of the archive file>
+          --     size: 1234
+          --     subdirs: [ foo ]
+          -- @nix-sha256@ (the hash of the unpacked tree) can be given too, as for
+          -- git repositories.  @size@ is not used.
+          parseArchive = withObject "Archive" $ \o -> Archive
+            <$> (o .: "archive" <|> o .: "url" <|> (o .: "location" >>= urlOnly))
+            <*> o .:? "sha256" .!= Nothing
+            <*> o .:? "nix-sha256" .!= Nothing
+            <*> parseSubdirs o .!= ["."]
+          urlOnly u | isURL u   = return u
+                    | otherwise = fail "not a URL"
+          isURL u = "http://" `isPrefixOf` u || "https://" `isPrefixOf` u
           parseSubdirs o = do
             subdir' <- o .:? "subdir"
             let subdir = fmap (\d -> [d]) subdir'

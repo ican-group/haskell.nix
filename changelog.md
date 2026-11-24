@@ -136,6 +136,15 @@ that will impact users.
     `flake.nix`, which also no longer needs its own `nixpkgs` and
     `nixpkgs-2605` inputs.  Existing `flake.nix` files are unaffected.
 
+  * Stack projects can use archive `extra-deps` (and custom snapshot
+    `packages`): `archive:` or the older `url:` entries (with `subdirs`,
+    pantry's `sha256` of the archive or a `# nix-sha256` of the unpacked
+    tree) and bare `http(s)` URLs.  They used to stop `stack-repos` with
+    `key "git" not found`, and a bare URL was taken for a local directory.
+    This needs the next nix-tools release: until haskell.nix pins it, the
+    pinned `stack-repos` and `stack-to-nix` still reject them.  See
+    "Archives" in the source repository hashes tutorial.
+
 ## November 20, 2026
 
   * `source-repository-package`s with an ssh location (`ssh://...`,
