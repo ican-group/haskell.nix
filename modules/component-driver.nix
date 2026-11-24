@@ -11,6 +11,8 @@ let
       if options ? plan-json && options.plan-json.isDefined
         then haskellLib.extraPackageUnitIds config.plan-json
         else [];
+    # The plan by unit id (for a cross `shellFor`'s `setup-depends`).
+    planJsonById = config.plan-json-by-id or {};
   };
 
   # Packages listed in `nonReinstallablePkgs` are forced to the copy shipped

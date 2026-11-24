@@ -1,4 +1,4 @@
-{ lib, stdenv, mkShell, glibcLocales, ghcForComponent, makeConfigFiles, hsPkgs, hoogleLocal, haskellLib, pkgsBuildBuild, evalPackages, compiler, haskell-nix, ghc, llvmPackages, extraPackageUnitIds ? [] }:
+{ lib, stdenv, mkShell, glibcLocales, ghcForComponent, makeConfigFiles, hsPkgs, hoogleLocal, haskellLib, pkgsBuildBuild, evalPackages, compiler, haskell-nix, ghc, llvmPackages, extraPackageUnitIds ? [], planJsonById ? {} }:
 
 { # `packages` function selects packages that will be worked on in the shell itself.
   # These packages will not be built by `shellFor`, but their
@@ -88,12 +88,57 @@ let
   removeSelectedInputs =
     lib.filter (input: !(isSelectedComponent input));
 
-  # The configs of all the selected components.
-  # This excludes the `setup` dependencies of `Simple` packages, because
-  # `cabal-install` does not build a `Setup` executable for `Simple` packages.
+  # The packages whose `setup-depends` the shell provides.
+  # This excludes `Simple` packages, because `cabal-install` does not build
+  # a `Setup` executable for them.
+  setupPackages = lib.optionals packageSetupDeps
+    (lib.filter (p: p.buildType != "Simple") selectedPackages);
+
+  # The configs of all the selected components and of those packages' setups.
   selectedConfigs = map (c: c.config) selectedComponents
-    ++ lib.optionals packageSetupDeps (map (p: p.setup.config)
-         (lib.filter (p: p.buildType != "Simple") selectedPackages));
+    ++ map (p: p.setup.config) setupPackages;
+
+  # A `setup` component is built for the build platform, from the build
+  # platform's plan, so its `depends` are build-platform libraries.  The
+  # `cabal` of a cross shell instead compiles a custom `Setup.hs` with the
+  # shell's (cross) compiler against the shell's package db (cabal-install
+  # has no separate compiler for it; for the JavaScript backend the result
+  # runs on node), and solves its `setup-depends` with that compiler.  The
+  # project's own (host) plan records that solution as the `setup`
+  # component of the package's plan entry, so a cross shell provides host
+  # builds of those units (#1388).  Units the plan marks `pre-existing`, or
+  # that the package set has no entry for, are the compiler's own (`base`
+  # and the like) and already in its package db.  Without a plan (stack
+  # projects) the build-platform `depends` are kept as before.
+  hostUnitLib = id:
+    let
+      d = hsPkgs.${id} or null;
+      entry = planJsonById.${id} or {};
+      cname = entry.component-name or "lib";
+    in
+      if d == null || !(d ? components) || (entry.type or null) == "pre-existing" then []
+      else if lib.hasPrefix "lib:" cname
+        then [ d.components.sublibs.${lib.removePrefix "lib:" cname} ]
+      else lib.optional ((d.components.library or null) != null) d.components.library;
+  # A package's own (host-stage) plan entry.  Only packages keyed by plan id
+  # carry `identifier.unit-id`; find the others by name and version.
+  planEntryOf = p:
+    planJsonById.${p.identifier.unit-id or ""} or (lib.findFirst
+      (e: (e.pkg-name or null) == p.identifier.name
+        && (e.pkg-version or null) == p.identifier.version
+        && e ? components.setup
+        && haskellLib.planUnitStage e == "host")
+      null (builtins.attrValues planJsonById));
+  # Platform inequality rather than `isCrossHost`: a native musl shell's
+  # compiler and package db are musl too.
+  setupDepends = p:
+    let
+      entry = planEntryOf p;
+      hostIds = if entry == null then null else entry.components.setup.depends or null;
+    in
+      if stdenv.hostPlatform == stdenv.buildPlatform || hostIds == null
+        then p.setup.config.depends
+        else lib.concatMap hostUnitLib hostIds;
 
   identifierName = if lib.length selectedPackages == 1
     then "ghc-shell-for-${(lib.head selectedPackages).identifier.name}"
@@ -103,7 +148,9 @@ let
 
   # We need to remove any dependencies which would bring in selected components (see above).
   packageInputs = haskellLib.uniqueWithName
-    (removeSelectedInputs (haskellLib.uniqueWithName (lib.concatMap (cfg: cfg.depends) selectedConfigs))
+    (removeSelectedInputs (haskellLib.uniqueWithName (
+        lib.concatMap (c: c.config.depends) selectedComponents
+        ++ lib.concatMap setupDepends setupPackages))
       ++ additionalPackages);
 
   # For non haskell dependencies (and `pre-existing` haskell packages)
