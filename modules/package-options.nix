@@ -2,41 +2,81 @@
 {
   options = {
     preUnpack = lib.mkOption {
+      description = ''
+        Shell code for the `preUnpack` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr lib.types.lines;
       default = null;
     };
 
     postUnpack = lib.mkOption {
+      description = ''
+        Shell code for the `postUnpack` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     prePatch = lib.mkOption {
+      description = ''
+        Shell code for the `prePatch` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        With `builderVersion = 2` it runs around the package's `patches`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     postPatch = lib.mkOption {
+      description = ''
+        Shell code for the `postPatch` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        With `builderVersion = 2` it runs around the package's `patches`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     preConfigure = lib.mkOption {
+      description = ''
+        Shell code for the `preConfigure` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     postConfigure = lib.mkOption {
+      description = ''
+        Shell code for the `postConfigure` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     preBuild = lib.mkOption {
+      description = ''
+        Shell code for the `preBuild` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     postBuild = lib.mkOption {
+      description = ''
+        Shell code for the `postBuild` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
@@ -62,31 +102,64 @@
     };
 
     preInstall = lib.mkOption {
+      description = ''
+        Shell code for the `preInstall` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     postInstall = lib.mkOption {
+      description = ''
+        Shell code for the `postInstall` hook of the component's derivation
+        (set on a package, it applies to all of its components).
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     preHaddock = lib.mkOption {
+      description = ''
+        Shell code for the `preHaddock` hook of the component's derivation
+        (set on a package, it applies to all of its components).  It runs in the derivation that
+        builds the component's documentation.
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     postHaddock = lib.mkOption {
+      description = ''
+        Shell code for the `postHaddock` hook of the component's derivation
+        (set on a package, it applies to all of its components).  It runs in the derivation that
+        builds the component's documentation.
+        Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = null;
     };
 
     hardeningDisable = lib.mkOption {
+      description = ''
+        nixpkgs hardening flags to turn off for the component's derivation
+        (`hardeningDisable`), for example `[ "fortify" ]`.
+      '';
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [ ];
     };
 
     ghcOptions = lib.mkOption {
+      description = ''
+        Extra GHC options for the component, passed to `Setup configure` as
+        `--ghc-option`s.  With `builderVersion = 2` they go in the slice's
+        `cabal.project` as `ghc-options:` (so they are part of the unit id), and
+        must match what the plan was made with; prefer a `ghc-options:` stanza in
+        `cabalProjectLocal` there.
+      '';
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [ ];
     };

@@ -1,6 +1,11 @@
 { lib, config, ... }:
 {
   options.errorHandler = lib.mkOption {
+    internal = true;
+    description = ''
+      Functions the generated package expressions call to report a missing
+      dependency (`buildDepError`, `sysDepError`, ...).
+    '';
     type = lib.types.unspecified;
   };
 

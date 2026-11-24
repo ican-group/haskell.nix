@@ -136,6 +136,13 @@ that will impact users.
     `flake.nix`, which also no longer needs its own `nixpkgs` and
     `nixpkgs-2605` inputs.  Existing `flake.nix` files are unaffected.
 
+  * Every option on the Module options page now has a description (the
+    package, component and package-set options), saying when
+    `builderVersion = 2` ignores it.  Options that are only plumbing
+    between haskell.nix's own modules (the plan data, settings copied from
+    the project, the Hackage index) are marked internal and left off the
+    page.
+
 ## November 20, 2026
 
   * `source-repository-package`s with an ssh location (`ssh://...`,

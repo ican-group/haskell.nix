@@ -54,6 +54,8 @@ in
   # (1 = Setup.hs / comp-builder, 2 = cabal v2-build / comp-v2-builder).
   # Propagated from the project-level `builderVersion`.
   options.builderVersion = lib.mkOption {
+    internal = true;
+    description = "Set from the project's `builderVersion`.";
     type = lib.types.int;
     default = 1;
   };
@@ -62,6 +64,8 @@ in
   # for all slices in this project — needed for projects that
   # the wrapper itself depends on (iserv-proxy).
   options.crossTemplateHaskellSupport = lib.mkOption {
+    internal = true;
+    description = "Set from the project's `crossTemplateHaskellSupport`.";
     type = lib.types.bool;
     default = true;
   };
@@ -73,6 +77,8 @@ in
   # the shell has no build-stage compiler and resolves that stage out of
   # hackage instead of the native compiler's installed packages.
   options.withBuildCompiler = lib.mkOption {
+    internal = true;
+    description = "Set from the project's `withBuildCompiler`.";
     type = lib.types.bool;
     default = false;
   };
@@ -81,12 +87,16 @@ in
   # each slice registers the plan's deterministic local unit id (see
   # modules/project-common.nix and builder/comp-v2-builder.nix).
   options.v2LocalPackageSlices = lib.mkOption {
+    internal = true;
+    description = "Set from the project's `v2LocalPackageSlices`.";
     type = lib.types.bool;
     default = false;
   };
   # Propagated from the project-level `v2LocalPackageSliceNames`: the same
   # local-`packages:` slicing, for the named packages only.
   options.v2LocalPackageSliceNames = lib.mkOption {
+    internal = true;
+    description = "Set from the project's `v2LocalPackageSliceNames`.";
     type = lib.types.listOf lib.types.str;
     default = [];
   };
@@ -96,6 +106,8 @@ in
   # cross) at shell startup.  Set in `overlays/haskell.nix` by
   # inheriting from the project module's `config.cabalProjectLocal`.
   options.cabalProjectLocal = lib.mkOption {
+    internal = true;
+    description = "Set from the project's `cabalProjectLocal`.";
     type = lib.types.nullOr lib.types.lines;
     default = null;
   };
@@ -107,11 +119,15 @@ in
   # `ghc-options: -haddock`; null means "text unknown" there, not
   # "empty project".
   options.cabalProject = lib.mkOption {
+    internal = true;
+    description = "Set from the project's `cabalProject`.";
     type = lib.types.nullOr lib.types.lines;
     default = null;
   };
   # Packages in that are `pre-existing` in the cabal plan
   options.preExistingPkgs = lib.mkOption {
+    internal = true;
+    description = "The packages that are `pre-existing` in the plan.";
     type = lib.types.listOf lib.types.str;
     default = [];
   };
@@ -122,6 +138,13 @@ in
   # and if it's not a list of -/+ prefixed strings, be assumed to be overwriting.
   # This seems ugly.
   options.nonReinstallablePkgs = lib.mkOption {
+    description = ''
+      Packages always taken from the compiler's own package database, never
+      built from source: `hsPkgs.<name>` is `null` for them.  A definition
+      replaces the default list rather than adding to it (the last one wins),
+      so set the whole list; do not derive it from
+      `config.nonReinstallablePkgs`, which loops.
+    '';
     type = (lib.types.listOf lib.types.str) // {
       merge = _loc: defs: lib.last (lib.getValues defs);
     };
@@ -213,6 +236,11 @@ in
     ];
 
   options.bootPkgs = lib.mkOption {
+    description = ''
+      Packages that, like `nonReinstallablePkgs`, come from the compiler
+      (`rts`, `ghc-boot-th`, `ghc-bignum`, ...); `hsPkgs.<name>` is `null` for
+      them.
+    '';
     type = lib.types.listOf lib.types.str;
   };
 
@@ -228,6 +256,10 @@ in
       "system-cxx-std-lib" ];
 
   options.hsPkgs = lib.mkOption {
+    description = ''
+      The built package set: each package's components, checks and so on,
+      as a project's `hsPkgs`.  Modules can read it (`config.hsPkgs`).
+    '';
     type = lib.types.unspecified;
   };
 

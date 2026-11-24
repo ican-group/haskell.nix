@@ -26,26 +26,35 @@ in
   # their flags argument.
   config._module.args = { inherit (config) flags; };
 
-  # TODO: Add descriptions to everything.
   options = {
     flags = lib.mkOption {
+      description = ''
+        The package's Cabal flags, by name.  The plan's flag choices are set
+        as defaults, so a module can override one.
+      '';
       type = types.attrsOf types.bool;
     };
 
     package = {
       specVersion = lib.mkOption {
+        description = ''
+          The package's `cabal-version`.  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
       };
 
       identifier.name = lib.mkOption {
+        description = "The package name.";
         type = types.str;
       };
 
       identifier.version = lib.mkOption {
+        description = "The package version.";
         type = types.str;
       };
 
       identifier.id = lib.mkOption {
+        description = "`<name>-<version>`.";
         type = types.str;
         default = "${config.package.identifier.name}-${config.package.identifier.version}";
         defaultText = "\${config.package.identifier.name}-\${config.package.identifier.version}";
@@ -56,6 +65,10 @@ in
       # packages.  Null when not derived from a plan.json entry
       # (e.g. setup deps before plan resolution).
       identifier.unit-id = lib.mkOption {
+        description = ''
+          The unit id `cabal-install` gave the package in `plan.json` (its
+          `id`), or `null` when the package does not come from a plan entry.
+        '';
         type = types.nullOr types.str;
         default = null;
       };
@@ -82,104 +95,189 @@ in
       };
 
       license = lib.mkOption {
+        description = ''
+          The package's `license`.  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
       };
 
       copyright = lib.mkOption {
+        description = ''
+          The package's `copyright`.  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
       };
 
       maintainer = lib.mkOption {
+        description = ''
+          The package's `maintainer`.  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
       };
 
       author = lib.mkOption {
+        description = ''
+          The package's `author`.  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
       };
 
       homepage = lib.mkOption {
+        description = ''
+          The package's `homepage`.  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
       };
 
       url = lib.mkOption {
+        description = ''
+          The package's `package-url`.  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
       };
 
       synopsis = lib.mkOption {
+        description = ''
+          The package's `synopsis`.  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
         default = "";
       };
 
       description = lib.mkOption {
+        description = ''
+          The package's `description`.  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
       };
 
       buildType = lib.mkOption {
+        description = ''
+          The package's `build-type` (`Simple`, `Configure`, `Make` or
+          `Custom`).  From the `.cabal` file (set by the generated package expression).
+        '';
         type = types.str;
       };
 
       setup-depends = lib.mkOption {
+        description = ''
+          The dependencies of the package's `custom-setup` stanza, used to
+          build its `Setup`.
+        '';
         type = listOfFilteringNulls types.unspecified;
         default = [ ];
       };
 
       detailLevel = lib.mkOption {
+        description = ''
+          How much of the `.cabal` file the generated expression describes:
+          `"FullDetails"` (with source files and directories) lets haskell.nix
+          filter each component's source down to the files it uses (with
+          `builderVersion = 1`); `"MinimalDetails"` does not.
+        '';
         type = types.str;
         default = "MinimalDetails";
       };
 
       licenseFiles = lib.mkOption {
+        description = ''
+          The package's `license-files`.  Used to work out the component's
+          source files (with `builderVersion = 1`).
+        '';
         type = listOfFilteringNulls types.unspecified;
         default = [ ];
       };
 
       dataDir = lib.mkOption {
+        description = ''
+          The package's `data-dir`.  Used to work out the component's source
+          files (with `builderVersion = 1`).
+        '';
         type = types.str;
         default = "";
       };
 
       dataFiles = lib.mkOption {
+        description = ''
+          The package's `data-files`.  Used to work out the component's source
+          files (with `builderVersion = 1`).
+        '';
         type = listOfFilteringNulls types.unspecified;
         default = [ ];
       };
 
       extraSrcFiles = lib.mkOption {
+        description = ''
+          The package's `extra-source-files`.  Used to work out the component's
+          source files (with `builderVersion = 1`).
+        '';
         type = listOfFilteringNulls types.unspecified;
         default = [ ];
       };
 
       extraTmpFiles = lib.mkOption {
+        description = "The package's `extra-tmp-files`.";
         type = listOfFilteringNulls types.unspecified;
         default = [ ];
       };
 
       extraDocFiles = lib.mkOption {
+        description = ''
+          The package's `extra-doc-files`.  Used to work out the component's
+          source files (with `builderVersion = 1`).
+        '';
         type = listOfFilteringNulls types.unspecified;
         default = [ ];
       };
 
       cleanHpack = lib.mkOption {
+        description = ''
+          For a package whose `.cabal` file is generated by hpack, filter each
+          component's source to the files it uses anyway (keeping files the
+          `package.yaml` includes from parent directories).  Without it the
+          whole package source is used.  Only applies with `builderVersion = 1`.
+        '';
         type = types.bool;
         default = false;
       };
 
       isLocal = lib.mkOption {
+        description = ''
+          Set for local packages: the project's own and those from
+          `source-repository-package`s (or git and local `extra-deps` with
+          stack).  `shellFor` provides their dependencies rather than the
+          packages, and `localPackages` options apply to them.
+        '';
         type = types.bool;
         default = false;
       };
 
       # Package in `hsPkgs` that is a composite pointing components of the packages keyed by UnitID
       isRedirect = lib.mkOption {
+        internal = true;
+        description = ''
+          Set on `hsPkgs.<name>` records that only point at the plan's
+          unit-id-keyed packages (with `builderVersion = 2`).
+        '';
         type = types.bool;
         default = false;
       };
 
       isProject = lib.mkOption {
+        description = ''
+          Set for the project's own packages (not those from
+          `source-repository-package`s).  `projectPackages` options apply to
+          them, and they are what the flake outputs are made for.
+        '';
         type = types.bool;
         default = false;
       };
 
       buildable = lib.mkOption {
+        description = ''
+          Set to `false` in a module to leave the whole package out (none of
+          its components are built or included in shells).
+        '';
         type = types.bool;
         default = true;
       };
@@ -187,6 +285,10 @@ in
 
     components = {
       setup = lib.mkOption {
+        description = ''
+          The package's `Setup` (for `build-type: Custom` packages, or the
+          default one), used to build it with `builderVersion = 1`.
+        '';
         type = types.nullOr componentType;
         default = {
           depends = [ ];
@@ -210,37 +312,58 @@ in
       };
 
       library = lib.mkOption {
+        description = ''
+          The package's library, or `null` if it has none.
+        '';
         type = types.nullOr componentType;
         default = null;
       };
 
       sublibs = lib.mkOption {
+        description = ''
+          The package's sub-libraries, by name.
+        '';
         type = types.attrsOf componentType;
         default = { };
       };
 
       foreignlibs = lib.mkOption {
+        description = ''
+          The package's foreign libraries, by name.
+        '';
         type = types.attrsOf componentType;
         default = { };
       };
 
       exes = lib.mkOption {
+        description = ''
+          The package's executables, by name.
+        '';
         type = types.attrsOf componentType;
         default = { };
       };
 
       tests = lib.mkOption {
+        description = ''
+          The package's test suites, by name.
+        '';
         type = types.attrsOf componentType;
         default = { };
       };
 
       benchmarks = lib.mkOption {
+        description = ''
+          The package's benchmarks, by name.
+        '';
         type = types.attrsOf componentType;
         default = { };
       };
     };
 
     name = lib.mkOption {
+      description = ''
+        `<name>-<version>`, used in derivation names.
+      '';
       type = types.str;
       default = "${config.package.identifier.name}-${config.package.identifier.version}";
       defaultText = "\${config.package.identifier.name}-\${config.package.identifier.version}";
@@ -270,11 +393,18 @@ in
     };
 
     sha256 = lib.mkOption {
+      description = ''
+        The hash of the package's Hackage tarball, used by the default `src`.
+      '';
       type = types.nullOr types.str;
       default = null;
     };
 
     src = lib.mkOption {
+      description = ''
+        The package source.  Defaults to the Hackage tarball (when `sha256` is
+        set); local packages have their directory in the project.
+      '';
       type = types.nullOr (types.either path types.package);
       default =
         if options.package.identifier.name.isDefined && options.package.identifier.version.isDefined && options.sha256.isDefined
@@ -308,21 +438,39 @@ in
     };
 
     cabal-generator = lib.mkOption {
+      description = ''
+        `"hpack"` when the package's `.cabal` file is generated from its
+        `package.yaml`: the builders run hpack on the source first.
+      '';
       type = types.nullOr types.str;
       default = null;
     };
 
     revision = lib.mkOption {
+      description = ''
+        The Hackage revision of the package's `.cabal` file (`0` is the one in
+        the tarball).
+      '';
       type = types.nullOr types.int;
       default = null;
     };
 
     revisionSha256 = lib.mkOption {
+      description = ''
+        The hash of the revised `.cabal` file (from hackage.nix).
+      '';
       type = types.nullOr types.str;
       default = null;
     };
 
     patches = lib.mkOption {
+      description = ''
+        Patches applied to the package source.  An entry may be a function of
+        `{ version, ... }` returning a patch or `null`, to apply it only to
+        some versions.  With `builderVersion = 2`, prefer listing the patched
+        source under `packages:` in `cabalProjectLocal`: patches here make
+        the package's source, and so its unit id, differ from the plan's.
+      '';
       type = types.listOf (types.either types.unspecified path);
       default = [ ];
     };
