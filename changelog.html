@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-22836668.js";
+            window.path_to_searchindex_js = "searchindex-29dd5646.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-310822d8.js"></script>
@@ -326,6 +326,14 @@ checks, dev shells, <code>hydraJobs</code> and <code>ciJobs</code> become the fl
 jobs.  The flake template (<code>nix flake init --template github:ican-group/haskell.nix</code>) and <code>hix init</code> now write a flake-parts
 <code>flake.nix</code>, which also no longer needs its own <code>nixpkgs</code> and
 <code>nixpkgs-2605</code> inputs.  Existing <code>flake.nix</code> files are unaffected.</p>
+</li>
+<li>
+<p>Every option on the Module options page now has a description (the
+package, component and package-set options), saying when
+<code>builderVersion = 2</code> ignores it.  Options that are only plumbing
+between haskell.nix’s own modules (the plan data, settings copied from
+the project, the Hackage index) are marked internal and left off the
+page.</p>
 </li>
 </ul>
 <h2 id="november-20-2026"><a class="header" href="#november-20-2026">November 20, 2026</a></h2>

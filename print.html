@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-22836668.js";
+            window.path_to_searchindex_js = "searchindex-29dd5646.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-310822d8.js"></script>
@@ -4343,6 +4343,9 @@ the top-level option of the same name in component-driver.nix.</p>
 <p><strong>Type</strong>: list of package</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="bootpkgs"><a class="header" href="#bootpkgs"><code>bootPkgs</code></a></h2>
+<p>Packages that, like <code>nonReinstallablePkgs</code>, come from the compiler
+(<code>rts</code>, <code>ghc-boot-th</code>, <code>ghc-bignum</code>, …); <code>hsPkgs.&lt;name&gt;</code> is <code>null</code> for
+them.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="buildjobs"><a class="header" href="#buildjobs"><code>buildJobs</code></a></h2>
@@ -4369,33 +4372,30 @@ capped default.</li>
 <p><strong>Type</strong>: null or (positive integer, meaning &gt;0)</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="buildable"><a class="header" href="#buildable"><code>buildable</code></a></h2>
+<p>Whether the component can be built: the <code>.cabal</code> file’s <code>buildable:</code>
+field under the plan’s flags, set by the generated package expression.
+Components that are not buildable (or not in the plan) are left out of
+<code>components</code>, <code>checks</code> and shells.  Use <code>package.buildable = false</code> to
+drop a whole package.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
-<h2 id="builderversion-1"><a class="header" href="#builderversion-1"><code>builderVersion</code></a></h2>
-<p><strong>Type</strong>: signed integer</p>
-<p><strong>Default</strong>: <code>1</code></p>
-<h2 id="cabalcompiler"><a class="header" href="#cabalcompiler"><code>cabal.compiler</code></a></h2>
-<p><strong>Type</strong>: unspecified value</p>
-<h2 id="cabalsystem"><a class="header" href="#cabalsystem"><code>cabal.system</code></a></h2>
-<p><strong>Type</strong>: unspecified value</p>
-<h2 id="cabalproject-2"><a class="header" href="#cabalproject-2"><code>cabalProject</code></a></h2>
-<p><strong>Type</strong>: null or strings concatenated with “\n”</p>
-<p><strong>Default</strong>: <code>null</code></p>
-<h2 id="cabalprojectlocal"><a class="header" href="#cabalprojectlocal"><code>cabalProjectLocal</code></a></h2>
-<p><strong>Type</strong>: null or strings concatenated with “\n”</p>
-<p><strong>Default</strong>: <code>null</code></p>
 <h2 id="compilernix-name"><a class="header" href="#compilernix-name"><code>compiler.nix-name</code></a></h2>
+<p>The compiler’s haskell.nix name (for example <code>"ghc967"</code>).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="compilerpackages"><a class="header" href="#compilerpackages"><code>compiler.packages</code></a></h2>
+<p>The packages that come with the compiler, and their versions.</p>
 <p><strong>Type</strong>: attribute set of string</p>
 <p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="compilerversion"><a class="header" href="#compilerversion"><code>compiler.version</code></a></h2>
+<p>The compiler’s version (for example <code>"9.6.7"</code>).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="configureallcomponents"><a class="header" href="#configureallcomponents"><code>configureAllComponents</code></a></h2>
 <p>If set all the components in the package are configured (useful for cabal-doctest).</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="configureflags"><a class="header" href="#configureflags"><code>configureFlags</code></a></h2>
+<p>Extra arguments for <code>Setup configure</code>.  Not used by <code>builderVersion = 2</code>.  Use <code>configure-options:</code> (or the
+matching <code>cabal.project</code> field) in <code>cabalProjectLocal</code> instead.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="configureoptions"><a class="header" href="#configureoptions"><code>configureOptions</code></a></h2>
@@ -4420,9 +4420,6 @@ to the ./configure script.  v1 ignores this option entirely.</p>
 <code>ca-derivations</code> enabled.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
-<h2 id="crosstemplatehaskellsupport"><a class="header" href="#crosstemplatehaskellsupport"><code>crossTemplateHaskellSupport</code></a></h2>
-<p><strong>Type</strong>: boolean</p>
-<p><strong>Default</strong>: <code>true</code></p>
 <h2 id="docheck"><a class="header" href="#docheck"><code>doCheck</code></a></h2>
 <p>Whether this test suite gets a check (<code>hsPkgs.&lt;pkg&gt;.checks.&lt;name&gt;</code>),
 the derivation that runs it.  Tests with <code>doCheck = false</code> are left out
@@ -4444,6 +4441,9 @@ See docs/tutorials/testing.md.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="doexactconfig"><a class="header" href="#doexactconfig"><code>doExactConfig</code></a></h2>
+<p>Configure the component with <code>--exact-configuration</code>, so that Cabal
+takes its dependencies from the package database haskell.nix makes for
+it instead of solving them.  Shells made by <code>shellFor</code> do not use it.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="dohaddock"><a class="header" href="#dohaddock"><code>doHaddock</code></a></h2>
@@ -4493,15 +4493,28 @@ swaps in the <code>.dwarf</code> GHC variant and passes <code>-g3</code> to ghc.
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="enablelibraryforghci"><a class="header" href="#enablelibraryforghci"><code>enableLibraryForGhci</code></a></h2>
+<p>Build the library’s <code>.o</code> for GHCi (<code>--enable-library-for-ghci</code>).  Has
+no effect for ghcjs, wasm and android.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
 <h2 id="enablelibraryprofiling"><a class="header" href="#enablelibraryprofiling"><code>enableLibraryProfiling</code></a></h2>
+<p>Also build the profiling version of the library
+(<code>--enable-library-profiling</code>).  <code>.profiled</code> on a component turns this
+on.  Not used by <code>builderVersion = 2</code>.  Set <code>profiling: True</code> in <code>cabalProjectLocal</code>
+instead (see docs/dev/profiling.md).</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="enableprofiling"><a class="header" href="#enableprofiling"><code>enableProfiling</code></a></h2>
+<p>Build the component with profiling (<code>--enable-profiling</code>): profiled
+executables, and profiled libraries for its dependencies.  Not used by <code>builderVersion = 2</code>.  Set
+<code>profiling: True</code> in <code>cabalProjectLocal</code> instead.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="enableseparatedataoutput"><a class="header" href="#enableseparatedataoutput"><code>enableSeparateDataOutput</code></a></h2>
+<p>Install the component’s data files in a separate <code>data</code> output.  Off
+by default when building on darwin: rewriting the store path of an
+existing <code>data</code> output into a signed binary invalidates its signature
+(#2018).  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
 <h2 id="enableshared"><a class="header" href="#enableshared"><code>enableShared</code></a></h2>
@@ -4512,8 +4525,6 @@ swaps in the <code>.dwarf</code> GHC variant and passes <code>-g3</code> to ghc.
 <p>If set, enables building static libraries and executables.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
-<h2 id="errorhandler"><a class="header" href="#errorhandler"><code>errorHandler</code></a></h2>
-<p><strong>Type</strong>: unspecified value</p>
 <h2 id="evalpackages-1"><a class="header" href="#evalpackages-1"><code>evalPackages</code></a></h2>
 <p>The <code>evalPackages</code> that will be used when building <code>hoogle</code> and shell tools.</p>
 <p><strong>Type</strong>: unspecified value</p>
@@ -4560,19 +4571,25 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="ghcpackage"><a class="header" href="#ghcpackage"><code>ghc.package</code></a></h2>
+<p>The GHC that builds the package set.</p>
 <p><strong>Type</strong>: package</p>
 <p><strong>Default</strong>: <code>"pkgs.buildPackages.haskell-nix.compiler.\${config.compiler.nix-name}"</code></p>
 <h2 id="ghcoptions"><a class="header" href="#ghcoptions"><code>ghcOptions</code></a></h2>
+<p>Extra GHC options for the component, passed to <code>Setup configure</code> as
+<code>--ghc-option</code>s.  With <code>builderVersion = 2</code> they go in the slice’s
+<code>cabal.project</code> as <code>ghc-options:</code> (so they are part of the unit id), and
+must match what the plan was made with; prefer a <code>ghc-options:</code> stanza in
+<code>cabalProjectLocal</code> there.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
-<h2 id="hackageconfigs"><a class="header" href="#hackageconfigs"><code>hackage.configs</code></a></h2>
-<p><strong>Type</strong>: unspecified value</p>
-<h2 id="hackagedb"><a class="header" href="#hackagedb"><code>hackage.db</code></a></h2>
-<p><strong>Type</strong>: unspecified value</p>
 <h2 id="hardeningdisable"><a class="header" href="#hardeningdisable"><code>hardeningDisable</code></a></h2>
+<p>nixpkgs hardening flags to turn off for the component’s derivation
+(<code>hardeningDisable</code>), for example <code>[ "fortify" ]</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="hspkgs"><a class="header" href="#hspkgs"><code>hsPkgs</code></a></h2>
+<p>The built package set: each package’s components, checks and so on,
+as a project’s <code>hsPkgs</code>.  Modules can read it (<code>config.hsPkgs</code>).</p>
 <p><strong>Type</strong>: unspecified value</p>
 <h2 id="keepconfigfiles"><a class="header" href="#keepconfigfiles"><code>keepConfigFiles</code></a></h2>
 <p>Keep component configFiles in the store in a <code>configFiles</code> output</p>
@@ -4597,15 +4614,17 @@ package’s <code>config</code>, or a list of these.</p>
 <p><strong>Type</strong>: package options (as for packages.&lt;name&gt;), or a module function returning them</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="nonreinstallablepkgs"><a class="header" href="#nonreinstallablepkgs"><code>nonReinstallablePkgs</code></a></h2>
-<p><strong>Type</strong>: list of string</p>
-<p><strong>Default</strong>: <code>[ ]</code></p>
-<h2 id="package-ids-by-name"><a class="header" href="#package-ids-by-name"><code>package-ids-by-name</code></a></h2>
-<p><strong>Type</strong>: attribute set of list of string</p>
-<p><strong>Default</strong>: <code>{ }</code></p>
-<h2 id="package-keys"><a class="header" href="#package-keys"><code>package-keys</code></a></h2>
+<p>Packages always taken from the compiler’s own package database, never
+built from source: <code>hsPkgs.&lt;name&gt;</code> is <code>null</code> for them.  A definition
+replaces the default list rather than adding to it (the last one wins),
+so set the whole list; do not derive it from
+<code>config.nonReinstallablePkgs</code>, which loops.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packages"><a class="header" href="#packages"><code>packages</code></a></h2>
+<p>The packages of the package set (see the <code>packages.&lt;name&gt;.*</code> options),
+by name, and with a plan.json-based project also by unit id.  Setting an
+option on <code>packages.&lt;name&gt;</code> sets it on every unit of that package.</p>
 <p><strong>Type</strong>: attribute set of (submodule)</p>
 <h2 id="packagesnameadditional-prebuilt-depends"><a class="header" href="#packagesnameadditional-prebuilt-depends"><code>packages.&lt;name&gt;.additional-prebuilt-depends</code></a></h2>
 <p>Per-component additional pre-built Haskell packages to make available
@@ -4642,21 +4661,32 @@ capped default.</li>
 <p><strong>Type</strong>: null or (positive integer, meaning &gt;0)</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamebuildable"><a class="header" href="#packagesnamebuildable"><code>packages.&lt;name&gt;.buildable</code></a></h2>
+<p>Whether the component can be built: the <code>.cabal</code> file’s <code>buildable:</code>
+field under the plan’s flags, set by the generated package expression.
+Components that are not buildable (or not in the plan) are left out of
+<code>components</code>, <code>checks</code> and shells.  Use <code>package.buildable = false</code> to
+drop a whole package.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
 <h2 id="packagesnamecabal-generator"><a class="header" href="#packagesnamecabal-generator"><code>packages.&lt;name&gt;.cabal-generator</code></a></h2>
+<p><code>"hpack"</code> when the package’s <code>.cabal</code> file is generated from its
+<code>package.yaml</code>: the builders run hpack on the source first.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentsbenchmarks"><a class="header" href="#packagesnamecomponentsbenchmarks"><code>packages.&lt;name&gt;.components.benchmarks</code></a></h2>
+<p>The package’s benchmarks, by name.</p>
 <p><strong>Type</strong>: attribute set of (submodule)</p>
 <p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="packagesnamecomponentsexes"><a class="header" href="#packagesnamecomponentsexes"><code>packages.&lt;name&gt;.components.exes</code></a></h2>
+<p>The package’s executables, by name.</p>
 <p><strong>Type</strong>: attribute set of (submodule)</p>
 <p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="packagesnamecomponentsforeignlibs"><a class="header" href="#packagesnamecomponentsforeignlibs"><code>packages.&lt;name&gt;.components.foreignlibs</code></a></h2>
+<p>The package’s foreign libraries, by name.</p>
 <p><strong>Type</strong>: attribute set of (submodule)</p>
 <p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="packagesnamecomponentslibrary"><a class="header" href="#packagesnamecomponentslibrary"><code>packages.&lt;name&gt;.components.library</code></a></h2>
+<p>The package’s library, or <code>null</code> if it has none.</p>
 <p><strong>Type</strong>: null or (submodule)</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibraryadditional-prebuilt-depends"><a class="header" href="#packagesnamecomponentslibraryadditional-prebuilt-depends"><code>packages.&lt;name&gt;.components.library.additional-prebuilt-depends</code></a></h2>
@@ -4668,9 +4698,13 @@ the top-level option of the same name in component-driver.nix.</p>
 <p><strong>Type</strong>: list of package</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryasmsources"><a class="header" href="#packagesnamecomponentslibraryasmsources"><code>packages.&lt;name&gt;.components.library.asmSources</code></a></h2>
+<p>The component’s <code>asm-sources</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarybuild-tools"><a class="header" href="#packagesnamecomponentslibrarybuild-tools"><code>packages.&lt;name&gt;.components.library.build-tools</code></a></h2>
+<p>Executables the component needs at build time (<code>build-tool-depends</code>
+and <code>build-tools</code>), as derivations.</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarybuildjobs"><a class="header" href="#packagesnamecomponentslibrarybuildjobs"><code>packages.&lt;name&gt;.components.library.buildJobs</code></a></h2>
@@ -4697,12 +4731,21 @@ capped default.</li>
 <p><strong>Type</strong>: null or (positive integer, meaning &gt;0)</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarybuildable"><a class="header" href="#packagesnamecomponentslibrarybuildable"><code>packages.&lt;name&gt;.components.library.buildable</code></a></h2>
+<p>Whether the component can be built: the <code>.cabal</code> file’s <code>buildable:</code>
+field under the plan’s flags, set by the generated package expression.
+Components that are not buildable (or not in the plan) are left out of
+<code>components</code>, <code>checks</code> and shells.  Use <code>package.buildable = false</code> to
+drop a whole package.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
 <h2 id="packagesnamecomponentslibrarycsources"><a class="header" href="#packagesnamecomponentslibrarycsources"><code>packages.&lt;name&gt;.components.library.cSources</code></a></h2>
+<p>The component’s <code>c-sources</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarycmmsources"><a class="header" href="#packagesnamecomponentslibrarycmmsources"><code>packages.&lt;name&gt;.components.library.cmmSources</code></a></h2>
+<p>The component’s <code>cmm-sources</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryconfigureallcomponents"><a class="header" href="#packagesnamecomponentslibraryconfigureallcomponents"><code>packages.&lt;name&gt;.components.library.configureAllComponents</code></a></h2>
@@ -4710,6 +4753,8 @@ capped default.</li>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibraryconfigureflags"><a class="header" href="#packagesnamecomponentslibraryconfigureflags"><code>packages.&lt;name&gt;.components.library.configureFlags</code></a></h2>
+<p>Extra arguments for <code>Setup configure</code>.  Not used by <code>builderVersion = 2</code>.  Use <code>configure-options:</code> (or the
+matching <code>cabal.project</code> field) in <code>cabalProjectLocal</code> instead.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryconfigureoptions"><a class="header" href="#packagesnamecomponentslibraryconfigureoptions"><code>packages.&lt;name&gt;.components.library.configureOptions</code></a></h2>
@@ -4735,9 +4780,13 @@ to the ./configure script.  v1 ignores this option entirely.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibrarycxxsources"><a class="header" href="#packagesnamecomponentslibrarycxxsources"><code>packages.&lt;name&gt;.components.library.cxxSources</code></a></h2>
+<p>The component’s <code>cxx-sources</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarydepends"><a class="header" href="#packagesnamecomponentslibrarydepends"><code>packages.&lt;name&gt;.components.library.depends</code></a></h2>
+<p>The Haskell libraries the component depends on (<code>build-depends</code>), from
+the generated package expression.</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarydocheck"><a class="header" href="#packagesnamecomponentslibrarydocheck"><code>packages.&lt;name&gt;.components.library.doCheck</code></a></h2>
@@ -4761,6 +4810,9 @@ See docs/tutorials/testing.md.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibrarydoexactconfig"><a class="header" href="#packagesnamecomponentslibrarydoexactconfig"><code>packages.&lt;name&gt;.components.library.doExactConfig</code></a></h2>
+<p>Configure the component with <code>--exact-configuration</code>, so that Cabal
+takes its dependencies from the package database haskell.nix makes for
+it instead of solving them.  Shells made by <code>shellFor</code> do not use it.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibrarydohaddock"><a class="header" href="#packagesnamecomponentslibrarydohaddock"><code>packages.&lt;name&gt;.components.library.doHaddock</code></a></h2>
@@ -4810,15 +4862,28 @@ swaps in the <code>.dwarf</code> GHC variant and passes <code>-g3</code> to ghc.
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibraryenablelibraryforghci"><a class="header" href="#packagesnamecomponentslibraryenablelibraryforghci"><code>packages.&lt;name&gt;.components.library.enableLibraryForGhci</code></a></h2>
+<p>Build the library’s <code>.o</code> for GHCi (<code>--enable-library-for-ghci</code>).  Has
+no effect for ghcjs, wasm and android.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
 <h2 id="packagesnamecomponentslibraryenablelibraryprofiling"><a class="header" href="#packagesnamecomponentslibraryenablelibraryprofiling"><code>packages.&lt;name&gt;.components.library.enableLibraryProfiling</code></a></h2>
+<p>Also build the profiling version of the library
+(<code>--enable-library-profiling</code>).  <code>.profiled</code> on a component turns this
+on.  Not used by <code>builderVersion = 2</code>.  Set <code>profiling: True</code> in <code>cabalProjectLocal</code>
+instead (see docs/dev/profiling.md).</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibraryenableprofiling"><a class="header" href="#packagesnamecomponentslibraryenableprofiling"><code>packages.&lt;name&gt;.components.library.enableProfiling</code></a></h2>
+<p>Build the component with profiling (<code>--enable-profiling</code>): profiled
+executables, and profiled libraries for its dependencies.  Not used by <code>builderVersion = 2</code>.  Set
+<code>profiling: True</code> in <code>cabalProjectLocal</code> instead.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibraryenableseparatedataoutput"><a class="header" href="#packagesnamecomponentslibraryenableseparatedataoutput"><code>packages.&lt;name&gt;.components.library.enableSeparateDataOutput</code></a></h2>
+<p>Install the component’s data files in a separate <code>data</code> output.  Off
+by default when building on darwin: rewriting the store path of an
+existing <code>data</code> output into a signed binary invalidates its signature
+(#2018).  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
 <h2 id="packagesnamecomponentslibraryenableshared"><a class="header" href="#packagesnamecomponentslibraryenableshared"><code>packages.&lt;name&gt;.components.library.enableShared</code></a></h2>
@@ -4846,9 +4911,12 @@ cabal computes for the slice includes the same
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryextrasrcfiles"><a class="header" href="#packagesnamecomponentslibraryextrasrcfiles"><code>packages.&lt;name&gt;.components.library.extraSrcFiles</code></a></h2>
+<p>The component’s extra source files.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryframeworks"><a class="header" href="#packagesnamecomponentslibraryframeworks"><code>packages.&lt;name&gt;.components.library.frameworks</code></a></h2>
+<p>macOS frameworks the component uses (<code>frameworks:</code>), as packages.</p>
 <p><strong>Type</strong>: list of (null or package)</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarygenerateoptparseapplicativecompletions"><a class="header" href="#packagesnamecomponentslibrarygenerateoptparseapplicativecompletions"><code>packages.&lt;name&gt;.components.library.generateOptparseApplicativeCompletions</code></a></h2>
@@ -4877,12 +4945,21 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibraryghcoptions"><a class="header" href="#packagesnamecomponentslibraryghcoptions"><code>packages.&lt;name&gt;.components.library.ghcOptions</code></a></h2>
+<p>Extra GHC options for the component, passed to <code>Setup configure</code> as
+<code>--ghc-option</code>s.  With <code>builderVersion = 2</code> they go in the slice’s
+<code>cabal.project</code> as <code>ghc-options:</code> (so they are part of the unit id), and
+must match what the plan was made with; prefer a <code>ghc-options:</code> stanza in
+<code>cabalProjectLocal</code> there.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryhardeningdisable"><a class="header" href="#packagesnamecomponentslibraryhardeningdisable"><code>packages.&lt;name&gt;.components.library.hardeningDisable</code></a></h2>
+<p>nixpkgs hardening flags to turn off for the component’s derivation
+(<code>hardeningDisable</code>), for example <code>[ "fortify" ]</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryhssourcedirs"><a class="header" href="#packagesnamecomponentslibraryhssourcedirs"><code>packages.&lt;name&gt;.components.library.hsSourceDirs</code></a></h2>
+<p>The component’s <code>hs-source-dirs</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>:</p>
 <pre><code class="language-nix">[
@@ -4890,12 +4967,17 @@ exe component derivation directly.</p>
 ]
 </code></pre>
 <h2 id="packagesnamecomponentslibraryincludedirs"><a class="header" href="#packagesnamecomponentslibraryincludedirs"><code>packages.&lt;name&gt;.components.library.includeDirs</code></a></h2>
+<p>The component’s <code>include-dirs</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryincludes"><a class="header" href="#packagesnamecomponentslibraryincludes"><code>packages.&lt;name&gt;.components.library.includes</code></a></h2>
+<p>The component’s <code>includes</code> (header files).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryjssources"><a class="header" href="#packagesnamecomponentslibraryjssources"><code>packages.&lt;name&gt;.components.library.jsSources</code></a></h2>
+<p>The component’s <code>js-sources</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarykeepconfigfiles"><a class="header" href="#packagesnamecomponentslibrarykeepconfigfiles"><code>packages.&lt;name&gt;.components.library.keepConfigFiles</code></a></h2>
@@ -4911,15 +4993,22 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibrarylibs"><a class="header" href="#packagesnamecomponentslibrarylibs"><code>packages.&lt;name&gt;.components.library.libs</code></a></h2>
+<p>System libraries the component links against (<code>extra-libraries</code>,
+mapped to nixpkgs packages).</p>
 <p><strong>Type</strong>: list of (null or package or list of package)</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarymainpath"><a class="header" href="#packagesnamecomponentslibrarymainpath"><code>packages.&lt;name&gt;.components.library.mainPath</code></a></h2>
+<p>The component’s <code>main-is</code>.  Used to work out the component’s source
+files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarymodules"><a class="header" href="#packagesnamecomponentslibrarymodules"><code>packages.&lt;name&gt;.components.library.modules</code></a></h2>
+<p>The component’s modules, from the <code>.cabal</code> file.</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarypkgconfig"><a class="header" href="#packagesnamecomponentslibrarypkgconfig"><code>packages.&lt;name&gt;.components.library.pkgconfig</code></a></h2>
+<p>The packages providing the component’s <code>pkgconfig-depends</code> (one list
+of alternatives per dependency).</p>
 <p><strong>Type</strong>: list of list of package</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryplanned"><a class="header" href="#packagesnamecomponentslibraryplanned"><code>packages.&lt;name&gt;.components.library.planned</code></a></h2>
@@ -4927,19 +5016,31 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentslibraryplatforms"><a class="header" href="#packagesnamecomponentslibraryplatforms"><code>packages.&lt;name&gt;.components.library.platforms</code></a></h2>
+<p>The platforms the component can be built for, or <code>null</code> for all of
+them: the component derivation’s <code>meta.platforms</code>.</p>
 <p><strong>Type</strong>: null or (list of unspecified value)</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibraryplugins"><a class="header" href="#packagesnamecomponentslibraryplugins"><code>packages.&lt;name&gt;.components.library.plugins</code></a></h2>
+<p>GHC plugins for the component, loaded through the <code>GHC_PLUGINS</code>
+environment variable of the component’s ghc wrapper (for its shell, not
+its build).  Each has the plugin’s <code>library</code> component, the <code>moduleName</code>
+of the plugin and its <code>args</code>.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of (submodule)</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarypluginsargs"><a class="header" href="#packagesnamecomponentslibrarypluginsargs"><code>packages.&lt;name&gt;.components.library.plugins.*.args</code></a></h2>
+<p>Arguments passed to the plugin.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarypluginslibrary"><a class="header" href="#packagesnamecomponentslibrarypluginslibrary"><code>packages.&lt;name&gt;.components.library.plugins.*.library</code></a></h2>
+<p>The library component (from <code>hsPkgs</code>) that provides the plugin.</p>
 <p><strong>Type</strong>: unspecified value</p>
 <h2 id="packagesnamecomponentslibrarypluginsmodulename"><a class="header" href="#packagesnamecomponentslibrarypluginsmodulename"><code>packages.&lt;name&gt;.components.library.plugins.*.moduleName</code></a></h2>
+<p>The module that exports the plugin.</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamecomponentslibrarypostbuild"><a class="header" href="#packagesnamecomponentslibrarypostbuild"><code>packages.&lt;name&gt;.components.library.postBuild</code></a></h2>
+<p>Shell code for the <code>postBuild</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarypostcheck"><a class="header" href="#packagesnamecomponentslibrarypostcheck"><code>packages.&lt;name&gt;.components.library.postCheck</code></a></h2>
@@ -4947,24 +5048,45 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarypostconfigure"><a class="header" href="#packagesnamecomponentslibrarypostconfigure"><code>packages.&lt;name&gt;.components.library.postConfigure</code></a></h2>
+<p>Shell code for the <code>postConfigure</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibraryposthaddock"><a class="header" href="#packagesnamecomponentslibraryposthaddock"><code>packages.&lt;name&gt;.components.library.postHaddock</code></a></h2>
+<p>Shell code for the <code>postHaddock</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).  It runs in the derivation that
+builds the component’s documentation.
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarypostinstall"><a class="header" href="#packagesnamecomponentslibrarypostinstall"><code>packages.&lt;name&gt;.components.library.postInstall</code></a></h2>
+<p>Shell code for the <code>postInstall</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarypostpatch"><a class="header" href="#packagesnamecomponentslibrarypostpatch"><code>packages.&lt;name&gt;.components.library.postPatch</code></a></h2>
+<p>Shell code for the <code>postPatch</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+With <code>builderVersion = 2</code> it runs around the package’s <code>patches</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarypostunpack"><a class="header" href="#packagesnamecomponentslibrarypostunpack"><code>packages.&lt;name&gt;.components.library.postUnpack</code></a></h2>
+<p>Shell code for the <code>postUnpack</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarypre-existing"><a class="header" href="#packagesnamecomponentslibrarypre-existing"><code>packages.&lt;name&gt;.components.library.pre-existing</code></a></h2>
+<p>Dependencies that come with the compiler (<code>pre-existing</code> units in
+<code>plan.json</code>) rather than from <code>hsPkgs</code>, by name.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryprebuild"><a class="header" href="#packagesnamecomponentslibraryprebuild"><code>packages.&lt;name&gt;.components.library.preBuild</code></a></h2>
+<p>Shell code for the <code>preBuild</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibraryprecheck"><a class="header" href="#packagesnamecomponentslibraryprecheck"><code>packages.&lt;name&gt;.components.library.preCheck</code></a></h2>
@@ -4972,21 +5094,39 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarypreconfigure"><a class="header" href="#packagesnamecomponentslibrarypreconfigure"><code>packages.&lt;name&gt;.components.library.preConfigure</code></a></h2>
+<p>Shell code for the <code>preConfigure</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibraryprehaddock"><a class="header" href="#packagesnamecomponentslibraryprehaddock"><code>packages.&lt;name&gt;.components.library.preHaddock</code></a></h2>
+<p>Shell code for the <code>preHaddock</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).  It runs in the derivation that
+builds the component’s documentation.
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarypreinstall"><a class="header" href="#packagesnamecomponentslibrarypreinstall"><code>packages.&lt;name&gt;.components.library.preInstall</code></a></h2>
+<p>Shell code for the <code>preInstall</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibraryprepatch"><a class="header" href="#packagesnamecomponentslibraryprepatch"><code>packages.&lt;name&gt;.components.library.prePatch</code></a></h2>
+<p>Shell code for the <code>prePatch</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+With <code>builderVersion = 2</code> it runs around the package’s <code>patches</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibrarypreunpack"><a class="header" href="#packagesnamecomponentslibrarypreunpack"><code>packages.&lt;name&gt;.components.library.preUnpack</code></a></h2>
+<p>Shell code for the <code>preUnpack</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or strings concatenated with “\n”</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamecomponentslibraryprofilingdetail"><a class="header" href="#packagesnamecomponentslibraryprofilingdetail"><code>packages.&lt;name&gt;.components.library.profilingDetail</code></a></h2>
+<p>The <code>--profiling-detail</code> used when profiling is on (for example
+<code>"default"</code>, <code>"all-functions"</code>, <code>"toplevel-functions"</code>).  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>"default"</code></p>
 <h2 id="packagesnamecomponentslibraryprogramoptions"><a class="header" href="#packagesnamecomponentslibraryprogramoptions"><code>packages.&lt;name&gt;.components.library.programOptions</code></a></h2>
@@ -5006,12 +5146,16 @@ reads <code>configureFlags</code> directly (which retains the
 <p><strong>Type</strong>: attribute set of list of string</p>
 <p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="packagesnamecomponentslibrarysetupbuildflags"><a class="header" href="#packagesnamecomponentslibrarysetupbuildflags"><code>packages.&lt;name&gt;.components.library.setupBuildFlags</code></a></h2>
+<p>Extra arguments for <code>Setup build</code>.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarysetuphaddockflags"><a class="header" href="#packagesnamecomponentslibrarysetuphaddockflags"><code>packages.&lt;name&gt;.components.library.setupHaddockFlags</code></a></h2>
+<p>Extra arguments for <code>Setup haddock</code>, when building the component’s
+documentation.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibrarysetupinstallflags"><a class="header" href="#packagesnamecomponentslibrarysetupinstallflags"><code>packages.&lt;name&gt;.components.library.setupInstallFlags</code></a></h2>
+<p>Extra arguments for <code>Setup install</code>.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamecomponentslibraryshellhook"><a class="header" href="#packagesnamecomponentslibraryshellhook"><code>packages.&lt;name&gt;.components.library.shellHook</code></a></h2>
@@ -5049,6 +5193,8 @@ e.g. in a project’s <code>modules</code>:
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamecomponentssetup"><a class="header" href="#packagesnamecomponentssetup"><code>packages.&lt;name&gt;.components.setup</code></a></h2>
+<p>The package’s <code>Setup</code> (for <code>build-type: Custom</code> packages, or the
+default one), used to build it with <code>builderVersion = 1</code>.</p>
 <p><strong>Type</strong>: null or (submodule)</p>
 <p><strong>Default</strong>:</p>
 <pre><code class="language-nix">{
@@ -5073,9 +5219,11 @@ e.g. in a project’s <code>modules</code>:
 }
 </code></pre>
 <h2 id="packagesnamecomponentssublibs"><a class="header" href="#packagesnamecomponentssublibs"><code>packages.&lt;name&gt;.components.sublibs</code></a></h2>
+<p>The package’s sub-libraries, by name.</p>
 <p><strong>Type</strong>: attribute set of (submodule)</p>
 <p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="packagesnamecomponentstests"><a class="header" href="#packagesnamecomponentstests"><code>packages.&lt;name&gt;.components.tests</code></a></h2>
+<p>The package’s test suites, by name.</p>
 <p><strong>Type</strong>: attribute set of (submodule)</p>
 <p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="packagesnameconfigureallcomponents"><a class="header" href="#packagesnameconfigureallcomponents"><code>packages.&lt;name&gt;.configureAllComponents</code></a></h2>
@@ -5083,6 +5231,8 @@ e.g. in a project’s <code>modules</code>:
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnameconfigureflags"><a class="header" href="#packagesnameconfigureflags"><code>packages.&lt;name&gt;.configureFlags</code></a></h2>
+<p>Extra arguments for <code>Setup configure</code>.  Not used by <code>builderVersion = 2</code>.  Use <code>configure-options:</code> (or the
+matching <code>cabal.project</code> field) in <code>cabalProjectLocal</code> instead.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnameconfigureoptions"><a class="header" href="#packagesnameconfigureoptions"><code>packages.&lt;name&gt;.configureOptions</code></a></h2>
@@ -5128,6 +5278,9 @@ See docs/tutorials/testing.md.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamedoexactconfig"><a class="header" href="#packagesnamedoexactconfig"><code>packages.&lt;name&gt;.doExactConfig</code></a></h2>
+<p>Configure the component with <code>--exact-configuration</code>, so that Cabal
+takes its dependencies from the package database haskell.nix makes for
+it instead of solving them.  Shells made by <code>shellFor</code> do not use it.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamedohaddock"><a class="header" href="#packagesnamedohaddock"><code>packages.&lt;name&gt;.doHaddock</code></a></h2>
@@ -5177,15 +5330,28 @@ swaps in the <code>.dwarf</code> GHC variant and passes <code>-g3</code> to ghc.
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnameenablelibraryforghci"><a class="header" href="#packagesnameenablelibraryforghci"><code>packages.&lt;name&gt;.enableLibraryForGhci</code></a></h2>
+<p>Build the library’s <code>.o</code> for GHCi (<code>--enable-library-for-ghci</code>).  Has
+no effect for ghcjs, wasm and android.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
 <h2 id="packagesnameenablelibraryprofiling"><a class="header" href="#packagesnameenablelibraryprofiling"><code>packages.&lt;name&gt;.enableLibraryProfiling</code></a></h2>
+<p>Also build the profiling version of the library
+(<code>--enable-library-profiling</code>).  <code>.profiled</code> on a component turns this
+on.  Not used by <code>builderVersion = 2</code>.  Set <code>profiling: True</code> in <code>cabalProjectLocal</code>
+instead (see docs/dev/profiling.md).</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnameenableprofiling"><a class="header" href="#packagesnameenableprofiling"><code>packages.&lt;name&gt;.enableProfiling</code></a></h2>
+<p>Build the component with profiling (<code>--enable-profiling</code>): profiled
+executables, and profiled libraries for its dependencies.  Not used by <code>builderVersion = 2</code>.  Set
+<code>profiling: True</code> in <code>cabalProjectLocal</code> instead.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnameenableseparatedataoutput"><a class="header" href="#packagesnameenableseparatedataoutput"><code>packages.&lt;name&gt;.enableSeparateDataOutput</code></a></h2>
+<p>Install the component’s data files in a separate <code>data</code> output.  Off
+by default when building on darwin: rewriting the store path of an
+existing <code>data</code> output into a signed binary invalidates its signature
+(#2018).  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
 <h2 id="packagesnameenableshared"><a class="header" href="#packagesnameenableshared"><code>packages.&lt;name&gt;.enableShared</code></a></h2>
@@ -5213,6 +5379,8 @@ cabal computes for the slice includes the same
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnameflags"><a class="header" href="#packagesnameflags"><code>packages.&lt;name&gt;.flags</code></a></h2>
+<p>The package’s Cabal flags, by name.  The plan’s flag choices are set
+as defaults, so a module can override one.</p>
 <p><strong>Type</strong>: attribute set of boolean</p>
 <p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="packagesnamegenerateoptparseapplicativecompletions"><a class="header" href="#packagesnamegenerateoptparseapplicativecompletions"><code>packages.&lt;name&gt;.generateOptparseApplicativeCompletions</code></a></h2>
@@ -5241,9 +5409,16 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnameghcoptions"><a class="header" href="#packagesnameghcoptions"><code>packages.&lt;name&gt;.ghcOptions</code></a></h2>
+<p>Extra GHC options for the component, passed to <code>Setup configure</code> as
+<code>--ghc-option</code>s.  With <code>builderVersion = 2</code> they go in the slice’s
+<code>cabal.project</code> as <code>ghc-options:</code> (so they are part of the unit id), and
+must match what the plan was made with; prefer a <code>ghc-options:</code> stanza in
+<code>cabalProjectLocal</code> there.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamehardeningdisable"><a class="header" href="#packagesnamehardeningdisable"><code>packages.&lt;name&gt;.hardeningDisable</code></a></h2>
+<p>nixpkgs hardening flags to turn off for the component’s derivation
+(<code>hardeningDisable</code>), for example <code>[ "fortify" ]</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamekeepconfigfiles"><a class="header" href="#packagesnamekeepconfigfiles"><code>packages.&lt;name&gt;.keepConfigFiles</code></a></h2>
@@ -5259,6 +5434,7 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamename"><a class="header" href="#packagesnamename"><code>packages.&lt;name&gt;.name</code></a></h2>
+<p><code>&lt;name&gt;-&lt;version&gt;</code>, used in derivation names.</p>
 <p><strong>Type</strong>: string</p>
 <p><strong>Default</strong>: <code>"\${config.package.identifier.name}-\${config.package.identifier.version}"</code></p>
 <h2 id="packagesnamepackage-description-override"><a class="header" href="#packagesnamepackage-description-override"><code>packages.&lt;name&gt;.package-description-override</code></a></h2>
@@ -5266,76 +5442,124 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepackageauthor"><a class="header" href="#packagesnamepackageauthor"><code>packages.&lt;name&gt;.package.author</code></a></h2>
+<p>The package’s <code>author</code>.  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackagebuildtype"><a class="header" href="#packagesnamepackagebuildtype"><code>packages.&lt;name&gt;.package.buildType</code></a></h2>
+<p>The package’s <code>build-type</code> (<code>Simple</code>, <code>Configure</code>, <code>Make</code> or
+<code>Custom</code>).  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackagebuildable"><a class="header" href="#packagesnamepackagebuildable"><code>packages.&lt;name&gt;.package.buildable</code></a></h2>
+<p>Set to <code>false</code> in a module to leave the whole package out (none of
+its components are built or included in shells).</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>true</code></p>
 <h2 id="packagesnamepackagecleanhpack"><a class="header" href="#packagesnamepackagecleanhpack"><code>packages.&lt;name&gt;.package.cleanHpack</code></a></h2>
+<p>For a package whose <code>.cabal</code> file is generated by hpack, filter each
+component’s source to the files it uses anyway (keeping files the
+<code>package.yaml</code> includes from parent directories).  Without it the
+whole package source is used.  Only applies with <code>builderVersion = 1</code>.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamepackagecopyright"><a class="header" href="#packagesnamepackagecopyright"><code>packages.&lt;name&gt;.package.copyright</code></a></h2>
+<p>The package’s <code>copyright</code>.  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackagedatadir"><a class="header" href="#packagesnamepackagedatadir"><code>packages.&lt;name&gt;.package.dataDir</code></a></h2>
+<p>The package’s <code>data-dir</code>.  Used to work out the component’s source
+files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: string</p>
 <p><strong>Default</strong>: <code>""</code></p>
 <h2 id="packagesnamepackagedatafiles"><a class="header" href="#packagesnamepackagedatafiles"><code>packages.&lt;name&gt;.package.dataFiles</code></a></h2>
+<p>The package’s <code>data-files</code>.  Used to work out the component’s source
+files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamepackagedescription"><a class="header" href="#packagesnamepackagedescription"><code>packages.&lt;name&gt;.package.description</code></a></h2>
+<p>The package’s <code>description</code>.  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackagedetaillevel"><a class="header" href="#packagesnamepackagedetaillevel"><code>packages.&lt;name&gt;.package.detailLevel</code></a></h2>
+<p>How much of the <code>.cabal</code> file the generated expression describes:
+<code>"FullDetails"</code> (with source files and directories) lets haskell.nix
+filter each component’s source down to the files it uses (with
+<code>builderVersion = 1</code>); <code>"MinimalDetails"</code> does not.</p>
 <p><strong>Type</strong>: string</p>
 <p><strong>Default</strong>: <code>"MinimalDetails"</code></p>
 <h2 id="packagesnamepackageextradocfiles"><a class="header" href="#packagesnamepackageextradocfiles"><code>packages.&lt;name&gt;.package.extraDocFiles</code></a></h2>
+<p>The package’s <code>extra-doc-files</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamepackageextrasrcfiles"><a class="header" href="#packagesnamepackageextrasrcfiles"><code>packages.&lt;name&gt;.package.extraSrcFiles</code></a></h2>
+<p>The package’s <code>extra-source-files</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamepackageextratmpfiles"><a class="header" href="#packagesnamepackageextratmpfiles"><code>packages.&lt;name&gt;.package.extraTmpFiles</code></a></h2>
+<p>The package’s <code>extra-tmp-files</code>.</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamepackagehomepage"><a class="header" href="#packagesnamepackagehomepage"><code>packages.&lt;name&gt;.package.homepage</code></a></h2>
+<p>The package’s <code>homepage</code>.  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackageidentifierid"><a class="header" href="#packagesnamepackageidentifierid"><code>packages.&lt;name&gt;.package.identifier.id</code></a></h2>
+<p><code>&lt;name&gt;-&lt;version&gt;</code>.</p>
 <p><strong>Type</strong>: string</p>
 <p><strong>Default</strong>: <code>"\${config.package.identifier.name}-\${config.package.identifier.version}"</code></p>
 <h2 id="packagesnamepackageidentifiername"><a class="header" href="#packagesnamepackageidentifiername"><code>packages.&lt;name&gt;.package.identifier.name</code></a></h2>
+<p>The package name.</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackageidentifierunit-id"><a class="header" href="#packagesnamepackageidentifierunit-id"><code>packages.&lt;name&gt;.package.identifier.unit-id</code></a></h2>
+<p>The unit id <code>cabal-install</code> gave the package in <code>plan.json</code> (its
+<code>id</code>), or <code>null</code> when the package does not come from a plan entry.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepackageidentifierversion"><a class="header" href="#packagesnamepackageidentifierversion"><code>packages.&lt;name&gt;.package.identifier.version</code></a></h2>
+<p>The package version.</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackageislocal"><a class="header" href="#packagesnamepackageislocal"><code>packages.&lt;name&gt;.package.isLocal</code></a></h2>
+<p>Set for local packages: the project’s own and those from
+<code>source-repository-package</code>s (or git and local <code>extra-deps</code> with
+stack).  <code>shellFor</code> provides their dependencies rather than the
+packages, and <code>localPackages</code> options apply to them.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamepackageisproject"><a class="header" href="#packagesnamepackageisproject"><code>packages.&lt;name&gt;.package.isProject</code></a></h2>
-<p><strong>Type</strong>: boolean</p>
-<p><strong>Default</strong>: <code>false</code></p>
-<h2 id="packagesnamepackageisredirect"><a class="header" href="#packagesnamepackageisredirect"><code>packages.&lt;name&gt;.package.isRedirect</code></a></h2>
+<p>Set for the project’s own packages (not those from
+<code>source-repository-package</code>s).  <code>projectPackages</code> options apply to
+them, and they are what the flake outputs are made for.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamepackagelicense"><a class="header" href="#packagesnamepackagelicense"><code>packages.&lt;name&gt;.package.license</code></a></h2>
+<p>The package’s <code>license</code>.  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackagelicensefiles"><a class="header" href="#packagesnamepackagelicensefiles"><code>packages.&lt;name&gt;.package.licenseFiles</code></a></h2>
+<p>The package’s <code>license-files</code>.  Used to work out the component’s
+source files (with <code>builderVersion = 1</code>).</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamepackagemaintainer"><a class="header" href="#packagesnamepackagemaintainer"><code>packages.&lt;name&gt;.package.maintainer</code></a></h2>
+<p>The package’s <code>maintainer</code>.  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackagesetup-depends"><a class="header" href="#packagesnamepackagesetup-depends"><code>packages.&lt;name&gt;.package.setup-depends</code></a></h2>
+<p>The dependencies of the package’s <code>custom-setup</code> stanza, used to
+build its <code>Setup</code>.</p>
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamepackagespecversion"><a class="header" href="#packagesnamepackagespecversion"><code>packages.&lt;name&gt;.package.specVersion</code></a></h2>
+<p>The package’s <code>cabal-version</code>.  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepackagesynopsis"><a class="header" href="#packagesnamepackagesynopsis"><code>packages.&lt;name&gt;.package.synopsis</code></a></h2>
+<p>The package’s <code>synopsis</code>.  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <p><strong>Default</strong>: <code>""</code></p>
 <h2 id="packagesnamepackageurl"><a class="header" href="#packagesnamepackageurl"><code>packages.&lt;name&gt;.package.url</code></a></h2>
+<p>The package’s <code>package-url</code>.  From the <code>.cabal</code> file (set by the generated package expression).</p>
 <p><strong>Type</strong>: string</p>
 <h2 id="packagesnamepatches"><a class="header" href="#packagesnamepatches"><code>packages.&lt;name&gt;.patches</code></a></h2>
+<p>Patches applied to the package source.  An entry may be a function of
+<code>{ version, ... }</code> returning a patch or <code>null</code>, to apply it only to
+some versions.  With <code>builderVersion = 2</code>, prefer listing the patched
+source under <code>packages:</code> in <code>cabalProjectLocal</code>: patches here make
+the package’s source, and so its unit id, differ from the plan’s.</p>
 <p><strong>Type</strong>: list of (unspecified value or absolute path)</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnameplanned"><a class="header" href="#packagesnameplanned"><code>packages.&lt;name&gt;.planned</code></a></h2>
@@ -5343,6 +5567,9 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="packagesnamepostbuild"><a class="header" href="#packagesnamepostbuild"><code>packages.&lt;name&gt;.postBuild</code></a></h2>
+<p>Shell code for the <code>postBuild</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepostcheck"><a class="header" href="#packagesnamepostcheck"><code>packages.&lt;name&gt;.postCheck</code></a></h2>
@@ -5350,21 +5577,40 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepostconfigure"><a class="header" href="#packagesnamepostconfigure"><code>packages.&lt;name&gt;.postConfigure</code></a></h2>
+<p>Shell code for the <code>postConfigure</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnameposthaddock"><a class="header" href="#packagesnameposthaddock"><code>packages.&lt;name&gt;.postHaddock</code></a></h2>
+<p>Shell code for the <code>postHaddock</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).  It runs in the derivation that
+builds the component’s documentation.
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepostinstall"><a class="header" href="#packagesnamepostinstall"><code>packages.&lt;name&gt;.postInstall</code></a></h2>
+<p>Shell code for the <code>postInstall</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepostpatch"><a class="header" href="#packagesnamepostpatch"><code>packages.&lt;name&gt;.postPatch</code></a></h2>
+<p>Shell code for the <code>postPatch</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+With <code>builderVersion = 2</code> it runs around the package’s <code>patches</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepostunpack"><a class="header" href="#packagesnamepostunpack"><code>packages.&lt;name&gt;.postUnpack</code></a></h2>
+<p>Shell code for the <code>postUnpack</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnameprebuild"><a class="header" href="#packagesnameprebuild"><code>packages.&lt;name&gt;.preBuild</code></a></h2>
+<p>Shell code for the <code>preBuild</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnameprecheck"><a class="header" href="#packagesnameprecheck"><code>packages.&lt;name&gt;.preCheck</code></a></h2>
@@ -5372,21 +5618,39 @@ exe component derivation directly.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepreconfigure"><a class="header" href="#packagesnamepreconfigure"><code>packages.&lt;name&gt;.preConfigure</code></a></h2>
+<p>Shell code for the <code>preConfigure</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnameprehaddock"><a class="header" href="#packagesnameprehaddock"><code>packages.&lt;name&gt;.preHaddock</code></a></h2>
+<p>Shell code for the <code>preHaddock</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).  It runs in the derivation that
+builds the component’s documentation.
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepreinstall"><a class="header" href="#packagesnamepreinstall"><code>packages.&lt;name&gt;.preInstall</code></a></h2>
+<p>Shell code for the <code>preInstall</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnameprepatch"><a class="header" href="#packagesnameprepatch"><code>packages.&lt;name&gt;.prePatch</code></a></h2>
+<p>Shell code for the <code>prePatch</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+With <code>builderVersion = 2</code> it runs around the package’s <code>patches</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamepreunpack"><a class="header" href="#packagesnamepreunpack"><code>packages.&lt;name&gt;.preUnpack</code></a></h2>
+<p>Shell code for the <code>preUnpack</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or strings concatenated with “\n”</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnameprofilingdetail"><a class="header" href="#packagesnameprofilingdetail"><code>packages.&lt;name&gt;.profilingDetail</code></a></h2>
+<p>The <code>--profiling-detail</code> used when profiling is on (for example
+<code>"default"</code>, <code>"all-functions"</code>, <code>"toplevel-functions"</code>).  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>"default"</code></p>
 <h2 id="packagesnameprogramoptions"><a class="header" href="#packagesnameprogramoptions"><code>packages.&lt;name&gt;.programOptions</code></a></h2>
@@ -5406,21 +5670,29 @@ reads <code>configureFlags</code> directly (which retains the
 <p><strong>Type</strong>: attribute set of list of string</p>
 <p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="packagesnamerevision"><a class="header" href="#packagesnamerevision"><code>packages.&lt;name&gt;.revision</code></a></h2>
+<p>The Hackage revision of the package’s <code>.cabal</code> file (<code>0</code> is the one in
+the tarball).</p>
 <p><strong>Type</strong>: null or signed integer</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamerevisionsha256"><a class="header" href="#packagesnamerevisionsha256"><code>packages.&lt;name&gt;.revisionSha256</code></a></h2>
+<p>The hash of the revised <code>.cabal</code> file (from hackage.nix).</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnamesetupbuildflags"><a class="header" href="#packagesnamesetupbuildflags"><code>packages.&lt;name&gt;.setupBuildFlags</code></a></h2>
+<p>Extra arguments for <code>Setup build</code>.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamesetuphaddockflags"><a class="header" href="#packagesnamesetuphaddockflags"><code>packages.&lt;name&gt;.setupHaddockFlags</code></a></h2>
+<p>Extra arguments for <code>Setup haddock</code>, when building the component’s
+documentation.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamesetupinstallflags"><a class="header" href="#packagesnamesetupinstallflags"><code>packages.&lt;name&gt;.setupInstallFlags</code></a></h2>
+<p>Extra arguments for <code>Setup install</code>.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="packagesnamesha256"><a class="header" href="#packagesnamesha256"><code>packages.&lt;name&gt;.sha256</code></a></h2>
+<p>The hash of the package’s Hackage tarball, used by the default <code>src</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="packagesnameshellhook"><a class="header" href="#packagesnameshellhook"><code>packages.&lt;name&gt;.shellHook</code></a></h2>
@@ -5428,6 +5700,8 @@ reads <code>configureFlags</code> directly (which retains the
 <p><strong>Type</strong>: unspecified value</p>
 <p><strong>Default</strong>: <code>""</code></p>
 <h2 id="packagesnamesrc"><a class="header" href="#packagesnamesrc"><code>packages.&lt;name&gt;.src</code></a></h2>
+<p>The package source.  Defaults to the Hackage tarball (when <code>sha256</code> is
+set); local packages have their directory in the project.</p>
 <p><strong>Type</strong>: null or absolute path or package</p>
 <p><strong>Default</strong>:</p>
 <pre><code class="language-nix">''
@@ -5467,23 +5741,14 @@ e.g. in a project’s <code>modules</code>:
 <p>Write component <code>.hie</code> files in the store in a <code>hie</code> output</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
-<h2 id="plan-json"><a class="header" href="#plan-json"><code>plan-json</code></a></h2>
-<p><strong>Type</strong>: attribute set of unspecified value</p>
-<p><strong>Default</strong>: <code>{ }</code></p>
-<h2 id="plan-json-by-id"><a class="header" href="#plan-json-by-id"><code>plan-json-by-id</code></a></h2>
-<p><strong>Type</strong>: attribute set of unspecified value</p>
-<p><strong>Default</strong>: <code>{ }</code></p>
-<h2 id="plan-json-by-id-build"><a class="header" href="#plan-json-by-id-build"><code>plan-json-by-id-build</code></a></h2>
-<p><strong>Type</strong>: attribute set of unspecified value</p>
-<p><strong>Default</strong>: <code>{ }</code></p>
-<h2 id="plan-json-v2-globals"><a class="header" href="#plan-json-v2-globals"><code>plan-json-v2-globals</code></a></h2>
-<p><strong>Type</strong>: unspecified value</p>
-<p><strong>Default</strong>: <code>{ }</code></p>
 <h2 id="planned"><a class="header" href="#planned"><code>planned</code></a></h2>
 <p>Set to true by <code>plan-to-nix</code> for any component that was included in the <code>plan.json</code> file.</p>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="postbuild"><a class="header" href="#postbuild"><code>postBuild</code></a></h2>
+<p>Shell code for the <code>postBuild</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="postcheck"><a class="header" href="#postcheck"><code>postCheck</code></a></h2>
@@ -5491,21 +5756,40 @@ e.g. in a project’s <code>modules</code>:
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="postconfigure"><a class="header" href="#postconfigure"><code>postConfigure</code></a></h2>
+<p>Shell code for the <code>postConfigure</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="posthaddock"><a class="header" href="#posthaddock"><code>postHaddock</code></a></h2>
+<p>Shell code for the <code>postHaddock</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).  It runs in the derivation that
+builds the component’s documentation.
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="postinstall"><a class="header" href="#postinstall"><code>postInstall</code></a></h2>
+<p>Shell code for the <code>postInstall</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="postpatch"><a class="header" href="#postpatch"><code>postPatch</code></a></h2>
+<p>Shell code for the <code>postPatch</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+With <code>builderVersion = 2</code> it runs around the package’s <code>patches</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="postunpack"><a class="header" href="#postunpack"><code>postUnpack</code></a></h2>
+<p>Shell code for the <code>postUnpack</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="prebuild"><a class="header" href="#prebuild"><code>preBuild</code></a></h2>
+<p>Shell code for the <code>preBuild</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="precheck"><a class="header" href="#precheck"><code>preCheck</code></a></h2>
@@ -5513,21 +5797,34 @@ e.g. in a project’s <code>modules</code>:
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="preconfigure"><a class="header" href="#preconfigure"><code>preConfigure</code></a></h2>
+<p>Shell code for the <code>preConfigure</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
-<h2 id="preexistingpkgs"><a class="header" href="#preexistingpkgs"><code>preExistingPkgs</code></a></h2>
-<p><strong>Type</strong>: list of string</p>
-<p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="prehaddock"><a class="header" href="#prehaddock"><code>preHaddock</code></a></h2>
+<p>Shell code for the <code>preHaddock</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).  It runs in the derivation that
+builds the component’s documentation.
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="preinstall"><a class="header" href="#preinstall"><code>preInstall</code></a></h2>
+<p>Shell code for the <code>preInstall</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="prepatch"><a class="header" href="#prepatch"><code>prePatch</code></a></h2>
+<p>Shell code for the <code>prePatch</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+With <code>builderVersion = 2</code> it runs around the package’s <code>patches</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="preunpack"><a class="header" href="#preunpack"><code>preUnpack</code></a></h2>
+<p>Shell code for the <code>preUnpack</code> hook of the component’s derivation
+(set on a package, it applies to all of its components).
+Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or strings concatenated with “\n”</p>
 <p><strong>Default</strong>: <code>null</code></p>
 <h2 id="prebuilt-depends"><a class="header" href="#prebuilt-depends"><code>prebuilt-depends</code></a></h2>
@@ -5536,6 +5833,8 @@ e.g. in a project’s <code>modules</code>:
 <p><strong>Type</strong>: list of package</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="profilingdetail"><a class="header" href="#profilingdetail"><code>profilingDetail</code></a></h2>
+<p>The <code>--profiling-detail</code> used when profiling is on (for example
+<code>"default"</code>, <code>"all-functions"</code>, <code>"toplevel-functions"</code>).  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: null or string</p>
 <p><strong>Default</strong>: <code>"default"</code></p>
 <h2 id="programoptions"><a class="header" href="#programoptions"><code>programOptions</code></a></h2>
@@ -5571,12 +5870,16 @@ set: the project’s own packages, not those from
 <p><strong>Type</strong>: list of unspecified value</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="setupbuildflags"><a class="header" href="#setupbuildflags"><code>setupBuildFlags</code></a></h2>
+<p>Extra arguments for <code>Setup build</code>.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="setuphaddockflags"><a class="header" href="#setuphaddockflags"><code>setupHaddockFlags</code></a></h2>
+<p>Extra arguments for <code>Setup haddock</code>, when building the component’s
+documentation.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="setupinstallflags"><a class="header" href="#setupinstallflags"><code>setupInstallFlags</code></a></h2>
+<p>Extra arguments for <code>Setup install</code>.  Not used by <code>builderVersion = 2</code>.</p>
 <p><strong>Type</strong>: list of string</p>
 <p><strong>Default</strong>: <code>[ ]</code></p>
 <h2 id="shellhook"><a class="header" href="#shellhook"><code>shellHook</code></a></h2>
@@ -5598,9 +5901,6 @@ See docs/tutorials/testing.md.</p>
   "echo"
 ]
 </code></pre>
-<h2 id="use-package-keys"><a class="header" href="#use-package-keys"><code>use-package-keys</code></a></h2>
-<p><strong>Type</strong>: boolean</p>
-<p><strong>Default</strong>: <code>true</code></p>
 <h2 id="usestemplatehaskell"><a class="header" href="#usestemplatehaskell"><code>usesTemplateHaskell</code></a></h2>
 <p>Declare that building this component runs Template Haskell splices.
 When cross compiling (builder v2) for a dynamically linked musl
@@ -5610,15 +5910,6 @@ glibc compiler.  Nothing can tell ahead of time whether a component
 will evaluate a splice, so this has to be said by whoever knows –
 e.g. in a project’s <code>modules</code>:
 <code>packages.th-orphans.components.library.usesTemplateHaskell = true;</code></p>
-<p><strong>Type</strong>: boolean</p>
-<p><strong>Default</strong>: <code>false</code></p>
-<h2 id="v2localpackageslicenames-1"><a class="header" href="#v2localpackageslicenames-1"><code>v2LocalPackageSliceNames</code></a></h2>
-<p><strong>Type</strong>: list of string</p>
-<p><strong>Default</strong>: <code>[ ]</code></p>
-<h2 id="v2localpackageslices-1"><a class="header" href="#v2localpackageslices-1"><code>v2LocalPackageSlices</code></a></h2>
-<p><strong>Type</strong>: boolean</p>
-<p><strong>Default</strong>: <code>false</code></p>
-<h2 id="withbuildcompiler"><a class="header" href="#withbuildcompiler"><code>withBuildCompiler</code></a></h2>
 <p><strong>Type</strong>: boolean</p>
 <p><strong>Default</strong>: <code>false</code></p>
 <h2 id="writehiefiles"><a class="header" href="#writehiefiles"><code>writeHieFiles</code></a></h2>
@@ -7908,6 +8199,14 @@ checks, dev shells, <code>hydraJobs</code> and <code>ciJobs</code> become the fl
 jobs.  The flake template (<code>nix flake init --template github:ican-group/haskell.nix</code>) and <code>hix init</code> now write a flake-parts
 <code>flake.nix</code>, which also no longer needs its own <code>nixpkgs</code> and
 <code>nixpkgs-2605</code> inputs.  Existing <code>flake.nix</code> files are unaffected.</p>
+</li>
+<li>
+<p>Every option on the Module options page now has a description (the
+package, component and package-set options), saying when
+<code>builderVersion = 2</code> ignores it.  Options that are only plumbing
+between haskell.nix’s own modules (the plan data, settings copied from
+the project, the Hackage index) are marked internal and left off the
+page.</p>
 </li>
 </ul>
 <h2 id="november-20-2026"><a class="header" href="#november-20-2026">November 20, 2026</a></h2>
