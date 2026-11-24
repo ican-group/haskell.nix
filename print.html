@@ -36,10 +36,10 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-1da2434c.js";
+            window.path_to_searchindex_js = "searchindex-e8aa9a67.js";
         </script>
         <!-- Start loading toc.js asap -->
-        <script src="toc-310822d8.js"></script>
+        <script src="toc-2ec6e9f5.js"></script>
     </head>
     <body>
     <div id="mdbook-help-container">
@@ -2757,6 +2757,57 @@ for a shell with a local Hoogle index of your dependencies.</li>
 <li><code>test/sublib-docs</code> in the haskell.nix repository: <code>package *</code> /
 <code>documentation: True</code>, checking that a library’s docs link into a
 dependency’s (aeson’s) docs.</li>
+</ul>
+<div style="break-before: page; page-break-before: always;"></div>
+<h1 id="finding-unused-code-with-weeder"><a class="header" href="#finding-unused-code-with-weeder">Finding unused code with Weeder</a></h1>
+<p><a href="https://github.com/ocharles/weeder">Weeder</a> finds declarations that nothing
+uses, starting from a set of roots (such as <code>Main.main</code>).  It reads the <code>.hie</code>
+files GHC writes with <code>-fwrite-ide-info</code>, and haskell.nix can write those for
+you: with the <code>writeHieFiles</code> option a component gets an extra <code>hie</code> output
+holding them.</p>
+<p>This builds every component of the project’s own packages with <code>.hie</code> files
+and runs Weeder on them, failing when it finds something unused:</p>
+<pre><code class="language-nix">let
+  inherit (pkgs) lib;
+  inherit (pkgs.haskell-nix) haskellLib;
+  project = pkgs.haskell-nix.cabalProject' {
+    src = ./.;
+    compiler-nix-name = "ghc96";
+    # Write `.hie` files (in a `hie` output) for the project's own packages.
+    modules = [{ projectPackages.writeHieFiles = true; }];
+  };
+  # Weeder must be built with the same GHC as the `.hie` files.
+  weeder = project.tool "weeder" "latest";
+  components = lib.concatMap haskellLib.getAllComponents
+    (lib.attrValues (haskellLib.selectProjectPackages project.hsPkgs));
+in pkgs.runCommand "weeder" { nativeBuildInputs = [ weeder ]; } ''
+  mkdir hie
+  ${lib.concatMapStrings (c: "cp -r --no-preserve=mode ${c.hie}/. hie/\n") components}
+  weeder --config ${./weeder.toml} --hie-directory hie
+  touch $out
+''
+</code></pre>
+<p>with a <code>weeder.toml</code> next to it naming the roots, for instance:</p>
+<pre><code class="language-toml">roots = [ "^Main.main$" ]
+type-class-roots = true
+</code></pre>
+<p>Weeder exits with code 228 when it finds unused declarations, so the
+derivation fails and its log lists them:</p>
+<pre><code>wtest-0.1.0.0-LRvGzb728ko522FjXpWYee: src/Unused.hs:3:1: neverCalled
+wtest-0.1.0.0-LRvGzb728ko522FjXpWYee: src/Used.hs:5:1: unusedHelper
+</code></pre>
+<p>Add it to the flake’s <code>checks</code> (or the project’s CI jobs) to keep the
+project free of dead code.</p>
+<p>Notes:</p>
+<ul>
+<li><code>.hie</code> files are tied to the GHC version that wrote them, which is why
+Weeder comes from <code>project.tool</code> (built with the project’s compiler)
+rather than from nixpkgs.</li>
+<li>Only the components Weeder is given are analysed.  To include tests and
+benchmarks, make sure they are built (they are part of <code>getAllComponents</code>
+above), and list any extra roots they need in <code>weeder.toml</code>.</li>
+<li><code>writeHieFiles</code> is a component option of the default builder.
+<code>builderVersion = 2</code> does not support it yet.</li>
 </ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="build-a-specific-package-from-hackage-or-stackage"><a class="header" href="#build-a-specific-package-from-hackage-or-stackage">Build a specific package from Hackage or Stackage</a></h1>
