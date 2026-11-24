@@ -680,9 +680,9 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     '' + lib.optionalString useLLVM ''
         export LLC="${llvmPackages.llvm}/bin/llc"
         export OPT="${llvmPackages.llvm}/bin/opt"
-    '' + lib.optionalString (!stdenv.isDarwin) ''
+    '' + lib.optionalString (!stdenv.hostPlatform.isDarwin) ''
         export NIX_LDFLAGS+=" -rpath $out/lib/${targetPrefix}ghc-${ghc-version}"
-    '' + lib.optionalString stdenv.isDarwin ''
+    '' + lib.optionalString stdenv.hostPlatform.isDarwin ''
         export NIX_LDFLAGS+=" -no_dtrace_dof"
     '' +
     # we really want "+armv7-a,+soft-float,+neon" as features, but llvm will
@@ -1021,12 +1021,12 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
         for a in libraries/*/*.cabal.in utils/*/*.cabal.in compiler/ghc.cabal.in; do
           ${hadrian}/bin/hadrian ${hadrianArgs} "''${a%.*}"
         done
-      '' + lib.optionalString (stdenv.isDarwin && (__tryEval libcxxabi).success) ''
+      '' + lib.optionalString (stdenv.hostPlatform.isDarwin && (__tryEval libcxxabi).success) ''
         substituteInPlace mk/system-cxx-std-lib-1.0.conf \
           --replace 'dynamic-library-dirs:' 'dynamic-library-dirs: ${libcxx}/lib ${libcxxabi}/lib'
         find . -name 'system*.conf*'
         cat mk/system-cxx-std-lib-1.0.conf
-      '' + lib.optionalString (stdenv.isDarwin && !(__tryEval libcxxabi).success) ''
+      '' + lib.optionalString (stdenv.hostPlatform.isDarwin && !(__tryEval libcxxabi).success) ''
         substituteInPlace mk/system-cxx-std-lib-1.0.conf \
           --replace 'dynamic-library-dirs:' 'dynamic-library-dirs: ${libcxx}/lib'
         find . -name 'system*.conf*'
@@ -1292,12 +1292,12 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
     mkdir -p $out/build
     cd $out/build
   '';
-  postConfigure = lib.optionalString (stdenv.isDarwin && (__tryEval libcxxabi).success) ''
+  postConfigure = lib.optionalString (stdenv.hostPlatform.isDarwin && (__tryEval libcxxabi).success) ''
     substituteInPlace mk/system-cxx-std-lib-1.0.conf \
       --replace 'dynamic-library-dirs:' 'dynamic-library-dirs: ${libcxx}/lib ${libcxxabi}/lib'
     find . -name 'system*.conf*'
     cat mk/system-cxx-std-lib-1.0.conf
-  '' + lib.optionalString (stdenv.isDarwin && !(__tryEval libcxxabi).success) ''
+  '' + lib.optionalString (stdenv.hostPlatform.isDarwin && !(__tryEval libcxxabi).success) ''
     substituteInPlace mk/system-cxx-std-lib-1.0.conf \
       --replace 'dynamic-library-dirs:' 'dynamic-library-dirs: ${libcxx}/lib'
     find . -name 'system*.conf*'
@@ -1404,14 +1404,14 @@ haskell-nix.haskellLib.makeCompilerDeps (stdenv.mkDerivation (rec {
           # successful probe ends up with them empty too (it maps its `-L.` answer
           # to ""), and the dynamic-library-dirs of system-cxx-std-lib-1.0.conf
           # are filled in just below.
-          lib.optionalString stdenv.isDarwin " CXX_STD_LIB_LIBS='c++ c++abi'"}
-        ${lib.optionalString (stdenv.isDarwin && (__tryEval libcxxabi).success) ''
+          lib.optionalString stdenv.hostPlatform.isDarwin " CXX_STD_LIB_LIBS='c++ c++abi'"}
+        ${lib.optionalString (stdenv.hostPlatform.isDarwin && (__tryEval libcxxabi).success) ''
           substituteInPlace mk/system-cxx-std-lib-1.0.conf \
             --replace 'dynamic-library-dirs:' 'dynamic-library-dirs: ${libcxx}/lib ${libcxxabi}/lib'
           substituteInPlace lib/package.conf.d/system-cxx-std-lib-1.0.conf \
             --replace 'dynamic-library-dirs:' 'dynamic-library-dirs: ${libcxx}/lib ${libcxxabi}/lib'
         ''}
-        ${lib.optionalString (stdenv.isDarwin && !(__tryEval libcxxabi).success) ''
+        ${lib.optionalString (stdenv.hostPlatform.isDarwin && !(__tryEval libcxxabi).success) ''
           substituteInPlace mk/system-cxx-std-lib-1.0.conf \
             --replace 'dynamic-library-dirs:' 'dynamic-library-dirs: ${libcxx}/lib'
           substituteInPlace lib/package.conf.d/system-cxx-std-lib-1.0.conf \
