@@ -853,6 +853,21 @@ let
       echo "  haskell-nix-cabal-project-local-sync --force"
       echo
     fi
+
+    # cabal does not make the cache directory of a local `file:` repository
+    # (the patched hsc2hs one, see `usePatchedHsc2hs`) before it takes the
+    # hackage-security lock inside it, so in a fresh home `cabal update` and
+    # `cabal build` failed with ".../packages/<repo>/hackage-security-lock:
+    # openFile: does not exist".  Make it for every `repository` the defaults
+    # name.  `cabal path` runs from `/` for the reason given at
+    # `haskell-nix-cabal-store-sync`.
+    repos=$(sed -n 's/^repository[[:space:]][[:space:]]*\([^[:space:]]*\).*/\1/p' "$source")
+    if [ -n "$repos" ]; then
+      cache=$(cd / && ${v2CabalInstall}/bin/cabal path --remote-repo-cache 2>/dev/null | tail -n 1) || cache=
+      if [ -n "$cache" ]; then
+        for repo in $repos; do mkdir -p "$cache/$repo"; done
+      fi
+    fi
   '';
   cabalProjectLocalShellHook = ''
     haskell-nix-cabal-project-local-sync || true

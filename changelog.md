@@ -136,6 +136,13 @@ that will impact users.
     `flake.nix`, which also no longer needs its own `nixpkgs` and
     `nixpkgs-2605` inputs.  Existing `flake.nix` files are unaffected.
 
+  * `builderVersion = 2` shells now make cabal's cache directory for the
+    local `haskell-nix-hsc2hs` package repository that their
+    `cabal.project.local` names.  cabal does not make it itself, so in a
+    home that had not used it before, `cabal update` and `cabal build`
+    failed with `.../packages/haskell-nix-hsc2hs/hackage-security-lock:
+    openFile: does not exist`.
+
 ## November 20, 2026
 
   * `source-repository-package`s with an ssh location (`ssh://...`,
