@@ -104,7 +104,19 @@ and `flake.variants` adds variants.
 
 The projects' `hydraJobs` and `ciJobs` are set on the flake too, laid out as
 `flake-utils.lib.eachSystem` lays them out: `hydraJobs.<job>.<system>` and
-`ciJobs.<system>.<job>`.  To set those outputs yourself, set
+`ciJobs.<system>.<job>`.  They come from each system's
+`haskellNix.hydraJobs`, and other jobs can be added there; they merge with
+the projects' job by job:
+
+```nix
+perSystem = { config, pkgs, ... }: {
+  checks.smoke-test = pkgs.callPackage ./nix/smoke-test.nix { };
+  # Also a Hydra job, next to the projects' checks.
+  haskellNix.hydraJobs.checks = { inherit (config.checks) smoke-test; };
+};
+```
+
+To set the flake's `hydraJobs` and `ciJobs` yourself, set
 `haskellNix.addHydraJobs = false` (outside `perSystem`).
 
 To choose the outputs yourself, set `haskellNix.addFlakeOutputs = false` and

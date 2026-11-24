@@ -130,7 +130,7 @@ that will impact users.
     takes the arguments of `project'`, and the projects' packages, apps,
     checks, dev shells, `hydraJobs` and `ciJobs` become the flake's (the
     `default` project's under their own names, the others' with
-    `<name>:` in front).  The flake template (`nix flake init --template
+    `<name>:` in front).  `perSystem.haskellNix.hydraJobs` adds more jobs.  The flake template (`nix flake init --template
     github:ican-group/haskell.nix`) and `hix init` now write a flake-parts
     `flake.nix`, which also no longer needs its own `nixpkgs` and
     `nixpkgs-2605` inputs.  Existing `flake.nix` files are unaffected.

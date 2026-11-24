@@ -42,10 +42,16 @@ let
       };
     };
 
-  eval = evalFlake {
+  extraJob = runCommand "flake-parts-extra-job" { } "touch $out";
+
+  eval = evalFlake ({ config, ... }: {
     # A second definition of the same project.
     haskellNix.projects.default = { name = "flake-parts-default"; };
-  } { };
+    # A job added to the projects' `packages` jobs, and one that clashes
+    # with a project job.
+    haskellNix.hydraJobs.packages.extra = extraJob;
+    haskellNix.hydraJobs.packages.${exe} = extraJob;
+  }) { };
   flake = eval.config.flake;
   perSystem = eval.config.allSystems.${system};
 
@@ -72,6 +78,11 @@ let
       (hasAll [ "packages" "other" ] flake.ciJobs.${system});
     assert expect "hydraJobs is laid out `hydraJobs.<job>.<system>`"
       (flake.hydraJobs.packages ? ${system} && flake.hydraJobs.other ? ${system});
+    assert expect "`haskellNix.hydraJobs` definitions add to the projects' jobs"
+      (hasAll [ "extra" "cabal-simple:lib:cabal-simple" ] flake.hydraJobs.packages.${system}
+        && hasAll [ "extra" "cabal-simple:lib:cabal-simple" ] flake.ciJobs.${system}.packages);
+    assert expect "a job defined twice is an error when it is used"
+      (!(builtins.tryEval (builtins.seq flake.hydraJobs.packages.${system}.${exe} null)).success);
     assert expect "the option's value is the project, with both definitions merged"
       (perSystem.haskellNix.projects.default.args.name == "flake-parts-default"
         && perSystem.haskellNix.projects.default ? hsPkgs);

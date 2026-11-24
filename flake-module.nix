@@ -12,6 +12,26 @@
 let
   inherit (lib) mkOption types literalExpression;
   topConfig = config;
+
+  # Jobs merge job by job: definitions add to each other's job sets, and two
+  # definitions of the same job are an error (when that job is used).
+  isJobSet = x: builtins.isAttrs x && !lib.isDerivation x;
+  mergeJobs = path: a: b:
+    if isJobSet a && isJobSet b
+      then a // lib.mapAttrs (name: v:
+        if a ? ${name} then mergeJobs (path ++ [ name ]) a.${name} v else v) b
+      # The same plain value twice (`recurseForDerivations = true`, say).
+      else if !lib.isDerivation a && !lib.isDerivation b && a == b then a
+      else throw ("haskellNix.hydraJobs: the job `${lib.concatStringsSep "." path}`"
+        + " is defined more than once; use `lib.mkForce` on the one to use.");
+  jobsType = lib.mkOptionType {
+    name = "haskell-nix-jobs";
+    description = "Hydra jobs";
+    descriptionClass = "noun";
+    check = isJobSet;
+    merge = loc: defs:
+      lib.foldl' (acc: def: mergeJobs [ ] acc def.value) { } defs;
+  };
 in
 {
   options = {
@@ -98,6 +118,22 @@ in
             '';
           };
 
+          hydraJobs = mkOption {
+            type = jobsType;
+            default = { };
+            example = literalExpression ''
+              { checks = { inherit (config.checks) my-extra-check; }; }
+            '';
+            description = ''
+              This system's jobs for the flake's `hydraJobs` and `ciJobs` (see
+              `haskellNix.addHydraJobs`).  The projects' jobs are in it (when
+              `haskellNix.addFlakeOutputs` is on), and definitions here add
+              to them, job set by job set, so
+              `haskellNix.hydraJobs.checks.my-check = ...` adds a check to the
+              projects' `checks` jobs.  Use `lib.mkForce` to replace them.
+            '';
+          };
+
           addFlakeOutputs = mkOption {
             type = types.bool;
             default = true;
@@ -127,6 +163,7 @@ in
           apps = lib.mkIf cfg.addFlakeOutputs (cfg.outputs.apps or { });
           checks = lib.mkIf cfg.addFlakeOutputs (cfg.outputs.checks or { });
           devShells = lib.mkIf cfg.addFlakeOutputs (cfg.outputs.devShells or { });
+          haskellNix.hydraJobs = lib.mkIf cfg.addFlakeOutputs (cfg.outputs.hydraJobs or { });
         };
       });
   };
@@ -135,27 +172,21 @@ in
     type = types.bool;
     default = true;
     description = ''
-      Set the flake's `hydraJobs` and `ciJobs` to the projects' jobs (for the
-      systems where `haskellNix.addFlakeOutputs` is on), laid out the way
-      flake-utils' `eachSystem` lays them out: `hydraJobs.<job>.<system>` and
-      `ciJobs.<system>.<job>`.  Turn this off to set them yourself; each
-      system's are in `haskellNix.outputs`.
+      Set the flake's `hydraJobs` and `ciJobs` from each system's
+      `haskellNix.hydraJobs`, laid out the way flake-utils' `eachSystem` lays
+      them out: `hydraJobs.<job>.<system>` and `ciJobs.<system>.<job>`.  Turn
+      this off to set those outputs yourself.
     '';
   };
 
   # The condition only reads this option, so evaluating any flake output does
   # not evaluate every system's `perSystem`; the jobs themselves are only
   # evaluated when they are used.
-  config.flake = lib.mkIf topConfig.haskellNix.addHydraJobs (
-    let
-      systems = lib.filterAttrs (_: perSystem: perSystem.haskellNix.addFlakeOutputs)
-        topConfig.allSystems;
-    in {
-      ciJobs = lib.mapAttrs (_: perSystem: perSystem.haskellNix.outputs.ciJobs or { }) systems;
-      hydraJobs = lib.foldlAttrs (acc: system: perSystem:
-          lib.recursiveUpdate acc
-            (lib.mapAttrs (_: job: { ${system} = job; })
-              (perSystem.haskellNix.outputs.hydraJobs or { })))
-        { } systems;
-    });
+  config.flake = lib.mkIf topConfig.haskellNix.addHydraJobs {
+    ciJobs = lib.mapAttrs (_: perSystem: perSystem.haskellNix.hydraJobs) topConfig.allSystems;
+    hydraJobs = lib.foldlAttrs (acc: system: perSystem:
+        lib.recursiveUpdate acc
+          (lib.mapAttrs (_: job: { ${system} = job; }) perSystem.haskellNix.hydraJobs))
+      { } topConfig.allSystems;
+  };
 }
