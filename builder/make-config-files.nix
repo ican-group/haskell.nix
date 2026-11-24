@@ -299,7 +299,7 @@ let
     #
     # Create a local directory with symlinks of the *.dylib (macOS shared
     # libraries) from all the dependencies.
-  + lib.optionalString stdenv.isDarwin ''
+  + lib.optionalString stdenv.hostPlatform.isDarwin ''
     local dynamicLinksDir="$configFiles/lib/links"
     mkdir -p $dynamicLinksDir
     # Enumerate dynamic-library-dirs with ''${pkgroot} expanded.

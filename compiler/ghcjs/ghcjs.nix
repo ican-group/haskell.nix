@@ -146,7 +146,7 @@ let
             # Add readlink (needed by bundleRootDir)
             cp ${pkgs.coreutils}/bin/readlink $out/bin
 
-          '' + (pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+          '' + (pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
             # Make the executables location independent using install_name_tool and @executable_path
 
             # Copy the libraries needed into place
@@ -171,7 +171,7 @@ let
             done
           '')
 
-          + (pkgs.lib.optionalString pkgs.stdenv.isLinux ''
+          + (pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isLinux ''
             # Make the executables location independent using patchelf and $ORIGIN.
             chmod -R +w $out/bin
             # This interpreter setting will not work on nixOS, but this bundle is
@@ -227,7 +227,7 @@ let
               fi
             done
 
-          '' + (pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
+          '' + (pkgs.lib.optionalString pkgs.stdenv.hostPlatform.isDarwin ''
             rm -rf $out/$(basename ${hostDb})/lib/links
             cp -rL ${hostDb}/lib/links $out/$(basename ${hostDb})/lib
             chmod -R +w $out/$(basename ${hostDb})/lib/links

@@ -51,9 +51,9 @@ in lib.recurseIntoAttrs {
     # Musl is also statically linked, but it does make a .so file so we should check that still.
     optionalString (!stdenv.hostPlatform.isAarch32 && !stdenv.hostPlatform.isAarch64 || stdenv.hostPlatform.isDarwin) (''
       printf "checking that executable is dynamically linked to system libraries... " >& 2
-    '' + optionalString (stdenv.isLinux && !stdenv.hostPlatform.isMusl) ''
+    '' + optionalString (stdenv.hostPlatform.isLinux && !stdenv.hostPlatform.isMusl) ''
       ${haskellLib.lddForTests} $exe | grep 'libc[.]so'
-    '' + optionalString stdenv.isDarwin ''
+    '' + optionalString stdenv.hostPlatform.isDarwin ''
       otool -L $exe | grep "libSystem.B"
     '' +
     # Only if the compiler builds shared Haskell libraries.  The check above
@@ -65,17 +65,17 @@ in lib.recurseIntoAttrs {
     optionalString sharedByDefault (''
       # fixme: posix-specific
       printf "checking that dynamic library is produced... " >& 2
-    '' + optionalString stdenv.isLinux ''
+    '' + optionalString stdenv.hostPlatform.isLinux ''
       sofile=$(find "${packages.project.components.library}" | grep -e '\.so$')
-    '' + optionalString stdenv.isDarwin ''
+    '' + optionalString stdenv.hostPlatform.isDarwin ''
       sofile=$(find "${packages.project.components.library}" | grep -e '\.dylib$')
     '' + ''
       echo "$sofile"
     '' + optionalString (!stdenv.hostPlatform.isMusl) (''
       printf "checking that dynamic library is dynamically linked to prim... " >& 2
-    '' + optionalString stdenv.isLinux ''
+    '' + optionalString stdenv.hostPlatform.isLinux ''
       ${haskellLib.lddForTests} $sofile | grep libHSghc-prim
-    '' + optionalString stdenv.isDarwin ''
+    '' + optionalString stdenv.hostPlatform.isDarwin ''
       otool -L $sofile | grep libHSghc-
     ''))) + ''
       touch $out

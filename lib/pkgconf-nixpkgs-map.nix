@@ -5827,10 +5827,14 @@ pkgs:
     "xorg-sgml-doctools" = [ "xorgsgmldoctools" ];
     "xtrans" = [ "xtrans" ];
 } // {
-    "gtkglext-1.0"                       =
-      if pkgs ? gnome2 && pkgs.gnome2 ? gtkglext && pkgs ? gtk2
+    # `gnome2.gtkglext` became the top-level `gtkglext` (the old name is a
+    # deprecated alias, which warns when used).
+    "gtkglext-1.0" =
+      if pkgs ? gtk2 && pkgs ? gtkglext
+        then [ pkgs.gtkglext pkgs.gtk2 ]
+      else if pkgs ? gtk2 && pkgs ? gnome2 && pkgs.gnome2 ? gtkglext
         then [ pkgs.gnome2.gtkglext pkgs.gtk2 ]
-        else [];
+      else [];
     # This was renamed
     "gdk-pixbuf-2.0" =
       if pkgs ? gdk-pixbuf

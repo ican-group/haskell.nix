@@ -23,7 +23,12 @@
         # (`th-dlls` calls `sodium_init` from one).  Build only the static library
         # for android, as `overlays/android.nix` already does for
         # zlib/openssl/gmp6/libffi/libiconv.
-        libsodium-18 = (final.callPackage (haskellNix.sources.nixpkgs-2311 + "/pkgs/development/libraries/libsodium") {}).overrideAttrs (old: {
+        # nixpkgs 23.11's expression reads `stdenv.isLinux`, which today's stdenv
+        # has deprecated (it warns); hand it a `stdenv` where that is the host
+        # platform's, which is what it meant.  The derivation is unchanged.
+        libsodium-18 = (final.callPackage (haskellNix.sources.nixpkgs-2311 + "/pkgs/development/libraries/libsodium") {
+          stdenv = final.stdenv // { inherit (final.stdenv.hostPlatform) isLinux; };
+        }).overrideAttrs (old: {
           dontDisableStatic = true;
           configureFlags = (old.configureFlags or [])
             ++ final.lib.optional final.stdenv.hostPlatform.isAndroid "--disable-shared";
