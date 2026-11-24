@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-e8aa9a67.js";
+            window.path_to_searchindex_js = "searchindex-d25f096f.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-2ec6e9f5.js"></script>
@@ -3090,6 +3090,37 @@ cached/tested in CI.  You’re free to use these, but be ready for longer build
 times.</p>
 <p>Lastly, see <a href="#adding-a-new-ghc-version-to-haskellnix">instructions on adding new GHC versions</a>
 in the event that what’s in <code>haskell.nix</code> doesn’t suit your needs.</p>
+<h2 id="using-a-ghc-from-nixpkgs"><a class="header" href="#using-a-ghc-from-nixpkgs">Using a GHC from nixpkgs</a></h2>
+<p>A project can use one of nixpkgs’ GHCs (<code>pkgs.haskell.compiler.&lt;name&gt;</code>)
+instead of one haskell.nix builds, with the <code>compilerSelection</code> project
+option:</p>
+<pre><code class="language-nix">pkgs.haskell-nix.cabalProject' {
+  src = ./.;
+  compilerSelection = p: p.haskell.compiler;
+  compiler-nix-name = "ghc967";   # a name in pkgs.haskell.compiler
+}
+</code></pre>
+<p><code>compilerSelection</code> is given the build platform’s <code>pkgs</code> and returns the set
+<code>compiler-nix-name</code> is looked up in; by default that is
+<code>p.haskell-nix.compiler</code>.  Use a full name from <code>pkgs.haskell.compiler</code> (say
+<code>ghc967</code> rather than <code>ghc96</code>): a short name is first resolved to the newest
+GHC haskell.nix has for that series, which nixpkgs may not have.</p>
+<p>nixpkgs’ native GHCs are in <code>cache.nixos.org</code>, so this avoids building GHC
+when haskell.nix’s caches do not have the one you want.  The project is
+planned and built as usual, with either builder (<code>builderVersion = 1</code> or
+<code>2</code>).</p>
+<p>Things to know:</p>
+<ul>
+<li>Everything built with it is a cache miss on the haskell.nix caches, which
+only have packages built with haskell.nix’s own GHCs.</li>
+<li>haskell.nix’s GHCs carry patches that nixpkgs’ do not, and haskell.nix’s
+CI only tests its own GHCs.  Cross-compilation in particular (Template
+Haskell, Windows, JavaScript, WebAssembly) is only tested with them.</li>
+<li>Cross-compiling (<code>projectCross</code>) uses nixpkgs’ cross GHC for the target,
+which is not usually in <code>cache.nixos.org</code>, so it is built from source.</li>
+<li>Attributes that only haskell.nix’s GHCs have, such as the <code>.dwarf</code>
+variant, are not there.</li>
+</ul>
 <div style="break-before: page; page-break-before: always;"></div>
 <h1 id="command-line-tools"><a class="header" href="#command-line-tools">Command line tools</a></h1>
 <p>To install the command line tools refer to the <a href="https://ican-group.github.io/haskell.nix/dev/installing-nix-tools.html">Installing nix-tools</a> section.</p>
