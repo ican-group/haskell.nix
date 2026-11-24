@@ -2,6 +2,13 @@
 {
   options = {
     buildable = lib.mkOption {
+      description = ''
+        Whether the component can be built: the `.cabal` file's `buildable:`
+        field under the plan's flags, set by the generated package expression.
+        Components that are not buildable (or not in the plan) are left out of
+        `components`, `checks` and shells.  Use `package.buildable = false` to
+        drop a whole package.
+      '';
       type = lib.types.bool;
       default = true;
     };
@@ -22,11 +29,16 @@
     };
 
     configureFlags = lib.mkOption {
+      description = ''
+        Extra arguments for `Setup configure`.  Not used by `builderVersion = 2`.  Use `configure-options:` (or the
+        matching `cabal.project` field) in `cabalProjectLocal` instead.
+      '';
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [];
     };
 
     setupBuildFlags = lib.mkOption {
+      description = "Extra arguments for `Setup build`.  Not used by `builderVersion = 2`.";
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [];
     };
@@ -70,16 +82,28 @@
     };
 
     setupInstallFlags = lib.mkOption {
+      description = ''
+        Extra arguments for `Setup install`.  Not used by `builderVersion = 2`.
+      '';
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [];
     };
 
     setupHaddockFlags = lib.mkOption {
+      description = ''
+        Extra arguments for `Setup haddock`, when building the component's
+        documentation.  Not used by `builderVersion = 2`.
+      '';
       type = haskellLib.types.listOfFilteringNulls lib.types.str;
       default = [];
     };
 
     doExactConfig = lib.mkOption {
+      description = ''
+        Configure the component with `--exact-configuration`, so that Cabal
+        takes its dependencies from the package database haskell.nix makes for
+        it instead of solving them.  Shells made by `shellFor` do not use it.  Not used by `builderVersion = 2`.
+      '';
       type = lib.types.bool;
       default = false;
     };
@@ -225,11 +249,23 @@
     };
 
     enableLibraryProfiling = lib.mkOption {
+      description = ''
+        Also build the profiling version of the library
+        (`--enable-library-profiling`).  `.profiled` on a component turns this
+        on.  Not used by `builderVersion = 2`.  Set `profiling: True` in `cabalProjectLocal`
+        instead (see docs/dev/profiling.md).
+      '';
       type = lib.types.bool;
       default = false;
     };
 
     enableSeparateDataOutput = lib.mkOption {
+      description = ''
+        Install the component's data files in a separate `data` output.  Off
+        by default when building on darwin: rewriting the store path of an
+        existing `data` output into a signed binary invalidates its signature
+        (#2018).  Not used by `builderVersion = 2`.
+      '';
       type = lib.types.bool;
       # haskell.nix#2018: default to a single output on darwin.
       #
@@ -252,11 +288,20 @@
     };
 
     enableLibraryForGhci = lib.mkOption {
+      description = ''
+        Build the library's `.o` for GHCi (`--enable-library-for-ghci`).  Has
+        no effect for ghcjs, wasm and android.  Not used by `builderVersion = 2`.
+      '';
       type = lib.types.bool;
       default = true;
     };
 
     enableProfiling = lib.mkOption {
+      description = ''
+        Build the component with profiling (`--enable-profiling`): profiled
+        executables, and profiled libraries for its dependencies.  Not used by `builderVersion = 2`.  Set
+        `profiling: True` in `cabalProjectLocal` instead.
+      '';
       type = lib.types.bool;
       default = false;
     };
@@ -276,6 +321,10 @@
     };
 
     profilingDetail = lib.mkOption {
+      description = ''
+        The `--profiling-detail` used when profiling is on (for example
+        `"default"`, `"all-functions"`, `"toplevel-functions"`).  Not used by `builderVersion = 2`.
+      '';
       type = lib.types.nullOr haskellLib.types.uniqueStr;
       default = "default";
     };

@@ -93,6 +93,7 @@ let
 in
 {
   options.ghc.package = lib.mkOption {
+    description = "The GHC that builds the package set.";
     type = lib.types.package;
     # obtain the compiler from the haskell packages.
     # this should allow us to use `config` overrides
@@ -111,9 +112,13 @@ in
   };
 
   options.hackage.db = lib.mkOption {
+    internal = true;
+    description = "The Hackage package index (from hackage.nix).";
     type = lib.types.unspecified; # TODO: Worth type checking with modules? Or does that slow eval too much?
   };
   options.hackage.configs = lib.mkOption {
+    internal = true;
+    description = "`hackage.db` arranged by package, version and revision.";
     type = lib.types.unspecified;
   };
   # Note: we inject rts."1.0" as invalid here. This package can only

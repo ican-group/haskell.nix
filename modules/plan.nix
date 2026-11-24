@@ -49,6 +49,12 @@ let
     }
   ];
 
+  packagesDescription = ''
+    The packages of the package set (see the `packages.<name>.*` options),
+    by name, and with a plan.json-based project also by unit id.  Setting an
+    option on `packages.<name>` sets it on every unit of that package.
+  '';
+
 in
 {
   imports = [
@@ -62,6 +68,8 @@ in
   # default values.
   options = {
     plan-json = mkOption {
+      internal = true;
+      description = "The project's `plan.json` (cabal projects only).";
       type = attrsOf unspecified;
     };
     localPackages = mkOption {
@@ -89,10 +97,17 @@ in
       '';
     };
     use-package-keys = mkOption {
+      internal = true;
+      description = ''
+        Declare `packages` as one option per entry of `package-keys` (which
+        evaluates faster) rather than as an `attrsOf` option.
+      '';
       type = bool;
       default = true;
     };
     package-keys = mkOption {
+      internal = true;
+      description = "The names (and unit ids) `packages` has entries for.";
       type = listOf str;
       default = [];
     };
@@ -106,6 +121,8 @@ in
     # `config.packages.${id}` so lookups are unambiguous without
     # relying on name-only matches against `config.packages`.
     package-ids-by-name = mkOption {
+      internal = true;
+      description = "The plan's unit ids for each package name.";
       type = attrsOf (listOf str);
       default = {};
     };
@@ -114,6 +131,8 @@ in
     # lookup (O(log N)) rather than scanning the install-plan
     # list linearly.
     plan-json-by-id = mkOption {
+      internal = true;
+      description = "The `plan.json` entries, by unit id.";
       type = attrsOf unspecified;
       default = {};
     };
@@ -121,6 +140,11 @@ in
     # collisions (setup scopes are build-stage; see
     # modules/install-plan/override-package-by-name.nix).
     plan-json-by-id-build = mkOption {
+      internal = true;
+      description = ''
+        The `plan.json` entries of the build stage of a two-stage plan, by
+        unit id.
+      '';
       type = attrsOf unspecified;
       default = {};
     };
@@ -130,26 +154,36 @@ in
     # across all slices so the v2 builder doesn't re-scan the whole plan
     # (and re-run the configure-arg regexes) once per component.
     plan-json-v2-globals = mkOption {
+      internal = true;
+      description = ''
+        Project-wide settings the `builderVersion = 2` slices share, taken
+        from the plan.
+      '';
       type = unspecified;
       default = {};
     };
     packages = if !config.use-package-keys
       then mkOption {
         type = attrsOf package;
+        description = packagesDescription;
       }
       else genAttrs config.package-keys (_n:
           mkOption {
             type = package;
+            description = packagesDescription;
           });
     compiler = {
       version = mkOption {
+        description = ''The compiler's version (for example `"9.6.7"`).'';
         type = str;
       };
       nix-name = mkOption {
+        description = ''The compiler's haskell.nix name (for example `"ghc967"`).'';
         type = str;
       };
       packages = mkOption {
         type = attrsOf str;
+        description = "The packages that come with the compiler, and their versions.";
       };
     };
 

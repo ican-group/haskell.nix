@@ -10,9 +10,19 @@ let
 
 in {
   options.cabal.compiler = lib.mkOption {
+    internal = true;
+    description = ''
+      The compiler, as the generated package expressions test it in `.cabal`
+      conditionals (`compiler.isGhc`, `compiler.version`, ...).
+    '';
     type = lib.types.unspecified;
   };
   options.cabal.system = lib.mkOption {
+    internal = true;
+    description = ''
+      The host platform, as the generated package expressions test it in
+      `.cabal` conditionals (`system.isLinux`, ...).
+    '';
     type = lib.types.unspecified;
   };
   config.cabal = { inherit compiler system; };
