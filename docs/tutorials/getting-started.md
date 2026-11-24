@@ -86,6 +86,9 @@ This section assumes you choose to uses the experimental flakes features, and so
 
 The following `nix flake init` command creates a template `hello` package containing a `flake.nix` and `nix/hix.nix` file. The project can be used with
 regular `nix` tools. This template is defined in the [haskell.nix repository](https://github.com/ican-group/haskell.nix/tree/master/templates/haskell-nix), so it always matches the current `hix init` output and supported GHC versions.
+Its `flake.nix` uses [flake-parts](https://flake.parts) and haskell.nix's
+flake-parts module (see [Using flake-parts](./flake-parts.md)); the project's
+settings are in `nix/hix.nix`.
 ```bash
 nix flake init --template github:ican-group/haskell.nix
 nix develop
@@ -109,7 +112,9 @@ nix run .#hello:exe:hello
 
 ## Scaffolding
 
-The following code could be capy-pasted and will work with `stack.yaml` and `cabal.project` based projects.
+The following code could be copy-pasted and will work with `stack.yaml` and `cabal.project` based projects.
+It uses haskell.nix's [flake-parts module](./flake-parts.md), which also
+shows how to write the same flake without flake-parts.
 
 Edit your `flake.nix` as:
 ```nix

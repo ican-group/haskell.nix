@@ -1,40 +1,30 @@
 {
   # This is a template created by `hix init`
   inputs.haskellNix.url = "github:ican-group/haskell.nix";
-  inputs.nixpkgs.follows = "haskellNix/nixpkgs-unstable";
-  # nixpkgs unstable (26.11) dropped x86_64-darwin, and `eachSystem` below
-  # evaluates *every* supported system to collect its output names — so one
-  # unimportable system breaks `nix develop` on all of them.  Keep the last
-  # pin that supports it and use it for that system only.
-  inputs.nixpkgs-2605.follows = "haskellNix/nixpkgs-2605";
-  inputs.flake-utils.url = "github:numtide/flake-utils";
-  outputs = { self, nixpkgs, nixpkgs-2605, flake-utils, haskellNix }:
-    let
-      supportedSystems = [
+  inputs.flake-parts.url = "github:hercules-ci/flake-parts";
+  outputs = inputs@{ flake-parts, haskellNix, ... }:
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      # haskell.nix's flake-parts module: see "Using flake-parts" in the
+      # haskell.nix documentation.
+      imports = [ haskellNix.flakeModules.default ];
+      systems = [
         "x86_64-linux"
         "x86_64-darwin"
         "aarch64-linux"
         "aarch64-darwin"
       ];
-    in
-      flake-utils.lib.eachSystem supportedSystems (system:
-      let
-        overlays = [ haskellNix.overlay
-          (final: _prev: {
-            hixProject =
-              final.haskell-nix.hix.project {
-                src = ./.;
-                # uncomment with your current system for `nix flake show` to work:
-                #evalSystem = "EVAL_SYSTEM";
-              };
-          })
-        ];
-        pkgs = import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs)
-          { inherit system overlays; inherit (haskellNix) config; };
-        flake = pkgs.hixProject.flake {};
-      in flake // {
-        legacyPackages = pkgs;
-      });
+      perSystem = { ... }: {
+        # The project: `project'` arguments, here from `nix/hix.nix`.  Its
+        # packages, apps, checks and dev shell become the flake's, and
+        # `nix build` and `nix run` use the package in this directory.
+        haskellNix.projects.default = {
+          src = ./.;
+          imports = [ ./nix/hix.nix ];
+          # uncomment with your current system for `nix flake show` to work:
+          #evalSystem = "EVAL_SYSTEM";
+        };
+      };
+    };
 
   # --- Flake Local Nix Configuration ----------------------------
   nixConfig = {

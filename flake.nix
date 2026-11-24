@@ -176,6 +176,16 @@
       };
 
       forEachSystem = lib.genAttrs systems;
+
+      # nixpkgs unstable (26.11) dropped x86_64-darwin, so on that platform
+      # the "unstable" pkgs fall back to the 26.05 pin (the last release that
+      # supports it).
+      pkgsFor = system:
+        import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs) {
+          inherit config;
+          overlays = [ self.overlay ];
+          localSystem = { inherit system; };
+        };
       forEachSystemPkgs = f: forEachSystem (system: f self.legacyPackages.${system});
 
       inherit
@@ -201,6 +211,16 @@
           };
         };
 
+        # A flake-parts (https://flake.parts) module for haskell.nix
+        # projects; see docs/tutorials/flake-parts.md.  It shares
+        # `legacyPackages` on the systems that has, and imports the same
+        # nixpkgs on the others (aarch64-linux, for instance).
+        flakeModules.default = lib.setDefaultModuleLocation ./flake-module.nix
+          (import ./flake-module.nix {
+            pkgsFor = system: self.legacyPackages.${system} or (pkgsFor system);
+          });
+        flakeModule = self.flakeModules.default;
+
         internal = {
           nixpkgsArgs = {
             inherit config;
@@ -221,16 +241,8 @@
               (import ./default.nix);
         };
 
-        # nixpkgs unstable (26.11) dropped x86_64-darwin, so on that platform
-        # the "unstable" pkgs fall back to the 26.05 pin (the last release that
-        # supports it).  Everywhere else these track the unstable nixpkgs as
-        # before.
-        legacyPackages = forEachSystem (system:
-          import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs) {
-            inherit config;
-            overlays = [ self.overlay ];
-            localSystem = { inherit system; };
-          });
+        # x86_64-darwin uses the 26.05 pin; see `pkgsFor`.
+        legacyPackages = forEachSystem pkgsFor;
 
         legacyPackagesUnstable = forEachSystem (system:
           import (if system == "x86_64-darwin" then nixpkgs-2605 else nixpkgs-unstable) {
