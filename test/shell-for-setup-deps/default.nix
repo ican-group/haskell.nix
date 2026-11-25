@@ -35,13 +35,16 @@ let
   # units where that cabal looks for them (`store/build/<platform>/`), or it
   # rebuilds every `setup-depends` from source (#1388).
   #
-  # Covered: ghcjs, mingwW64 (whose binaries the build machine cannot run,
-  # so the test does not depend on running target code) and musl64 (whose
-  # host and build platform dirs have the same name).  Mainline compilers
-  # plan cross projects single-stage and are not covered.
+  # Covered: ghcjs (whose binaries cannot run here: the sandbox has no
+  # node, so a `Setup` built for the target would fail) and musl64 (whose
+  # host and build platform dirs have the same name).  Not covered:
+  # mingwW64, whose shell fails the host-stage solve before getting this
+  # far (the store's `time` is "broken, missing dependency Win32", on
+  # master too), and mainline compilers, which plan cross projects
+  # single-stage.
   isStableHaskell = buildPackages.haskell-nix.compiler.${compiler-nix-name}.isStableHaskell or false;
   crossSetupDisabled = !isStableHaskell
-    || !(stdenv.hostPlatform.isGhcjs || stdenv.hostPlatform.isWindows
+    || !(stdenv.hostPlatform.isGhcjs
          || (stdenv.hostPlatform.isMusl && stdenv.hostPlatform.isx86_64
              && !stdenv.buildPlatform.isMusl && stdenv.buildPlatform.isx86_64));
 
@@ -118,7 +121,15 @@ in lib.recurseIntoAttrs ({
         echo "FAIL: cabal planned the packages above from source instead of reusing the shell's" >&2
         exit 1
       fi
-      # The `Setup` is a build machine executable: it runs here.
+      # cabal compiled the `Setup` with the build compiler (the shell's
+      # `with-build-compiler`), so it is a build machine executable and
+      # runs here.
+      buildCompiler=$(sed -n 's/^with-build-compiler: //p' cabal.project.local)
+      if [ -z "$buildCompiler" ] \
+         || ! grep -F "Running: $buildCompiler " build.log | grep -q -- "--make .*pkg-0.1.0.0/setup"; then
+        echo "FAIL: Setup.hs was not compiled with the build compiler ($buildCompiler)" >&2
+        exit 1
+      fi
       setup=$(find dist-newstyle -path "*/pkg-0.1.0.0/setup/setup" -type f | head -1)
       if [ -z "$setup" ]; then
         echo "FAIL: no Setup executable was built" >&2
