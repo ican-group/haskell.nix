@@ -1,0 +1,41 @@
+Seed the project source closure from configured packages only.
+
+`projectSourcePackagesClosure` took as roots every plan node whose
+package id is a project package's, pre-existing nodes included.  Under
+cross-compilation a pre-existing package of one machine can share its
+package id with a project package of the other: a stable-haskell
+`-target` project builds the target's `system-cxx-std-lib-1.0` from
+source (as a `packages:` entry), while the build compiler's own
+`text-2.1.3` depends on its pre-existing `system-cxx-std-lib-1.0`.  As a
+root, that pre-existing unit put every build-machine package above
+`text` into the closure (hashable, Cabal-syntax, attoparsec, ...), so
+they were planned `-inplace` and rebuilt instead of being reused from
+the store -- in a v2 shell, every custom-setup dependency of a project
+package.
+
+A project package is always built from source, so only configured
+nodes can be roots.  Nothing about unit ids changes for packages that
+were not affected.
+
+diff --git a/src/Distribution/Client/ProjectPlanning.hs b/src/Distribution/Client/ProjectPlanning.hs
+index 0ab3be567..152844c41 100644
+--- a/src/Distribution/Client/ProjectPlanning.hs
++++ b/src/Distribution/Client/ProjectPlanning.hs
+@@ -3097,8 +3097,16 @@ elaborateInstallPlan
+               -- Take the roots straight from the plan so each 'SolverId' carries
+               -- the machine it was solved for; a local package used as a build
+               -- tool then contributes both its host and build copies.
++              --
++              -- Only configured packages: a project package is built from its
++              -- source, never taken pre-existing.  A pre-existing package can
++              -- share the package id of a project package on the other
++              -- machine (the build compiler's own @system-cxx-std-lib-1.0@ and
++              -- a project that builds the target's from source), and as a
++              -- root it would put every package built on top of it into the
++              -- closure: inplace, and never reused from the store.
+               [ Graph.nodeKey pkg
+-              | pkg <- SolverInstallPlan.toList solverPlan
++              | pkg@SolverInstallPlan.Configured{} <- SolverInstallPlan.toList solverPlan
+               , isLocalToProject pkg
+               ]
+ 

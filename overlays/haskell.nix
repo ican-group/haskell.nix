@@ -1429,7 +1429,7 @@ final: prev: {
                           + "is present in `pkgs.haskell.compiler`; bump the candidates list "
                           + "in `overlays/haskell.nix`.")
                  else picked;
-            mkTool = evalSystem: final.pkgsBuildBuild.haskell-nix.tool compiler-nix-name "cabal" {
+            mkTool = extraCabalInstallPatches: evalSystem: final.pkgsBuildBuild.haskell-nix.tool compiler-nix-name "cabal" {
               version = "3.19.0.0";
               builderVersion = 1;
               # Run the tool project's plan-to-nix on the consumer's eval
@@ -1465,7 +1465,7 @@ final: prev: {
                   ../builder/cabal-install-patches/skip-installed-revdeps-in-completed.patch
                   ../builder/cabal-install-patches/setup-build-num-jobs-env.patch
                   ../builder/cabal-install-patches/wired-in-pins-follow-allow-boot-library-installs.patch
-                ];
+                ] ++ extraCabalInstallPatches;
                 # The Cabal LIBRARY, not the tool: `v2-build` links it in and
                 # uses it as the build system for `build-type: Simple`, so a
                 # patch here is what reaches the actual link command.
@@ -1479,9 +1479,25 @@ final: prev: {
               }];
             };
             byEvalSystem = final.lib.mapAttrs (evalSystem: _evalPackages:
-              mkTool evalSystem) final.haskell-nix.evalPackages;
+              mkTool [] evalSystem) final.haskell-nix.evalPackages;
+            # The `cabal` of a two-stage (stable-haskell `-target` cross) v2
+            # shell: the same cabal-install plus a fix to which packages the
+            # project builds inplace (`source-closure-configured-roots.patch`).
+            # Without it every build-machine package above `text` was planned
+            # inplace, so a shell rebuilt its custom setups' dependencies
+            # instead of reusing them from the store.  In a shell the patch
+            # only changes which packages are built inplace, so every other
+            # unit id is the slices'.  A slice builds with `inplace-builds:
+            # False`, where the same closure names units after their package
+            # id instead, so the slices keep `v2-cabal-install` (and their
+            # unit ids).
+            shellByEvalSystem = final.lib.mapAttrs (evalSystem: _evalPackages:
+              mkTool [ ../builder/cabal-install-patches/source-closure-configured-roots.patch ]
+                evalSystem) final.haskell-nix.evalPackages;
           in byEvalSystem.${final.pkgsBuildBuild.stdenv.hostPlatform.system}
-             // { evalWith = byEvalSystem; };
+             // { evalWith = byEvalSystem;
+                  shell = shellByEvalSystem.${final.pkgsBuildBuild.stdenv.hostPlatform.system}
+                    // { evalWith = shellByEvalSystem; }; };
 
         iserv-proxy-exes = __mapAttrs (compiler-nix-name: _ghc:
             let

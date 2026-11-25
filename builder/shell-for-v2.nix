@@ -26,6 +26,8 @@
   # The cabal-install the v2 slice builder used, and its version.  See
   # `toolDrvs` below for why the shell's `cabal` has to be that one.
 , v2CabalInstall, v2CabalInstallVersion, withBuildCompiler ? false
+  # `v2CabalInstall` with the fix a two-stage shell needs (`cabalTool`).
+, v2CabalInstallShell ? v2CabalInstall
   # Unit ids of the project's `extra-packages` (see
   # `haskellLib.extraPackageUnitIds`).
 , extraPackageUnitIds ? [] }:
@@ -216,16 +218,34 @@ let
   # packages.  Sized linearly with the number of distinct units
   # (lndir → tree of symlinks) rather than the bytes those units
   # take on disk.
-  composedStore = composeStore {
+  composedStore = composeStore ({
     name = "shell-store";
     slices = depSlices;
-  };
+  } // lib.optionalAttrs isTwoStagePlan {
+    # The plan's build-machine units (custom-setup `setup-depends`,
+    # `build-tool-depends`) go in the store's `build/<build platform>/`,
+    # where the fork cabal looks for BUILD-stage units, so a `cabal build`
+    # in the shell compiles a custom `Setup.hs` with the build compiler
+    # against the prebuilt units and runs it on the build machine.
+    buildGhc = ghc.buildGHC;
+  });
+  # A two-stage (stable-haskell `-target` cross) plan, as in
+  # comp-v2-builder's `isTwoStagePlan`.
+  isTwoStagePlan = ghc.emptyGlobalPackageDb or false;
 
   # `lndir` reproduces a directory tree as a tree of symlinks —
   # used for installing unit dirs (which are subtrees of files) so
   # the user's cabal store ends up with symlinks pointing into
   # /nix/store rather than full copies.
   lndir = pkgs.buildPackages.lndir or pkgs.buildPackages.xorg.lndir;
+
+  # Recache the package db `$db` of store root `$rootRel` in the sync
+  # script: a two-stage shell's `build/` roots with the build compiler's
+  # `ghc-pkg`.
+  recacheStoreRoot =
+    if isTwoStagePlan
+    then ''case "$rootRel" in build/*) "${ghc.buildGHC}/bin/ghc-pkg" --package-db="$db" recache 2>/dev/null || true ;; *) "$ghc_pkg" --package-db="$db" recache 2>/dev/null || true ;; esac''
+    else ''"$ghc_pkg" --package-db="$db" recache 2>/dev/null || true'';
 
   # Standalone sync script placed on PATH as
   # `haskell-nix-cabal-store-sync`.  The shell hook invokes it
@@ -269,7 +289,10 @@ let
   # host machines' package dbs whenever they share a platform directory --
   # a musl `-target` cross's glibc build units landed in its musl host db --
   # so the sync no longer makes the link and removes one it made before.
-  # cabal builds what a project needs for its build machine itself.
+  # A two-stage shell's composed store instead has its build-machine units
+  # in a separate `build/<build platform>/` (see `composedStore`), which is
+  # synced like the host dirs (and recached with the build compiler's
+  # `ghc-pkg`, `recacheStoreRoot`).
   cabalStoreSync = pkgs.pkgsBuildBuild.writeShellScriptBin "haskell-nix-cabal-store-sync" ''
     set -eu
 
@@ -349,7 +372,7 @@ let
     # cabal/ghc-pkg need — pkgroot resolves to wherever the copied
     # `package.conf.d` / `package.db` ends up in the target store.
     roots=()
-    for d in "$src"/ghc-*/ "$src"/host/*/; do
+    for d in "$src"/ghc-*/ "$src"/host/*/${lib.optionalString isTwoStagePlan " \"$src\"/build/*/"}; do
       d="''${d%/}"
       [ -d "$d" ] || continue
       [ -L "$d" ] && continue   # skip the fork's inert build->host link
@@ -522,7 +545,7 @@ let
       for f in package.cache package.cache.lock; do
         if [ -L "$db/$f" ]; then rm -f "$db/$f"; fi
       done
-      "$ghc_pkg" --package-db="$db" recache 2>/dev/null || true
+      ${recacheStoreRoot}
     done
 
     # ---- Drop sync marker for this composedStore -----------------
@@ -580,7 +603,20 @@ let
     in lib.optionalString (buildGhc != null) ''
       with-build-compiler: ${buildGhc}/bin/${buildGhc.targetPrefix or ""}ghc
       with-build-hc-pkg: ${buildGhc}/bin/${buildGhc.targetPrefix or ""}ghc-pkg
-    '';
+    '' + buildPkgConfigFields;
+  # The build machine's own pkg-config, for a two-stage project's BUILD
+  # stage, as its slices get it (`--with-build-pkg-config` in
+  # build-cabal-slice, #2628).  cabal configures each machine's programs
+  # separately, and nothing in a cross shell is called plain `pkg-config`,
+  # so without it the solve of a build-stage package with
+  # `pkgconfig-depends` differs from the slices' (zlib's `pkg-config` flag
+  # turned off) and its unit id misses the store's.  Program paths do not
+  # enter unit ids.
+  buildPkgConfigFields = lib.optionalString isTwoStagePlan ''
+
+    build-program-locations
+      pkg-config-location: ${pkgs.pkgsBuildBuild.cabalPkgConfigWrapper}/bin/pkg-config
+  '';
   # Every hash-affecting line the slices' composed cabal.project carries
   # has to appear here too.  A UnitId is a hash of cabal-install's
   # `PackageHashInputs`, and `pkgHashProgramArgs` is one of them: a
@@ -977,6 +1013,16 @@ let
   # compiler so the tools are compatible with the shell's GHC.
   compilerNixName = compiler.nix-name;
 
+  # A two-stage shell's cabal has both machines in one plan.  The
+  # unpatched fork then plans every build-machine package that depends on
+  # a pre-existing package sharing the id of one of the project's boot
+  # packages (the build compiler's `text` -> `system-cxx-std-lib-1.0`)
+  # inplace, and rebuilds it instead of reusing the store's
+  # (`source-closure-configured-roots.patch`).  The patch changes no unit
+  # id here, so this cabal still finds everything the slices built.
+  shellCabalInstall =
+    if isTwoStagePlan then v2CabalInstallShell else v2CabalInstall;
+
   # `cabal` is not an ordinary tool here.  The whole point of the v2
   # shell is that the composed cabal store already holds the project's
   # dependencies, so `cabal build` reuses them instead of rebuilding.
@@ -1034,11 +1080,12 @@ let
     in
       if lib.isDerivation versionOrMod then
         if versionOrMod.drvPath == v2CabalInstall.drvPath
+           || versionOrMod.drvPath == shellCabalInstall.drvPath
            || (versionOrMod.version or null) == v2CabalInstallVersion
           then versionOrMod
           else mismatch "a derivation (${versionOrMod.name or "unnamed"})" versionOrMod
       else if pinned == null || pinned == "latest" || pinned == "v2-cabal-install"
-        then v2CabalInstall
+        then shellCabalInstall
       else if pinned != v2CabalInstallVersion
         then mismatch "pinned to ${pinned}"
           (pkgs.pkgsBuildBuild.haskell-nix.tool compilerNixName "cabal" versionOrMod)
