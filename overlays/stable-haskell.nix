@@ -1536,6 +1536,8 @@ ENDSCRIPT
       ${bootLibShared}
       package ghc-bin
         flags: -debug
+      package unlit
+        ghc-options: -no-rts
       package haskeline
         flags: +terminfo
       package text
@@ -1887,10 +1889,11 @@ ENDSCRIPT
       packages.rts.components.library.enableLibraryForGhci = false;
       packages.rts.components.library.configureFlags = ["--disable-shared"];
       # -no-rts for rts, rts-fs, rts-headers, ghc-internal, libffi-clib is
-      # now handled by cabal.project.stage2 ghc-options stanzas, extracted
-      # automatically via configure-args.nix.  Only unlit still needs it
-      # here (it's not covered by the cabal.project files).
-      packages.unlit.ghcOptions = ["-no-rts"];
+      # handled by cabal.project.stage2 ghc-options stanzas, and for unlit by
+      # the `package unlit` stanza in `cabalProjectLocal` above: in the
+      # project, so the plan hashes it too.  (A `ghcOptions` module here
+      # reached only the v2 slice's own project, so the slice's unit id
+      # differed from the plan's.)
     }
     # Boot-library unit ids MUST be predictable: a consumer project's
     # plan-time dummy `ghc-pkg dump` (lib/dummy-ghc.nix) has to present
