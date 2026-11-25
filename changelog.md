@@ -13,9 +13,11 @@ that will impact users.
     library up by that id for plugins, on every target.  A plan whose build
     tool has a bare id (only possible for a tool depending on a local
     package under `inplace-builds: False`) is now an evaluation error
-    rather than a tool rebuilt in every slice.  `v2-cabal-install` drops
-    the stable-haskell cabal change that reused receipts of local packages,
-    and the wired-in `ghc-internal` pin is dropped by filtering it out of
+    rather than a tool rebuilt in every slice.  `v2-cabal-install` now
+    pins stable-haskell/cabal `hkm/sh-merge3-ports`: haskell.nix's cabal
+    changes rebased onto the current `stable-haskell/merge` (73d3ffda3),
+    without the change that reused receipts of local packages.  The
+    wired-in `ghc-internal` pin is dropped by filtering it out of
     `ghc --info` for the two wrapper compilers whose binary links a
     `ghc-internal` other than the one they build for (stage1 and the
     `-target` wrapper) instead of by a cabal patch.  The new
