@@ -1,6 +1,27 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 26, 2026
+
+  * `ghc914-sh`'s boot libraries now have ordinary hashed unit ids
+    (`base-4.22.1.0-<hash>` rather than `base-4.22.1.0`), both in the
+    compiler's own package database and when a `-target` cross project
+    builds them for its target.  They come from a package repository of
+    GHC's boot packages instead of being listed as local packages, which
+    made cabal name every unit above them after its package id.  `ghc`
+    itself keeps its bare id (`ghc-9.14`): the compiler binary looks the
+    library up by that id for plugins, on every target.  A plan whose build
+    tool has a bare id (only possible for a tool depending on a local
+    package under `inplace-builds: False`) is now an evaluation error
+    rather than a tool rebuilt in every slice.  `v2-cabal-install` drops
+    the stable-haskell cabal change that reused receipts of local packages,
+    and the wired-in `ghc-internal` pin is dropped by filtering it out of
+    `ghc --info` for the two wrapper compilers whose binary links a
+    `ghc-internal` other than the one they build for (stage1 and the
+    `-target` wrapper) instead of by a cabal patch.  The new
+    `v2-cabal-install` rebuilds every v2 slice once, the `ghc914-sh`
+    compilers included.
+
 ## November 25, 2026
 
   * A v2 `shellFor` for a stable-haskell (`ghc914-sh`) cross target now

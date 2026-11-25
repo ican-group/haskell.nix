@@ -843,11 +843,9 @@ let
             ""
           }suffix() {
             ${if ghc.isStableHaskell or false then ''
-              # stable-haskell compilers: the stage2 boot-lib slices are
-              # built in local-`packages:` mode (v2LocalPackageSlices,
-              # overlays/stable-haskell.nix), and the fork elaborates
-              # local units to plain `<name>-<version>` ids — no
-              # `-inplace` suffix for ANY package.
+              # stable-haskell compilers: plain `<name>-<version>` here; the
+              # boot libraries' real (hashed) ids replace these below, from
+              # the compiler's `bootUnitIds` (overlays/stable-haskell.nix).
               echo ""
             '' else if pkgs.lib.versionAtLeast ghc.version "9.8" then ''
               case "$1" in
@@ -910,7 +908,22 @@ let
               sub_deps="DEPS_''${varname}__$(echo $sublib | tr "-" "_")"
               record "z-$pkg-z-$sublib" "$pkg-$ver$(suffix $pkg)-$sublib" "" "''${!sub_deps:-}" "$pkg" "$sublib"
             done
-          done
+          done${
+            # A compiler whose boot libraries have hashed unit ids lists them
+            # as `bootUnitIds` (`{ bare; id; }`, the bare form being what the
+            # loop above wrote).  Rewrite each `id:` and `depends:` entry to
+            # the real id.  Appended to the `done` line, so it adds nothing
+            # -- not even an empty line -- to any other compiler's script.
+            let ids = if emptyDump then [] else ghc.bootUnitIds or []; in
+            pkgs.lib.optionalString (ids != []) ("\n"
+              + "cat > boot-unit-ids <<'EOF'\n"
+              + pkgs.lib.concatMapStrings (e: "${e.bare} ${e.id}\n") ids
+              + "EOF\n"
+              + "awk 'NR == FNR { m[$1] = $2; next }\n"
+              + "  /^id: / && ($2 in m) { print \"id: \" m[$2]; next }\n"
+              + "  /^  [^ ]+$/ && (substr($0, 3) in m) { print \"  \" m[substr($0, 3)]; next }\n"
+              + "  { print }' boot-unit-ids $out > dump.tmp\n"
+              + "mv dump.tmp $out")}
         '');
   # Dummy `ghc-pkg` that uses the captured output
   dummy-ghc-pkg = evalPackages.writeTextFile {

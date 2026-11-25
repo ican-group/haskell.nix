@@ -489,13 +489,12 @@ let
   ];
 
   # Every library the final compiler REGISTERS is built in the profiling way as
-  # well as vanilla.  A native ghc914-sh registers its stage2 libraries under
-  # plan-deterministic unit ids (`base-4.22.0.0`, see `v2LocalPackageSlices`),
-  # and a consumer compiling with `-prof` resolves `-package-id base-4.22.0.0`
-  # and then asks the module finder for `Prelude.p_hi` beside `Prelude.hi`.
-  # Vanilla-only boot libs therefore fail every profiled consumer with GHC-88719
-  # ("Perhaps you haven't installed the profiling libraries for package
-  # 'base-4.22.0.0'?") -- `tests.cabal-simple-prof` and every dep slice under it
+  # well as vanilla.  A consumer compiling with `-prof` resolves the
+  # `-package-id` of each stage2 library (`base-4.22.1.0-<hash>`, see
+  # `bootUnitIds`) and then asks the module finder for `Prelude.p_hi` beside
+  # `Prelude.hi`.  Vanilla-only boot libs therefore fail every profiled
+  # consumer with GHC-88719 ("Perhaps you haven't installed the profiling
+  # libraries for package 'base-4.22.0.0'?") -- `tests.cabal-simple-prof` and every dep slice under it
   # (hashable, tagged, transformers-compat, safe).  Cross targets need nothing
   # here: their compiler's global db is empty, so the boot libs are units of the
   # CONSUMER's plan and take the profiling settings from it (that is the path
@@ -616,6 +615,226 @@ let
   # Build-platform dump source (for consumers that realize it on the builder).
   dumpSrc = mkDumpSrc pkgs configuredSrc;
 
+  # The in-tree boot packages a `-target` cross project builds for its target
+  # from the boot-package repository (modules/cabal-project.nix; `compiler`,
+  # package `ghc`, is injected as a local package there, as here).
+  # genprimopcode and deriveConstants are lib:ghc's build tools.
+  targetBootDirs = [
+    "rts-headers" "rts-fs" "rts"
+    "libraries/base"
+    "libraries/ghc-bignum"
+    "libraries/ghc-boot"
+    "libraries/ghc-boot-th"
+    "libraries/ghc-compact"
+    "libraries/ghc-experimental"
+    "libraries/ghc-heap"
+    "libraries/ghc-internal"
+    "libraries/ghc-platform"
+    "libraries/ghc-prim"
+    "libraries/ghci"
+    "libraries/integer-gmp"
+    "libraries/system-cxx-std-lib"
+    "libraries/template-haskell"
+    "utils/genprimopcode"
+    "utils/deriveConstants"
+  ];
+
+  # ── Boot-package repository ───────────────────────────────────────────────
+  # GHC's boot packages as a package repository: one reproducible
+  # `<name>-<version>.tar.gz` per package of the merged stage2 project's
+  # `packages:` stanza (the in-tree directories, tarred as they are, and the
+  # Hackage tarballs it pins by URL, copied byte for byte).
+  #
+  # As `packages:` entries they were LOCAL packages, and cabal names local
+  # units -- and, under `inplace-builds: False`, everything above them --
+  # after their package id, with no hash.  Served from a repository they are
+  # ordinary packages with hashed unit ids, which depend only on each unit's
+  # own closure and which store reuse handles like any other.
+  #
+  # The one exception is `compiler` (package `ghc`), which stays local.  The
+  # stage2 `ghc` binary is shared by the native compiler and every `-target`
+  # wrapper, and GHC finds `GHC.Driver.Plugins` through its compiled-in
+  # `cProjectUnitId`, so a target's own `ghc` library must have exactly the
+  # native one's unit id -- and two builds against different `base`s can
+  # only agree on an id that is not a hash.  (`inplace-builds: False` then
+  # names ghc-bin, haddock-api and haddock, the units above `ghc`, after
+  # their package ids too.)
+  #
+  # An unsigned secure repository, the same shape as `hsc2hs-patched-repo`
+  # (overlays/hsc2hs.nix), whose index lists every package twice (see the
+  # epochs there) so any project `index-state` sees it.  (A `file+noindex`
+  # repository needs no index, but cabal writes its `noindex.cache` either
+  # into the repository -- a read-only store path -- or into CABAL_DIR, which
+  # plan-to-nix also gets read-only.)  plan.json records the repository's
+  # store path, and lib/load-cabal-plan.nix fetches the tarballs from it by
+  # the plan's hash.
+  #
+  # Built with the EVAL platform's packages from the eval-platform tree, as
+  # plan-to-nix reads it.  The tarball bytes hash into every unit id, so they
+  # must not depend on the platform that made them: fixed tar flags,
+  # `gzip -n`, and no `autom4te.cache` (the only part of the configured tree
+  # that differs between platforms).
+  #
+  # `urlPkgs` is the (name, version) list of the Hackage tarballs, parsed by
+  # the caller from the same project text.  Returns
+  #   repo          every package (the stage2 project's repository),
+  #   target-repo   the `targetBootDirs` subset, for the `-target` injection
+  #                 in modules/cabal-project.nix,
+  #   project       the stage2 project rewritten to read `repo`.
+  mkBootRepo = buildPkgs: configured: urlPkgs:
+    let
+      hackageTarballFile = p:
+        let entry = (pkgs.haskell-nix.hackageForStack.${p.name}
+                      or (throw "ghc914-sh boot repo: ${p.name} is not in hackage.nix")).${p.version}
+                    or (throw "ghc914-sh boot repo: ${p.name}-${p.version} is not in hackage.nix");
+        in buildPkgs.fetchurl {
+          name = "${p.name}-${p.version}.tar.gz";
+          url = "mirror://hackage/${p.name}-${p.version}.tar.gz";
+          inherit (entry) sha256;
+        };
+      # Win32 is in the pinned list for Windows hosts; a native stage2 is
+      # never one, and as an `extra-packages:` target it would be planned.
+      urlTargets = lib.filter (p: p.name != "Win32") urlPkgs;
+      # The index times, as in overlays/hsc2hs.nix.
+      earlyEpoch = "946684800";  # 2000-01-01T00:00:00Z
+      lateEpoch = "4102444800";  # 2100-01-01T00:00:00Z
+      contents = buildPkgs.runCommand "ghc914-sh-boot-repo-contents"
+        { nativeBuildInputs = [ buildPkgs.gnutar buildPkgs.gzip buildPkgs.gawk ]; } (''
+        mkdir -p $out/all/package $out/target/package
+        project=${configured}/cabal.project.stage2.merged
+        targetDirs=" ${lib.concatStringsSep " " targetBootDirs} "
+        tarFlags="--format=ustar --sort=name --numeric-owner --owner=0 --group=0"
+
+        # The in-tree package directories: the `packages:` stanza's entries
+        # that are not URLs.
+        dirs=$(awk '/^packages:/{f=1;next} f&&/^[^ \t]/{f=0} f&&$1!=""&&$1!~/^--/&&$1!~/^https:/{print $1}' $project)
+        [ -n "$dirs" ] || { echo "no package directories in $project" >&2; exit 1; }
+        echo "$dirs" | grep -qx compiler || { echo "no compiler/ entry in $project" >&2; exit 1; }
+
+        names=""
+        for d in $dirs; do
+          [ "$d" = compiler ] && continue
+          cabal=$(ls ${configured}/$d/*.cabal)
+          name=$(awk 'tolower($1)=="name:"{print $2; exit}' $cabal)
+          version=$(awk 'tolower($1)=="version:"{print $2; exit}' $cabal)
+          [ -n "$name" ] && [ -n "$version" ] || { echo "no name/version in $cabal" >&2; exit 1; }
+          work=$(mktemp -d)
+          cp -r ${configured}/$d $work/$name-$version
+          chmod -R u+w $work/$name-$version
+          # Other listed packages nested inside this one (utils/haddock holds
+          # haddock-api and haddock-library) get their own tarballs.
+          for nested in $dirs; do
+            case $nested in
+              $d/*) rm -rf $work/$name-$version/''${nested#$d/} ;;
+            esac
+          done
+          find $work/$name-$version -name autom4te.cache -prune -exec rm -rf {} +
+          tar --format=gnu --sort=name --mtime=@${earlyEpoch} --owner=0 --group=0 --numeric-owner \
+            -C $work -cf - $name-$version | gzip -n -9 > $out/all/package/$name-$version.tar.gz
+          rm -rf $work
+          names="$names $name"
+          case "$targetDirs" in
+            *" $d "*)
+              cp $out/all/package/$name-$version.tar.gz $out/target/package/
+              targetDirs=$(echo "$targetDirs" | sed "s| $d | |") ;;
+          esac
+        done
+        if [ -n "$(echo $targetDirs)" ]; then
+          echo "targetBootDirs not in the packages: of $project:$targetDirs" >&2
+          exit 1
+        fi
+      '' + lib.concatMapStrings (p: ''
+        cp ${hackageTarballFile p} $out/all/package/${p.name}-${p.version}.tar.gz
+      '') urlPkgs + ''
+        echo $names ${lib.concatMapStringsSep " " (p: p.name) urlTargets} \
+          | tr ' ' '\n' | sort -u > $out/names
+
+        # One index per repository: each package's .cabal file (the one in its
+        # tarball) and its hash, at both epochs.
+        for r in all target; do
+          idx=$(mktemp -d)
+          entries=""
+          for t in $out/$r/package/*.tar.gz; do
+            nv=$(basename $t .tar.gz)
+            n=$(tar -tzf $t | awk -F/ 'NR == 1 { print $1 }')
+            [ "$n" = "$nv" ] || { echo "$t does not unpack to $nv/" >&2; exit 1; }
+            name=$(echo $nv | sed 's/-[0-9][0-9.]*$//')
+            version=''${nv#$name-}
+            mkdir -p $idx/$name/$version
+            tar -xzOf $t $nv/$name.cabal > $idx/$name/$version/$name.cabal
+            sha256=$(sha256sum $t | cut -d' ' -f1)
+            length=$(stat --printf=%s $t)
+            printf '{"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/%s.tar.gz":{"hashes":{"sha256":"%s"},"length":%s}},"version":1}}' \
+              $nv $sha256 $length > $idx/$name/$version/package.json
+            entries="$entries $name/$version/$name.cabal $name/$version/package.json"
+          done
+          tar $tarFlags --mtime=@${earlyEpoch} -C $idx -cf $idx.tar $entries
+          tar $tarFlags --mtime=@${lateEpoch} -C $idx -rf $idx.tar $entries
+          gzip -n -9 -c $idx.tar > $out/$r/01-index.tar.gz
+          rm -rf $idx $idx.tar
+        done
+      '');
+      mkRepo = sub: name:
+        let metadata = import ../mk-local-hackage-repo buildPkgs {
+              inherit name; index = "${contents}/${sub}/01-index.tar.gz"; };
+        in buildPkgs.runCommand "${name}-repo" { } ''
+          mkdir -p $out
+          cp -r ${contents}/${sub}/package $out/package
+          # -L: mk-local-hackage-repo symlinks the index it was handed.
+          cp -L ${metadata}/01-index.tar.gz $out/01-index.tar.gz
+          cp ${metadata}/root.json ${metadata}/mirrors.json \
+             ${metadata}/snapshot.json ${metadata}/timestamp.json $out/
+        '';
+      repo = mkRepo "all" "ghc914-sh-boot";
+      target-repo = mkRepo "target" "ghc914-sh-boot-target";
+      # The stage2 project: keep only `compiler` in `packages:`, drop the
+      # `if !os(windows)` `packages:` block (terminfo, now in the repository
+      # and a dependency of haskeline +terminfo), and read the repository.
+      # Every repository package is a target (`extra-packages:`), as it was
+      # when listed in `packages:`, and is built from source (`source`): the
+      # stage1 compiler's package db is empty, whatever the plan-time dummy
+      # `ghc-pkg dump` (which lists the tree's own .cabal files) reports --
+      # left alone, cabal took the dummy's `system-cxx-std-lib` as installed.
+      project = buildPkgs.runCommand "cabal.project.stage2.repo"
+        { nativeBuildInputs = [ buildPkgs.gawk ]; } ''
+        src=${configured}/cabal.project.stage2.merged
+        awk '
+          /^packages:/ { print; inpk = 1; next }
+          inpk && /^[^ \t]/ { inpk = 0 }
+          inpk { if ($1 == "compiler") print; next }
+          /^if !os\(windows\)[ \t]*$/ {
+            if ((getline nxt) > 0 && nxt ~ /^[ \t]+packages:/) { skipc = 1; next }
+            print; print nxt; next
+          }
+          skipc && /^[ \t]/ { next }
+          { skipc = 0 }
+          /^active-repositories:/ { print "active-repositories: ghc-boot"; next }
+          { print }
+        ' $src > $out
+        [ "$(grep -c '^  compiler$' $out)" = 1 ] \
+          || { echo "rewriting packages: in $src failed" >&2; exit 1; }
+        [ "$(grep -c '^active-repositories: ghc-boot$' $out)" = 1 ] \
+          || { echo "rewriting active-repositories: in $src failed" >&2; exit 1; }
+        if grep -q 'https://hackage' $out; then
+          echo "a Hackage URL is left in the rewritten $src:" >&2
+          grep -n 'https://hackage' $out >&2
+          exit 1
+        fi
+        {
+          echo
+          echo "repository ghc-boot"
+          echo "  url: file:${repo}"
+          echo "  secure: True"
+          echo "  root-keys:"
+          echo "  key-threshold: 0"
+          echo
+          echo "extra-packages: $(paste -sd, ${contents}/names)"
+          echo
+          echo "constraints: $(sed 's/$/ source/' ${contents}/names | paste -sd, -)"
+        } >> $out
+      '';
+    in { inherit repo target-repo project; };
+
   # NB: the eval-platform trees are NOT memoised here by eval-system.  Each
   # compiler is a single `mkGhc` invocation with one fixed `evalSystem`, so it
   # exposes a plain `configured-src-eval` / `raw-src` for ITS eval platform
@@ -674,6 +893,18 @@ let
   # from the EVAL tree — `urlBootPkgsFrom` does `readFile`, which realises the
   # tree at eval; the build tree must never be realised on a foreign eval host.
   urlBootPkgs       = urlBootPkgsFrom configuredSrcEval;
+  # Every Hackage tarball the stage2 project pins by URL (not only the
+  # registered boot libraries), skipping commented-out lines such as the
+  # `-- https://.../hsc2hs-0.68.10.tar.gz` note in its `packages:` stanza.
+  # Only (name, version) is taken from the text: the files are fetched by
+  # hash from hackage.nix in `mkBootRepo`.
+  stage2UrlPkgs = lib.unique (lib.concatMap (line:
+      if builtins.match "[[:space:]]*--.*" line != null then []
+      else pkgs.haskell-nix.haskellLib.hackageTarballUrls line)
+    (lib.splitString "\n"
+      (builtins.readFile "${configuredSrcEval}/cabal.project.stage2.merged")));
+  # The boot-package repository (see `mkBootRepo`), from the eval tree.
+  bootRepoEval = mkBootRepo evalPackages configuredSrcEval stage2UrlPkgs;
 
   bootGhcName      = "ghc9103";
   # Boot from nixpkgs' GHC 9.10.3, not haskell.nix's own ghc9103.  nixpkgs'
@@ -929,6 +1160,17 @@ let
       packages.ghc.preConfigure = ''
         export PATH=${genPrimopCodeTool}/bin:${deriveConstantsTool}/bin:$PATH
       '';
+
+      # Give the stage1 `ghc` library a fixed unit id.  compiler/Setup.hs
+      # bakes the library's own unit id into the compiler as `cProjectUnitId`
+      # (`ghc --info` "Project Unit Id"), and cabal folds that value into the
+      # hash of every unit the compiler builds.  Left to Cabal, v1 registers a
+      # computed id (`ghc-9.14-9lKrT...`) that nothing at plan time can
+      # predict, so the stage2 plan (made with the stage1 dummy, which reports
+      # `ghc-<version>-inplace`, lib/dummy-ghc.nix) and the stage2 slices (run
+      # with the real stage1) would hash every hashed stage2 unit differently.
+      # This makes the real value the dummy's.
+      packages.ghc.configureFlags = [ "--ipid=ghc-${ghcVersion}-inplace" ];
 
       # Two patches to GHCi/Message.hs and GHCi/Run.hs needed when
       # bootstrapping with GHC 9.10.x (base-4.20):
@@ -1214,27 +1456,31 @@ ENDSCRIPT
     # matching the stable-ghc-9.14 Makefile's `cabal build`.  v1's standalone
     # Setup.hs links the boot GHC's Cabal 3.12, which drops those options.
     builderVersion       = 2;
-    # Build each local plan unit's slice in cabal `packages:` mode so it
-    # registers the plan's deterministic unit id (`base-4.22.0.0`, ...)
-    # — these registrations become the compiler's global package db,
-    # which consumer plan-time dummy dumps must be able to predict.
-    # See the option in modules/project-common.nix and the module-list
-    # comment at the end of this project.
+    # Slice the plan's LOCAL unit (`ghc`) and the units named after their
+    # package id above it (ghc-bin, haddock-api, haddock; see `mkBootRepo`)
+    # in cabal `packages:` mode, so each registers the plan's bare unit id.
+    # Every other unit comes from the boot-package repository with a hashed
+    # id and is sliced like any dependency.  See the option in
+    # modules/project-common.nix.
     v2LocalPackageSlices = true;
     inputMap             = srpInputMap;
-    # Boot-lib deps are pinned via direct hackage tarball URLs in the source's
-    # cabal.project; rewrite them to local store paths (fetched via hackage.nix)
-    # so plan-to-nix needs no network and no matching index-state.
-    replace-hackage-tarball-urls = true;
-    # With everything pinned locally and active-repositories: :none, cabal
-    # resolves nothing from hackage — but it still parses the prepopulated index
-    # on startup, so the full ~1.2 GB index is a large, needless plan-to-nix cost
-    # (seconds natively, minutes under emulation).  Prepopulate an empty index.
+    # The boot packages come from the boot-package repository (`mkBootRepo`,
+    # `active-repositories: ghc-boot`), so cabal resolves nothing from
+    # hackage -- but it still parses the prepopulated index on startup, so the
+    # full ~1.2 GB index is a large, needless plan-to-nix cost (seconds
+    # natively, minutes under emulation).  Prepopulate an empty index.
     prepopulateHackageIndex = false;
     src                  = srcNoFilter configuredSrc;
-    # Eval-platform configured tree for plan-to-nix (see mkConfiguredSrc).
+    # Eval-platform configured tree for plan-to-nix (see mkConfiguredSrc):
+    # `packages: compiler` resolves against it.
     evalSrc              = configuredSrcEval;
-    cabalProjectFileName = "cabal.project.stage2.merged";
+    # The merged stage2 project rewritten to read the boot-package repository
+    # (`mkBootRepo`).  Reading it realises the repository at evaluation, as
+    # the plan needs it anyway.  The zero-length prefix carries the
+    # repository's string context, which `addContext` in
+    # lib/load-cabal-plan.nix hands to the tarball paths plan.json records.
+    cabalProject         = builtins.substring 0 0 "${bootRepoEval.repo}"
+      + builtins.readFile bootRepoEval.project;
     # Use the stage1 compiler (exported as ghc914-sh-stage1) to build
     # all stage2 boot libraries and executables.
     compiler-nix-name    = "ghc914-sh-stage1";
@@ -1246,15 +1492,16 @@ ENDSCRIPT
     # building the boot libraries.
     configureArgs = "--disable-tests --disable-benchmarks";
 
-    # NOTE: do NOT re-enable Hackage here.  stable-haskell intentionally sets
-    # `active-repositories: :none` in cabal.project.stage2.common — every boot
+    # NOTE: do NOT re-enable Hackage here.  stable-haskell sets
+    # `active-repositories: :none` in cabal.project.stage2.common -- every boot
     # library and build tool (alex, happy, happy-lib, ...) is pinned as a direct
-    # hackage tarball URL in the packages: stanza, and `replace-hackage-tarball-urls`
-    # (set above) rewrites each to a local store path fetched via hackage.nix.  So
-    # cabal resolves the whole plan from local packages + source-repository-packages
-    # and needs no Hackage index.  Re-enabling it would force cabal to load the
-    # entire ~1.2 GB index to resolve zero packages — a large, needless plan-to-nix
-    # cost (worse still under emulation on a foreign build platform).
+    # hackage tarball URL in the packages: stanza -- and `mkBootRepo` serves
+    # exactly those tarballs (`active-repositories: ghc-boot`).  So cabal
+    # resolves the whole plan from that repository + `compiler` +
+    # source-repository-packages and needs no Hackage index.  Re-enabling it
+    # would force cabal to load the entire ~1.2 GB index to resolve zero
+    # packages -- a large, needless plan-to-nix cost (worse still under
+    # emulation on a foreign build platform).
     #
     # The -no-rts ghc-options for rts, rts-fs, rts-headers, ghc-internal,
     # and libffi-clib are already set in cabal.project.stage2 (which imports
@@ -1276,13 +1523,13 @@ ENDSCRIPT
     # source — rts.cabal's rts-threaded-flags gained `cmm-options:
     # -optc-DTHREADED_RTS` (stable-haskell/ghc#191, merged to stable-ghc-9.14) —
     # so no `package rts` ghc-options workaround is needed here.
-    # `inplace-builds: False`: the plan-deterministic ids above
-    # (`base-4.22.1.0`, no `-inplace`) are what cabal 3.19
-    # (stable-haskell/merge) gives a project's own packages only with this
-    # set; the older fork named local units that way unconditionally.  The
-    # local-`packages:` slices set it too (comp-v2-builder.nix
-    # `packagesLine`), so plan and slice agree.  stable-haskell/ghc#200
-    # sets the same in GHC's own cabal.project.
+    # `inplace-builds: False`: the bare id `ghc-9.14` of the one local
+    # package, `ghc` (see `mkBootRepo` for why it has to stay bare), is what
+    # cabal 3.19 (stable-haskell/merge) gives a project's own packages only
+    # with this set; without it `ghc` is built in place and never reaches the
+    # store.  The local-`packages:` slices set it too (comp-v2-builder.nix
+    # `packagesLine`), so plan and slice agree.  stable-haskell/ghc#200 sets
+    # the same in GHC's own cabal.project.
     cabalProjectLocal = ''
       inplace-builds: False
       ${bootLibProfiling}
@@ -1645,26 +1892,40 @@ ENDSCRIPT
       # here (it's not covered by the cabal.project files).
       packages.unlit.ghcOptions = ["-no-rts"];
     }
-    # Boot-library unit ids MUST be deterministic: a consumer project's
+    # Boot-library unit ids MUST be predictable: a consumer project's
     # plan-time dummy `ghc-pkg dump` (lib/dummy-ghc.nix) has to present
     # the same installed ids cabal later sees against the real global db
     # — a dep's id enters the depending unit's `--dependency=<dep>=<id>`
-    # configure arg and therefore its UnitId hash, so with unpredictable
-    # boot-lib ids the v2 slice builder's plan-nix/slice unit-id equality
-    # can never hold for projects built with this compiler.  The fork
-    # elaborates `packages:`-local units to deterministic ids
-    # (`base-4.22.0.0`, `rts-1.0.3-threaded-nodebug`, ...), and
-    # `v2LocalPackageSlices = true` (set above) makes each slice build
-    # its target the same local way, so the ids each slice REGISTERS
-    # equal the plan's — enforced per slice by the unit-id check.
-    # (A previous `--ipid=\$pkgid-inplace` `configureFlags` module here
-    # became a silent no-op when stage2 moved to the v2 builder — v2
-    # only applies configure options recorded in plan-nix — leaving the
-    # global db with unpredictable hashed ids.)
+    # configure arg and therefore its UnitId hash.  They are the stage2
+    # plan's ids: the repository packages' hashed ids and the local
+    # `ghc`'s bare one, which every slice checks it registers (the
+    # unit-id check) and the dummy reads back (`bootUnitIds` on the
+    # native compiler).  The hashed ids are predictable because stage1's
+    # `Project Unit Id`, which cabal hashes into all of them, is pinned
+    # (`--ipid` in stage1Project) to what the stage1 dummy reports.
   ];
   };
 
   s2 = stage2Project.hsPkgs;
+
+  # `[ { bare; id; } ]` for every registered boot library unit (see
+  # `bootUnitIds` on the native compiler): the main library of each of
+  # `bootLibraries`, and its sub-libraries (the rts flavours).
+  stage2BootUnitIds =
+    let
+      plan = builtins.fromJSON (builtins.unsafeDiscardStringContext
+        (builtins.readFile "${stage2Project.plan-nix}/plan.json"));
+      unitsOf = u:
+        let
+          cn = u.component-name or "lib";
+          bare = "${u.pkg-name}-${u.pkg-version}";
+        in if cn == "lib" then [ { inherit bare; inherit (u) id; } ]
+           else if lib.hasPrefix "lib:" cn
+             then [ { bare = "${bare}-${lib.removePrefix "lib:" cn}"; inherit (u) id; } ]
+           else [];
+    in lib.filter (e: e.bare != e.id) (lib.concatMap unitsOf
+      (lib.filter (u: u.type or "" == "configured" && lib.elem u.pkg-name bootLibraries)
+        plan.install-plan));
 
   # Convenience: path to a stage2 executable.
   s2exe = pkg: exe: s2.${pkg}.components.exes.${exe}.exePath;
@@ -1779,6 +2040,15 @@ ENDSCRIPT
         # cabal's plan-time view matches the real compiler (it defaults to
         # ghc-<full-version>-inplace otherwise).
         projectUnitId        = "ghc-${ghcVersion}";
+        # The unit ids this compiler's global db registers, for the plan-time
+        # dummy `ghc-pkg dump` (lib/dummy-ghc.nix), which writes every boot
+        # library as `<name>-<version>[-<sublib>]` and maps each of these
+        # `bare` forms to the real `id`.  The boot libraries come from the
+        # boot-package repository with hashed ids (`mkBootRepo`), and the
+        # db holds exactly what their stage2 slices registered -- the stage2
+        # plan's ids, which every slice checks against.  Only ids that differ
+        # from the bare form are listed (`ghc` itself stays bare).
+        bootUnitIds = stage2BootUnitIds;
         # call-cabal-project-to-nix.nix:297 reads raw-src to synthesise the
         # dummy ghc-pkg dump for plan-time.  Use the dump tree (configuredSrc +
         # the hackage-pinned boot libraries' .cabal files) so user-project plans
@@ -1816,6 +2086,12 @@ ENDSCRIPT
         # modules/cabal-project.nix).  A different eval platform is reached via
         # `evalWith.${evalSystem}.configured-src-eval`.
         configured-src-eval  = configuredSrcEval;
+        # The `-target` subset of the boot-package repository (`mkBootRepo`)
+        # for THIS compiler's eval platform, and the in-tree packages it serves.
+        # Read by the `-target` boot-package injection
+        # (modules/cabal-project.nix) through the cross wrapper.
+        boot-target-repo     = bootRepoEval.target-repo;
+        target-boot-dirs     = targetBootDirs;
         # override references the outer ghc914-shCompiler (with cachedDeps).
         override             = args: (mkGhc ({ inherit evalSystem; } // args)).ghc914-shCompiler;
       };
@@ -2391,6 +2667,10 @@ ENDSCRIPT
         # boot package sources and .cabal files from these.
         configured-src       = nativeConfiguredSrc;
         configured-src-eval  = nativeConfiguredSrcEval;
+        # The native compiler's boot-package repository; the injection serves
+        # the target's boot packages from its `target-repo`.
+        boot-target-repo     = nativeSghc914.boot-target-repo;
+        target-boot-dirs     = nativeSghc914.target-boot-dirs;
         # Evaluating the cross wrapper forces the NATIVE stage1/stage2
         # plans (the wrapper links the native stage2 executables); there
         # are no cross-specific compiler plans — boot packages are planned
@@ -2754,7 +3034,10 @@ ENDSCRIPT
     #
     # `--info` (anywhere in argv) drops the `ghc-internal Unit Id` line, which
     # names the NATIVE stage2 `ghc-internal` the binary links and never one
-    # in the (empty) target db; see `infoFilter`.  Slices and shells both go
+    # in the (empty) target db; see `infoFilter`.  Since the injected target
+    # boot libraries became repository packages (modules/cabal-project.nix)
+    # they are no longer project packages, so cabal would otherwise pin the
+    # target's `ghc-internal` to that native id.  Slices and shells both go
     # through this script.
     cat > $out/bin/ghc << 'ENDSCRIPT'
 #!/bin/sh
