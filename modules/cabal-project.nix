@@ -618,7 +618,10 @@ in {
       # source candidates for their names -- Hackage has its own `base`,
       # `template-haskell`, ... and those must never be chosen -- as the
       # `packages:` entries were.  `:rest` keeps the project's other
-      # repositories active.  Built with explicit "\n" so the lines keep
+      # repositories active.  A project that sets `active-repositories`
+      # itself replaces this line, so it has to list
+      # `ghc-boot-target:override` too (as test/head-hackage.nix does), as
+      # it does `haskell-nix-hsc2hs`.  Built with explicit "\n" so the lines keep
       # their columns when interpolated into the indented project text below.
       shRepoStanza = "repository ghc-boot-target\n"
         + "  url: file:${shGhc.boot-target-repo}\n"
