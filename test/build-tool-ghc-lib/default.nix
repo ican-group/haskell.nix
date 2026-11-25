@@ -84,11 +84,17 @@ in lib.recurseIntoAttrs {
   # Every ghc-lib-gen unit in the plan (on `-target` cross, the build-stage
   # one) must not have a bare id (`<pkg>-<ver>-<exe>`, no hash), and natively
   # its id must be hashed.  A `-target` cross plan still names the build-stage
-  # tool `-inplace`, although it depends only on the build compiler's
-  # pre-existing `ghc`, while the boot libraries are now hashed; that comes
-  # from cabal's project source closure with the injected local `ghc`, and
-  # is harmless here, as `-target` slices compute their own ids
-  # (`isTwoStageCross` in builder/comp-v2-builder.nix).
+  # tool `-inplace`, so that is allowed there for now.  The plan comes from
+  # the released planner (nix-tools-sh-0.2.8, nix-tools-static-sh.nix), whose
+  # cabal (stable-haskell 7156caf47) takes every unit with a project
+  # package's package id as a root of the project source closure, pre-existing
+  # ones included: the build compiler's `ghc-9.14` shares its package id with
+  # the injected local `ghc`, so everything above it, this tool included, is
+  # in the closure and built inplace.  stable-haskell/cabal a7aa7efc9
+  # (stable-haskell/cabal#535, which `nix-tools-sh/cabal.project` and
+  # `v2-cabal-install` already pin) keeps only configured roots, so the
+  # slices already give the tool a hashed id.  Drop the allowance once a
+  # nix-tools-sh release built from that pin is in nix-tools-static-sh.nix.
   tool-id = buildPackages.runCommand "build-tool-ghc-lib-tool-id"
     { nativeBuildInputs = [ buildPackages.jq ]; } ''
     ids=$(jq -r '."install-plan"[]
