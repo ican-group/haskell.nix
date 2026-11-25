@@ -336,7 +336,22 @@ let
                then lib.filter (o: o != "-haddock") raw
                else raw;
     in if opts == [] then ""
-       else "package ${pname}\n  ghc-options: ${lib.concatStringsSep " " opts}\n";
+       else "package ${pname}\n  ghc-options: ${lib.concatMapStringsSep " " quoteProjectArg opts}\n";
+
+  # One argument of a cabal.project list field (`ghc-options:`,
+  # `configure-options:`, `<prog>-options:`), quoted when cabal would otherwise change it.
+  # cabal splits such a field into tokens and strips the quotes it finds
+  # in one, so the plan's `-optc-DTablesNextToCode="YES"` (written
+  # `"-optc-DTablesNextToCode=\"YES\""` in the stable-haskell project)
+  # reached the slice's GHC as `-optc-DTablesNextToCode=YES`.  The option
+  # text is in the unit's hash, so the slice's id differed from the plan's.
+  # A JSON string is the Haskell string literal cabal reads back (for the
+  # ASCII text these options are).  Arguments without a quote, backslash
+  # or white space are written as before.
+  quoteProjectArg = o:
+    if builtins.match ".*[\"\\[:space:]].*" o != null
+      then builtins.toJSON o
+      else o;
 
   # Per-package `documentation: True` block.  Emitted when this
   # package's plan-nix entry has `--ghc-option=-haddock` (the
@@ -351,7 +366,7 @@ let
   configureOptionsBlockFor = pname:
     let opts = configureOptionsOf pname;
     in if opts == [] then ""
-       else "package ${pname}\n  configure-options: ${lib.concatStringsSep " " opts}\n";
+       else "package ${pname}\n  configure-options: ${lib.concatMapStringsSep " " quoteProjectArg opts}\n";
 
   # Per-package `extra-lib-dirs:` / `extra-include-dirs:` blocks.
   # plan-nix picks these up from cabal.project (e.g. when the user
@@ -385,7 +400,7 @@ let
   programOptionsBlockFor = pname:
     let progs = programOptionsOf pname;
         lines = lib.concatStringsSep "\n" (map (prog:
-          "  ${prog}-options: ${lib.concatStringsSep " " progs.${prog}}"
+          "  ${prog}-options: ${lib.concatMapStringsSep " " quoteProjectArg progs.${prog}}"
         ) (builtins.attrNames progs));
     in if progs == {} then ""
        else "package ${pname}\n${lines}\n";
