@@ -260,6 +260,7 @@ let
     dummy-ghc-info = callTest ./dummy-ghc-info {};
     dummy-ghc-pkg-dump = callTest ./dummy-ghc-pkg-dump {};
     check-datadir = callTest ./check-datadir {};
+    build-tool-ghc-lib = callTest ./build-tool-ghc-lib {};
     pkgconf-pc-version = callTest ./pkgconf-pc-version {};
     cabal-simple-debug = callTest ./cabal-simple-debug { inherit util; };
     cabal-simple-prof = callTest ./cabal-simple-prof { inherit util; };
