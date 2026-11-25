@@ -173,6 +173,35 @@ let
     }
   '';
 
+  # `ghc --info` filter for the two wrapper compilers whose BINARY was built
+  # for a different package database than the one they compile against: the
+  # stage1 compiler (bootstrap libraries baked in, empty db, builds stage2's
+  # boot libraries) and the `-target` cross wrapper (the native stage2 binary,
+  # empty target db, builds the target's boot libraries).  It deletes the
+  # `ghc-internal Unit Id` line and keeps everything else -- `Project Unit Id`
+  # in particular, which cabal hashes into every unit.
+  #
+  # cabal (Cabal/src/Distribution/Simple/GHC.hs) pins the wired-in packages
+  # only when `--info` reports BOTH `ghc-internal Unit Id` and `Project Unit
+  # Id`: `ghc-internal` to the first and `ghc` to the second.  For these two
+  # compilers the reported `ghc-internal` is the library the binary itself
+  # links (the bootstrap GHC's, or the native stage2's), never one in the db
+  # being built for, so the pin could never be satisfied:
+  #
+  #   rejecting: ghc-internal-9.1400.0/installed-9.1400.0 (constraint from
+  #   non-reinstallable package requires installed instance with unit id
+  #   ghc-internal-9.1003.0-0f8d)
+  #
+  # Dropping the line leaves cabal with no pins at all, which is what the
+  # plan-time dummies (lib/dummy-ghc.nix, which never reports the line)
+  # already give the plan.  The field enters no hash.  This replaces the
+  # `wired-in-pins-follow-allow-boot-library-installs` cabal patch.  For
+  # stable-haskell/cabal#530.
+  infoFilter = pkgs.buildPackages.writeScript "ghc-info-filter" ''
+    #!${pkgs.buildPackages.runtimeShell}
+    exec ${pkgs.buildPackages.gnused}/bin/sed '/("ghc-internal Unit Id",/d'
+  '';
+
   # ── Configured source ──────────────────────────────────────────────────────
   # Runs autoconf/configure to generate .cabal files from .cabal.in,
   # synthesises libraries/ghc-boot-th-next, patches the FIXME platform
@@ -1045,8 +1074,18 @@ let
     # sub-libraries) but must NOT be applied globally — executable linking
     # (e.g. ghc-bin) needs the RTS.  Instead, -no-rts is passed per-package
     # via ghcOptions in the stage2/cross modules and via cabalProjectLocal.
+    #
+    # `--info` (anywhere in argv: cabal also asks `ghc -package-env=- --info`)
+    # drops the `ghc-internal Unit Id` line; see `infoFilter`.
     cat > $out/bin/ghc << 'ENDSCRIPT'
 #!/bin/sh
+for a in "$@"; do
+  if [ "$a" = --info ]; then
+    info=$(GHC_EXE -no-global-package-db -package-db PACKAGEDB -BLIBDIR "$@") || exit $?
+    printf '%s\n' "$info" | INFO_FILTER
+    exit $?
+  fi
+done
 exec GHC_EXE \
   -no-global-package-db \
   -package-db PACKAGEDB \
@@ -1054,9 +1093,10 @@ exec GHC_EXE \
   "$@"
 ENDSCRIPT
     sed -i \
-      -e "s|GHC_EXE|${s1exe "ghc-bin" "ghc"}|" \
-      -e "s|PACKAGEDB|$out/lib/ghc-${ghcVersion}/package.conf.d|" \
-      -e "s|LIBDIR|$out/lib/ghc-${ghcVersion}|" \
+      -e "s|GHC_EXE|${s1exe "ghc-bin" "ghc"}|g" \
+      -e "s|PACKAGEDB|$out/lib/ghc-${ghcVersion}/package.conf.d|g" \
+      -e "s|LIBDIR|$out/lib/ghc-${ghcVersion}|g" \
+      -e "s|INFO_FILTER|${infoFilter}|" \
       $out/bin/ghc
     chmod +x $out/bin/ghc
 
@@ -2711,17 +2751,30 @@ ENDSCRIPT
     # ── ghc wrapper ──────────────────────────────────────────────────────
     # -B and -target are both last-wins in GHC's argv handling, so callers
     # passing their own -B (e.g. -B$NIX_GHC_LIBDIR) or -target still win.
+    #
+    # `--info` (anywhere in argv) drops the `ghc-internal Unit Id` line, which
+    # names the NATIVE stage2 `ghc-internal` the binary links and never one
+    # in the (empty) target db; see `infoFilter`.  Slices and shells both go
+    # through this script.
     cat > $out/bin/ghc << 'ENDSCRIPT'
 #!/bin/sh
+for a in "$@"; do
+  if [ "$a" = --info ]; then
+    info=$(GHC_EXE -BTOPDIR -target=TARGET "$@") || exit $?
+    printf '%s\n' "$info" | INFO_FILTER
+    exit $?
+  fi
+done
 exec GHC_EXE \
   -BTOPDIR \
   -target=TARGET \
   "$@"
 ENDSCRIPT
     sed -i \
-      -e "s|GHC_EXE|${nativeS2exe "ghc-bin" "ghc"}|" \
-      -e "s|TOPDIR|$out/lib/ghc-${ghcVersion}|" \
-      -e "s|TARGET|${targetTriple}|" \
+      -e "s|GHC_EXE|${nativeS2exe "ghc-bin" "ghc"}|g" \
+      -e "s|TOPDIR|$out/lib/ghc-${ghcVersion}|g" \
+      -e "s|TARGET|${targetTriple}|g" \
+      -e "s|INFO_FILTER|${infoFilter}|" \
       $out/bin/ghc
     chmod +x $out/bin/ghc${lib.optionalString isGhcjsTarget ''
 

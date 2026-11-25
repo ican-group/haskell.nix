@@ -852,8 +852,10 @@ in {
       #   package requires installed instance)
       # The older fork had dropped those constraints entirely (its Note
       # [No non-reinstallable constraints]).  With the flag, the merge
-      # adds only wired-in unit-id pins, which this compiler does not
-      # report, and never pins a package the project lists as a target.
+      # adds only wired-in unit-id pins, and only when `ghc --info` reports
+      # a `ghc-internal Unit Id` -- which the `-target` wrapper filters out
+      # (`infoFilter` in overlays/stable-haskell.nix): the binary's own
+      # `ghc-internal` is the native one, never one in the target db.
       cabalProjectLocal = lib.mkBefore ''
         -- Added by the stable-haskell boot-package injection (see the
         -- `injectStableHaskellBootPackages` option): the compiler ships no

@@ -1442,8 +1442,8 @@ final: prev: {
                 source-repository-package
                     type: git
                     location: https://github.com/stable-haskell/Cabal.git
-                    tag: a7aa7efc94cc12e9241afc31748fbe6927cd2335
-                    --sha256: sha256-+kxqjwQuTxasjvMdKnvnraQM05Vx+kSaRLCINc41im0=
+                    tag: 371f609f04d6b5196f6c8654cac56f166b4e8cf3
+                    --sha256: sha256-4Uw2L0YXXMXsDim0kUagv9hXv+xvUHtYp9cjmW1JXPI=
                     subdir: Cabal
                             Cabal-syntax
                             cabal-install
@@ -1464,7 +1464,6 @@ final: prev: {
                 packages.cabal-install.patches = [
                   ../builder/cabal-install-patches/skip-installed-revdeps-in-completed.patch
                   ../builder/cabal-install-patches/setup-build-num-jobs-env.patch
-                  ../builder/cabal-install-patches/wired-in-pins-follow-allow-boot-library-installs.patch
                 ];
                 # The Cabal LIBRARY, not the tool: `v2-build` links it in and
                 # uses it as the build system for `build-type: Simple`, so a
