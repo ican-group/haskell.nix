@@ -37,14 +37,7 @@ let
       lndir -silent "$d/store" $out
     fi
   }
-  ${lib.concatMapStrings (s: ''
-    addDep ${s}
-    if [ -f ${s}/nix-support/transitive-deps ]; then
-      while IFS= read -r tdep; do
-        addDep "$tdep"
-      done < ${s}/nix-support/transitive-deps
-    fi
-  '') slices}
+  ${addSlices}
   # Per-slice `package.cache` files only describe the slice that
   # produced them, so they conflict with each other once we merge.
   # Drop the symlinks and let `ghc-pkg recache` regenerate one cache
@@ -71,6 +64,10 @@ let
   # (a two-stage slice's build store is its own, as in build-cabal-slice's
   # `addDep`).  Keeping the stages in separate dirs matters where their
   # platform dirs share a name (a musl host on a glibc build machine).
+  #
+  # build-cabal-slice.nix's store setup (`addDep` / `addBuildDep`) is the
+  # twin of this; it also counts slices, copies receipts and recaches with
+  # its own two-stage compiler, so the two are kept in step by hand.
   twoStageScript = ''
     mkdir -p $out
     buildPlatformDir=$(${buildGhc}/bin/ghc --info \
@@ -129,5 +126,5 @@ in
 
 runCommand name
   { preferLocalBuild = true;
-    nativeBuildInputs = [ ghc lndir ] ++ lib.optional (buildGhc != null) buildGhc;
+    nativeBuildInputs = [ ghc lndir ];
   } (if buildGhc == null then singleStageScript else twoStageScript)

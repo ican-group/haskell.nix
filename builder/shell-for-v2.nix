@@ -26,8 +26,6 @@
   # The cabal-install the v2 slice builder used, and its version.  See
   # `toolDrvs` below for why the shell's `cabal` has to be that one.
 , v2CabalInstall, v2CabalInstallVersion, withBuildCompiler ? false
-  # `v2CabalInstall` with the fix a two-stage shell needs (`cabalTool`).
-, v2CabalInstallShell ? v2CabalInstall
   # Unit ids of the project's `extra-packages` (see
   # `haskellLib.extraPackageUnitIds`).
 , extraPackageUnitIds ? [] }:
@@ -315,7 +313,8 @@ let
 
     mkdir -p "$tgt_base"
 
-    if [ -L "$tgt_base/build" ] && [ "$(readlink "$tgt_base/build")" = host ]; then
+    # A `build` symlink is always stale: earlier shells made one to `host`.
+    if [ -L "$tgt_base/build" ]; then
       rm -f "$tgt_base/build"
     fi
 
@@ -1013,16 +1012,6 @@ let
   # compiler so the tools are compatible with the shell's GHC.
   compilerNixName = compiler.nix-name;
 
-  # A two-stage shell's cabal has both machines in one plan.  The
-  # unpatched fork then plans every build-machine package that depends on
-  # a pre-existing package sharing the id of one of the project's boot
-  # packages (the build compiler's `text` -> `system-cxx-std-lib-1.0`)
-  # inplace, and rebuilds it instead of reusing the store's
-  # (`source-closure-configured-roots.patch`).  The patch changes no unit
-  # id here, so this cabal still finds everything the slices built.
-  shellCabalInstall =
-    if isTwoStagePlan then v2CabalInstallShell else v2CabalInstall;
-
   # `cabal` is not an ordinary tool here.  The whole point of the v2
   # shell is that the composed cabal store already holds the project's
   # dependencies, so `cabal build` reuses them instead of rebuilding.
@@ -1080,12 +1069,11 @@ let
     in
       if lib.isDerivation versionOrMod then
         if versionOrMod.drvPath == v2CabalInstall.drvPath
-           || versionOrMod.drvPath == shellCabalInstall.drvPath
            || (versionOrMod.version or null) == v2CabalInstallVersion
           then versionOrMod
           else mismatch "a derivation (${versionOrMod.name or "unnamed"})" versionOrMod
       else if pinned == null || pinned == "latest" || pinned == "v2-cabal-install"
-        then shellCabalInstall
+        then v2CabalInstall
       else if pinned != v2CabalInstallVersion
         then mismatch "pinned to ${pinned}"
           (pkgs.pkgsBuildBuild.haskell-nix.tool compilerNixName "cabal" versionOrMod)

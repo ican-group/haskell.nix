@@ -116,8 +116,10 @@ in lib.recurseIntoAttrs ({
       cabal v2-build -v2 lib:pkg 2>&1 | tee build.log
 
       # Only `pkg` itself may be built: everything else, the setup's
-      # dependencies included, comes from the shell's store.
-      if grep -E "^ - [A-Za-z][A-Za-z0-9-]*-[0-9][0-9.]* \(" build.log | grep -v "^ - pkg-0.1.0.0 "; then
+      # dependencies included, comes from the shell's store.  (A plan line
+      # may carry its machine: ` - build:hashable-1.5.1.0 (lib) ...`.)
+      if grep -E "^ - ((build|host):)?[A-Za-z][A-Za-z0-9-]*-[0-9][0-9.]* \(" build.log \
+         | grep -vE "^ - ((build|host):)?pkg-0.1.0.0 "; then
         echo "FAIL: cabal planned the packages above from source instead of reusing the shell's" >&2
         exit 1
       fi

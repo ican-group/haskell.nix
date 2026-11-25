@@ -37,12 +37,6 @@ let
   v2CabalInstall =
     let v2ci = pkgsBuildBuild.haskell-nix.v2-cabal-install;
     in v2ci.evalWith.${evalPackages.stdenv.hostPlatform.system} or v2ci;
-  # The same cabal-install with the fix a two-stage v2 shell needs (see
-  # `v2-cabal-install` in overlays/haskell.nix and `cabalTool` in
-  # shell-for-v2.nix).
-  v2CabalInstallShell =
-    let v2ci = pkgsBuildBuild.haskell-nix.v2-cabal-install.shell;
-    in v2ci.evalWith.${evalPackages.stdenv.hostPlatform.system} or v2ci;
 
   # The one place the v2 builder's cabal-install VERSION is written
   # down.  `shell-for-v2.nix` reads it too: a v2 shell whose `cabal`
@@ -191,7 +185,7 @@ let
   };
   shellForV2 = haskellLib.weakCallPackage pkgs ./shell-for-v2.nix {
     inherit hsPkgs haskellLib ghc compiler composeStore makeGhcShim cabalProjectLocal
-            v2CabalInstall v2CabalInstallShell v2CabalInstallVersion withBuildCompiler extraPackageUnitIds;
+            v2CabalInstall v2CabalInstallVersion withBuildCompiler extraPackageUnitIds;
     inherit (buildPackages) mkShell;
     haskell-nix = pkgs.haskell-nix;
   };
