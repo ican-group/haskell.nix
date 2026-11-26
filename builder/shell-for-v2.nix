@@ -616,6 +616,24 @@ let
     build-program-locations
       pkg-config-location: ${pkgs.pkgsBuildBuild.cabalPkgConfigWrapper}/bin/pkg-config
   '';
+  # A two-stage plan's build-machine links (a custom `Setup.hs`, a build
+  # tool built from source) use the native build compiler, and on darwin
+  # that needs two things a cross shell (whose stdenv is the target's) does
+  # not give it:
+  #  * a build-platform `-L` for `-liconv`, which `ghc-internal`/`base` add
+  #    to every link ("library not found for -liconv").  clang honours
+  #    `LIBRARY_PATH` whatever its wrapper's salt, as the slices rely on
+  #    (`LIBRARY_PATH` in build-cabal-slice.nix).  A shellHook rather than a
+  #    shell attribute, so a derivation that sources the hook
+  #    (tests.shell-for-setup-deps.cross-setup) gets it too;
+  #  * the build machine's `otool` (and the rest of its bintools) on PATH,
+  #    which GHC runs when it links ("otool: could not execute").
+  buildMachineDarwin = isTwoStagePlan && pkgs.stdenv.buildPlatform.isDarwin;
+  buildMachineLibraryPathHook = lib.optionalString buildMachineDarwin ''
+    export LIBRARY_PATH=${pkgs.pkgsBuildBuild.libiconv}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}
+  '';
+  buildMachineDarwinTools =
+    lib.optional buildMachineDarwin pkgs.pkgsBuildBuild.stdenv.cc.bintools;
   # Every hash-affecting line the slices' composed cabal.project carries
   # has to appear here too.  A UnitId is a hash of cabal-install's
   # `PackageHashInputs`, and `pkgHashProgramArgs` is one of them: a
@@ -1407,6 +1425,7 @@ mkShell {
     # (issue #1642), not the fake `allPkgConfigWrapper` used during
     # plan-nix evaluation.
     ++ [ pkgs.buildPackages.cabalPkgConfigWrapper ]
+    ++ buildMachineDarwinTools
     ++ nativeBuildInputs
     ++ inputsFromNativeBuildInputs;
   buildInputs = buildInputs
@@ -1429,6 +1448,7 @@ mkShell {
   shellHook =
     cabalProjectLocalShellHook + "\n"
     + shellSyncHook + "\n"
+    + buildMachineLibraryPathHook
     + inputsFromShellHook
     + shellHook;
   # Expose the composed dep store via passthru (and not as a
