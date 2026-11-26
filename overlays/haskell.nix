@@ -1464,6 +1464,7 @@ final: prev: {
                 packages.cabal-install.patches = [
                   ../builder/cabal-install-patches/skip-installed-revdeps-in-completed.patch
                   ../builder/cabal-install-patches/setup-build-num-jobs-env.patch
+                  ../builder/cabal-install-patches/wired-in-pins-follow-allow-boot-library-installs.patch
                 ];
                 # The Cabal LIBRARY, not the tool: `v2-build` links it in and
                 # uses it as the build system for `build-type: Simple`, so a

@@ -194,9 +194,14 @@ let
   #
   # Dropping the line leaves cabal with no pins at all, which is what the
   # plan-time dummies (lib/dummy-ghc.nix, which never reports the line)
-  # already give the plan.  The field enters no hash.  This replaces the
-  # `wired-in-pins-follow-allow-boot-library-installs` cabal patch.  For
-  # stable-haskell/cabal#530.
+  # already give the plan.  The field enters no hash.  It covers any cabal
+  # run against these two compilers, a shell's included.  Slices also get
+  # the `wired-in-pins-follow-allow-boot-library-installs` cabal patch
+  # (v2-cabal-install), which drops the pins under
+  # `allow-boot-library-installs` on every compiler: a slice of a project
+  # that reinstalls `ghc` (`useLocalGhcLib`) receives it installed, with a
+  # hashed id, where the `Project Unit Id` pin would demand the compiler's.
+  # For stable-haskell/cabal#530.
   infoFilter = pkgs.buildPackages.writeScript "ghc-info-filter" ''
     #!${pkgs.buildPackages.runtimeShell}
     exec ${pkgs.buildPackages.gnused}/bin/sed '/("ghc-internal Unit Id",/d'
