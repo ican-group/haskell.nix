@@ -549,11 +549,17 @@ let
   buildCxxLib = pkgsBuildBuild.stdenv.cc.cc.lib or pkgsBuildBuild.stdenv.cc.cc;
   buildSalt = lib.replaceStrings [ "-" "." ] [ "_" "_" ]
     stdenv.buildPlatform.config;
+  #
+  # A build-machine slice (`buildPlatformCompiler`: `ghc` is the build
+  # compiler) links the same way: test/build-tool-ghc-lib's `ghc-lib-gen`
+  # (lib `ghc` -> `text`) died in the ghcjs slice that runs it.  It needs this
+  # only when the build cc is NOT in `depsBuildBuild`, i.e. on ghcjs; there
+  # the cc-wrapper hook already fills the build salt.
   setupNeedsCxxRpath =
-    twoStage
+    (twoStage || (buildPlatformCompiler && !buildCcInDepsBuildBuild))
     && stdenv.buildPlatform.isLinux
     && stdenv.buildPlatform.config != stdenv.hostPlatform.config
-    && (twoStageBuildGhc.enableTextSimdutf or false);
+    && ((if twoStage then twoStageBuildGhc else ghc).enableTextSimdutf or false);
 
   # Two-stage build-tool source staging, appended verbatim to the
   # own-source block of the build-time slicing repo.  Leads with a newline
