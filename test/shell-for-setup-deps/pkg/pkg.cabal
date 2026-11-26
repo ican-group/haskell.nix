@@ -14,9 +14,9 @@ category:            Testing
 
 custom-setup
   setup-depends:       base
+                     , Cabal
                      , directory
                      , conduit
-                     , conduit-extra
                      , async >=2.0.0.0
 
 library

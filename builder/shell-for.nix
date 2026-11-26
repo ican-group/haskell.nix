@@ -209,6 +209,7 @@ in
                 --with-ghc=${ghcEnv.targetPrefix}ghc \
                 --with-compiler=${ghcEnv.targetPrefix}ghc \
                 --with-ghc-pkg=${ghcEnv.targetPrefix}ghc-pkg \
+                --with-hc-pkg=${ghcEnv.targetPrefix}ghc-pkg \
                 --with-hsc2hs=${ghcEnv.targetPrefix}hsc2hs \
                 ${lib.optionalString (ghcEnv.targetPrefix == "js-unknown-ghcjs-") ''
                   --with-ghcjs=${ghcEnv.targetPrefix}ghc \
