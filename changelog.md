@@ -23,6 +23,10 @@ that will impact users.
     `-target` wrapper) instead of by a cabal patch.  The new
     `v2-cabal-install` rebuilds every v2 slice once, the `ghc914-sh`
     compilers included.
+  * A `ghc914-sh` cross project that sets its own
+    `active-repositories` now has to list `ghc-boot-target:override` in
+    it: the target's boot libraries come from that repository.  See
+    [Cross compilation](https://ican-group.github.io/haskell.nix/tutorials/cross-compilation.html#targets).
 
 ## November 25, 2026
 
