@@ -16,16 +16,18 @@ that will impact users.
     rather than a tool rebuilt in every slice.  `v2-cabal-install` now
     pins stable-haskell/cabal `hkm/sh-merge3-ports`: haskell.nix's cabal
     changes rebased onto the current `stable-haskell/merge` (73d3ffda3),
-    without the change that reused receipts of local packages.  The
-    wired-in `ghc-internal` pin is dropped by filtering it out of
-    `ghc --info` for the two wrapper compilers whose binary links a
-    `ghc-internal` other than the one they build for (stage1 and the
-    `-target` wrapper) instead of by a cabal patch.  The new
+    without the change that reused receipts of local packages.  The two
+    wrapper compilers whose binary links a `ghc-internal` other than the
+    one they build for (stage1 and the `-target` wrapper) no longer report
+    it in `ghc --info`, so cabal does not pin `ghc-internal` to a unit
+    their package databases can never have.  The new
     `v2-cabal-install` rebuilds every v2 slice once, the `ghc914-sh`
     compilers included.
   * A `ghc914-sh` cross project that sets its own
     `active-repositories` now has to list `ghc-boot-target:override` in
-    it: the target's boot libraries come from that repository.  See
+    it: the target's boot libraries come from that repository, and
+    without it cabal can pick Hackage's `base`, `ghc-internal`, ... for
+    the target instead.  See
     [Cross compilation](https://ican-group.github.io/haskell.nix/tutorials/cross-compilation.html#targets).
 
 ## November 25, 2026

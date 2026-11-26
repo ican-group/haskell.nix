@@ -130,7 +130,9 @@ the repository too, with `:override` (it stops cabal picking Hackage's
 active-repositories: hackage.haskell.org, ghc-boot-target:override
 ```
 
-Without it cabal cannot find the target's boot packages.  As with
+Without it cabal does not see the target's boot packages, and can pick
+Hackage's releases of `base`, `ghc-internal`, ... instead, which fail to
+build or do not match the compiler.  As with
 `haskell-nix-hsc2hs` (see `usePatchedHsc2hs`), list it only for
 `ghc914-sh` cross projects: other projects have no such repository.
 
