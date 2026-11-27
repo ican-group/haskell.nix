@@ -749,7 +749,7 @@ let
           names="$names $name"
           case "$targetDirs" in
             *" $d "*)
-              cp $out/all/package/$name-$version.tar.gz $out/target/package/
+              ln -s ../../all/package/$name-$version.tar.gz $out/target/package/
               targetDirs=$(echo "$targetDirs" | sed "s| $d | |") ;;
           esac
         done
@@ -777,7 +777,7 @@ let
             mkdir -p $idx/$name/$version
             tar -xzOf $t $nv/$name.cabal > $idx/$name/$version/$name.cabal
             sha256=$(sha256sum $t | cut -d' ' -f1)
-            length=$(stat --printf=%s $t)
+            length=$(stat -L --printf=%s $t)
             printf '{"signatures":[],"signed":{"_type":"Targets","expires":null,"targets":{"<repo>/package/%s.tar.gz":{"hashes":{"sha256":"%s"},"length":%s}},"version":1}}' \
               $nv $sha256 $length > $idx/$name/$version/package.json
             entries="$entries $name/$version/$name.cabal $name/$version/package.json"
@@ -788,12 +788,14 @@ let
           rm -rf $idx $idx.tar
         done
       '');
+      # The tarballs stay in `contents`, once: `target/package` links into
+      # `all/package`, and each repository links to its `package` directory.
       mkRepo = sub: name:
         let metadata = import ../mk-local-hackage-repo buildPkgs {
               inherit name; index = "${contents}/${sub}/01-index.tar.gz"; };
         in buildPkgs.runCommand "${name}-repo" { } ''
           mkdir -p $out
-          cp -r ${contents}/${sub}/package $out/package
+          ln -s ${contents}/${sub}/package $out/package
           # -L: mk-local-hackage-repo symlinks the index it was handed.
           cp -L ${metadata}/01-index.tar.gz $out/01-index.tar.gz
           cp ${metadata}/root.json ${metadata}/mirrors.json \
@@ -809,24 +811,46 @@ let
       # stage1 compiler's package db is empty, whatever the plan-time dummy
       # `ghc-pkg dump` (which lists the tree's own .cabal files) reports --
       # left alone, cabal took the dummy's `system-cxx-std-lib` as installed.
+      #
+      # `contents` tars only the directories of the top-level `packages:`, so
+      # the rewrite fails rather than lose one: the dropped `if !os(windows)`
+      # block may hold only Hackage URLs (which the repository has), and no
+      # other conditional `packages:` may be left.
       project = buildPkgs.runCommand "cabal.project.stage2.repo"
         { nativeBuildInputs = [ buildPkgs.gawk ]; } ''
         src=${configured}/cabal.project.stage2.merged
         awk '
+          function dropped(l,  i, n, f) {
+            n = split(l, f, /[ \t,]+/)
+            for (i = 1; i <= n; i++)
+              if (f[i] != "" && f[i] !~ /^https:\/\/hackage\.haskell\.org\//) {
+                if (f[i] ~ /^--/) break
+                print "not a Hackage URL in the dropped if !os(windows) packages: " l > "/dev/stderr"
+                bad = 1; break
+              }
+          }
+          END { exit bad }
           /^packages:/ { print; inpk = 1; next }
           inpk && /^[^ \t]/ { inpk = 0 }
           inpk { if ($1 == "compiler") print; next }
           /^if !os\(windows\)[ \t]*$/ {
-            if ((getline nxt) > 0 && nxt ~ /^[ \t]+packages:/) { skipc = 1; next }
+            if ((getline nxt) > 0 && nxt ~ /^[ \t]+packages:/) {
+              skipc = 1; sub(/^[ \t]+packages:/, "", nxt); dropped(nxt); next
+            }
             print; print nxt; next
           }
-          skipc && /^[ \t]/ { next }
+          skipc && /^[ \t]/ { dropped($0); next }
           { skipc = 0 }
           /^active-repositories:/ { print "active-repositories: ghc-boot"; next }
           { print }
         ' $src > $out
         [ "$(grep -c '^  compiler$' $out)" = 1 ] \
           || { echo "rewriting packages: in $src failed" >&2; exit 1; }
+        if grep -qE '^[ \t]+packages:' $out; then
+          echo "a conditional packages: is left in the rewritten $src:" >&2
+          grep -nE '^[ \t]+packages:' $out >&2
+          exit 1
+        fi
         [ "$(grep -c '^active-repositories: ghc-boot$' $out)" = 1 ] \
           || { echo "rewriting active-repositories: in $src failed" >&2; exit 1; }
         if grep -q 'https://hackage' $out; then
