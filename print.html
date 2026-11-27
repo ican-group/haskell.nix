@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-d25f096f.js";
+            window.path_to_searchindex_js = "searchindex-a55e1a42.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-2ec6e9f5.js"></script>
@@ -8182,6 +8182,24 @@ hix-shell
 <h1 id="changelog"><a href="#changelog" class="header">ChangeLog</a></h1>
 <p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="november-25-2026"><a class="header" href="#november-25-2026">November 25, 2026</a></h2>
+<ul>
+<li>A v2 <code>shellFor</code> for a stable-haskell (<code>ghc914-sh</code>) cross target now
+lets <code>cabal build</code> reuse the shell’s prebuilt build-machine packages:
+a custom <code>Setup.hs</code>’s <code>setup-depends</code>, and build tools.  cabal
+compiles such a <code>Setup.hs</code> with the build compiler and runs it on the
+build machine, but it rebuilt all of those packages from source (and,
+without a build-machine linker in the shell, failed).  The shell’s
+cabal store now has them under <code>build/&lt;platform&gt;/</code>, where cabal looks
+for build-machine packages, kept apart from the target’s under
+<code>host/&lt;platform&gt;/</code>.  The shell also gives cabal the build machine’s
+<code>pkg-config</code>.  <code>v2-cabal-install</code> moves to a stable-haskell cabal
+commit that stops it planning build-machine packages inplace (or, in
+slices, naming them after their package id) when the project builds
+a package of the same name for the target (<code>system-cxx-std-lib</code>).
+This rebuilds every v2 slice, the ghc914-sh compilers included,
+once.  For #1388.</li>
+</ul>
 <h2 id="november-24-2026"><a class="header" href="#november-24-2026">November 24, 2026</a></h2>
 <ul>
 <li>
