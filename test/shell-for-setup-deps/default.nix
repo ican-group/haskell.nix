@@ -126,9 +126,11 @@ in lib.recurseIntoAttrs ({
       # cabal compiled the `Setup` with the build compiler (the shell's
       # `with-build-compiler`), so it is a build machine executable and
       # runs here.
+      # (Not `grep -q` in the pipeline: it stops at the first match, and
+      # under pipefail the first grep's broken pipe then fails the test.)
       buildCompiler=$(sed -n 's/^with-build-compiler: //p' cabal.project.local)
       if [ -z "$buildCompiler" ] \
-         || ! grep -F "Running: $buildCompiler " build.log | grep -q -- "--make .*pkg-0.1.0.0/setup"; then
+         || ! grep -F "Running: $buildCompiler " build.log | grep -- "--make .*pkg-0.1.0.0/setup" > /dev/null; then
         echo "FAIL: Setup.hs was not compiled with the build compiler ($buildCompiler)" >&2
         exit 1
       fi

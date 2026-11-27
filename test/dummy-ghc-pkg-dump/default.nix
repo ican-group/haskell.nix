@@ -35,6 +35,9 @@ let
 
   # One line per unit (`unit <id>`) and per dependency edge
   # (`dep <id> <dep-id>`), sorted, so the diff ignores field and unit order.
+  # ghc-pkg wraps a field value that does not fit on the field's line (any
+  # hashed unit id) onto the next, indented line, so `id:` takes its value
+  # from a continuation line as `depends:` does.
   normalise = pkgs.buildPackages.writeText "normalise-ghc-pkg-dump.awk" ''
     function flush() {
       if (id != "") {
@@ -52,7 +55,10 @@ let
       else if (field == "depends:") deps = deps " " $0
       next
     }
-    /^[ \t]/ { if (field == "depends:") deps = deps " " $0 }
+    /^[ \t]/ {
+      if (field == "depends:") deps = deps " " $0
+      else if (field == "id:" && id == "") id = $1
+    }
     END { flush() }
   '';
 in stdenv.mkDerivation {

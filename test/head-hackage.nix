@@ -17,6 +17,10 @@
   # otherwise -- see `bootLibsFromSource` below for what and why, and
   # test/default.nix for who asks.
 , bootLibsFromSource ? false
+  # The compiler is a stable-haskell `-target` cross compiler, whose boot
+  # libraries come from the `ghc-boot-target` repository that
+  # `injectStableHaskellBootPackages` adds (modules/cabal-project.nix).
+, bootRepository ? false
 }:
 {
   # The `assert` is the point of writing it this way.  If the stanza in
@@ -121,10 +125,18 @@
       # has to be named here too or the tests never see the patched hsc2hs.
       # Rewritten like the url above, so a plain `cabal` run driven by the
       # file -- where that repository does not exist -- is unaffected.
+      #
+      # The same goes for the `-target` boot-package repository, which has to
+      # keep its `:override` (see `shRepoStanza` in modules/cabal-project.nix):
+      # an `active-repositories` field replaces any earlier one, so naming the
+      # active repositories here leaves the injected one out unless it is
+      # named too.
       withHsc2hs =
         let
           from = "active-repositories: hackage.haskell.org";
-          out = builtins.replaceStrings [ from ] [ "${from}, haskell-nix-hsc2hs" ] stripped;
+          to = "${from}, haskell-nix-hsc2hs"
+            + (if bootRepository then ", ghc-boot-target:override" else "");
+          out = builtins.replaceStrings [ from ] [ to ] stripped;
         in assert out != stripped; out;
     in
       assert stripped != urlFixed;

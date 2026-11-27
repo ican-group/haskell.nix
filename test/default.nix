@@ -199,6 +199,10 @@ let
     # and with it every one of those targets' plan-nix hashes, for no reason.
     bootLibsFromSource = stdenv.hostPlatform.isGhcjs
       && (buildPackages.haskell-nix.compiler.${compiler-nix-name}.emptyGlobalPackageDb or false);
+    # Only for those compilers too: the extra repository name changes the
+    # text, and with it every plan-nix hash, of everything else.
+    bootRepository =
+      buildPackages.haskell-nix.compiler.${compiler-nix-name}.emptyGlobalPackageDb or false;
   };
   testCabalProjectLocal = headHackage.cabalProjectLocal;
   # inputMap entries are consulted only for `source-repository-package` urls a
@@ -260,6 +264,7 @@ let
     dummy-ghc-info = callTest ./dummy-ghc-info {};
     dummy-ghc-pkg-dump = callTest ./dummy-ghc-pkg-dump {};
     check-datadir = callTest ./check-datadir {};
+    build-tool-ghc-lib = callTest ./build-tool-ghc-lib {};
     pkgconf-pc-version = callTest ./pkgconf-pc-version {};
     cabal-simple-debug = callTest ./cabal-simple-debug { inherit util; };
     cabal-simple-prof = callTest ./cabal-simple-prof { inherit util; };

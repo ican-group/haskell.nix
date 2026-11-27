@@ -118,7 +118,23 @@ is also built).  On `aarch64-darwin` CI builds `ghcjs` and
 On `x86_64-darwin` it builds `ghcjs`.
 
 The stable-haskell GHC (`ghc914-sh`) uses the same `projectCross`
-interface.
+interface.  It builds the target's boot libraries (`base`,
+`template-haskell`, ...) as part of the project, from a package
+repository named `ghc-boot-target` that haskell.nix adds to it with
+`active-repositories: :rest, ghc-boot-target:override`.  A project that
+sets `active-repositories` itself replaces that line, so it has to list
+the repository too, with `:override` (it stops cabal picking Hackage's
+`base` and friends):
+
+```
+active-repositories: hackage.haskell.org, ghc-boot-target:override
+```
+
+Without it cabal does not see the target's boot packages, and can pick
+Hackage's releases of `base`, `ghc-internal`, ... instead, which fail to
+build or do not match the compiler.  As with
+`haskell-nix-hsc2hs` (see `usePatchedHsc2hs`), list it only for
+`ghc914-sh` cross projects: other projects have no such repository.
 
 ## Template Haskell and tests
 

@@ -584,36 +584,18 @@ in {
       # and utils/deriveConstants satisfy lib:ghc's build-tool-depends
       # (build-stage units, they run on the build machine).
       #
-      # These are injected as LOCAL `packages:` entries (absolute store
-      # paths), NOT as a source-repository-package: cabal hashes an SRP by
-      # listing its package sources sdist-style, which fails on
-      # ghc-internal's compiler-generated virtual modules
-      # (GHC.Internal.Prim & co have no source files, and upstream
-      # deliberately leaves them out of `autogen-modules` — see the
-      # commented block in ghc-internal.cabal.in).  Local packages skip
-      # that hashing and get `<pkg>-<ver>-inplace` unit ids — exactly the
-      # arrangement the native ghc914-sh stage2 build (also all-local)
-      # already exercises under the v2 builder.
-      shSubdirs = [
-        "rts-headers" "rts-fs" "rts"
-        "compiler"
-        "libraries/base"
-        "libraries/ghc-bignum"
-        "libraries/ghc-boot"
-        "libraries/ghc-boot-th"
-        "libraries/ghc-compact"
-        "libraries/ghc-experimental"
-        "libraries/ghc-heap"
-        "libraries/ghc-internal"
-        "libraries/ghc-platform"
-        "libraries/ghc-prim"
-        "libraries/ghci"
-        "libraries/integer-gmp"
-        "libraries/system-cxx-std-lib"
-        "libraries/template-haskell"
-        "utils/genprimopcode"
-        "utils/deriveConstants"
-      ]
+      # Most come from the native compiler's boot-package repository
+      # (`target-repo`, see `mkBootRepo` in overlays/stable-haskell.nix):
+      # repository packages get ordinary hashed unit ids that depend only on
+      # their own closure, where `packages:` entries would make every unit
+      # above them `-inplace`.  (A source-repository-package is no
+      # alternative: cabal hashes one by listing its sources sdist-style,
+      # which fails on ghc-internal's compiler-generated virtual modules.)
+      # The rest stay LOCAL `packages:` entries, `shLocalSubdirs` below.
+      shRepoSubdirs = shGhc.target-boot-dirs;
+      # `compiler` (package `ghc`) must keep the native compiler's bare unit
+      # id `ghc-9.14` (see `v2LocalPackageSliceNames` below).
+      shLocalSubdirs = [ "compiler" ]
       # utils/ghc-iserv builds the TARGET's external interpreter, and GHC runs
       # it on the BUILD machine (it resolves it as $topdir/../bin/ghc-iserv).
       # That only works when the build platform can execute target binaries --
@@ -622,8 +604,31 @@ in {
       # only where it is usable: otherwise it is dead weight, and worse, GHC
       # would find it and fail with "Exec format error" rather than falling
       # back to the proxy.  The compiler assembly links it if and only if the
-      # package set has it, so this one predicate governs both.
-      ++ lib.optional (pkgs.stdenv.buildPlatform.canExecute tp) "utils/ghc-iserv";
+      # package set has it, so this one predicate governs both.  (Local, as
+      # nothing depends on it: a repository package would also need an
+      # `extra-packages:` entry.)
+      ++ lib.optional (pkgs.stdenv.buildPlatform.canExecute tp) "utils/ghc-iserv"
+      # Android's system-cxx-std-lib is a patched copy (`shSubdirSrc`), so it
+      # can not come from the repository; a local package shadows the
+      # repository's.
+      ++ lib.optional (tp.isAndroid or false) "libraries/system-cxx-std-lib";
+      shSubdirs = lib.unique (shRepoSubdirs ++ shLocalSubdirs);
+      # The repository serving `shRepoSubdirs` (unsigned, as
+      # `haskell-nix-hsc2hs` is).  `:override` makes its packages the only
+      # source candidates for their names -- Hackage has its own `base`,
+      # `template-haskell`, ... and those must never be chosen -- as the
+      # `packages:` entries were.  `:rest` keeps the project's other
+      # repositories active.  A project that sets `active-repositories`
+      # itself replaces this line, so it has to list
+      # `ghc-boot-target:override` too (as test/head-hackage.nix does), as
+      # it does `haskell-nix-hsc2hs`.  Built with explicit "\n" so the lines keep
+      # their columns when interpolated into the indented project text below.
+      shRepoStanza = "repository ghc-boot-target\n"
+        + "  url: file:${shGhc.boot-target-repo}\n"
+        + "  secure: True\n"
+        + "  root-keys:\n"
+        + "  key-threshold: 0\n"
+        + "active-repositories: :rest, ghc-boot-target:override";
       # Package names of the boot subdirs injected above; `compiler` builds
       # package `ghc`, everything else is named after its directory.
       bootPkgNames =
@@ -852,8 +857,10 @@ in {
       #   package requires installed instance)
       # The older fork had dropped those constraints entirely (its Note
       # [No non-reinstallable constraints]).  With the flag, the merge
-      # adds only wired-in unit-id pins, which this compiler does not
-      # report, and never pins a package the project lists as a target.
+      # adds only wired-in unit-id pins, and only when `ghc --info` reports
+      # a `ghc-internal Unit Id` -- which the `-target` wrapper filters out
+      # (`infoFilter` in overlays/stable-haskell.nix): the binary's own
+      # `ghc-internal` is the native one, never one in the target db.
       cabalProjectLocal = lib.mkBefore ''
         -- Added by the stable-haskell boot-package injection (see the
         -- `injectStableHaskellBootPackages` option): the compiler ships no
@@ -877,7 +884,7 @@ in {
         -- concatenates the surrounding text verbatim.
         -- >>> haskell.nix:boot-packages
         packages:
-        ${lib.concatMapStrings (d: "  ${shSubdirSrc d}\n        ") shSubdirs}
+        ${lib.concatMapStrings (d: "  ${shSubdirSrc d}\n        ") shLocalSubdirs}
         ${lib.optionalString (tp.isWindows or false) "  ${win32Src}\n        "}
         -- <<< haskell.nix:boot-packages
         -- The boot libraries injected above are REBUILT in this slice, while
@@ -909,6 +916,7 @@ in {
           profiling-detail: none
         '') bootPkgNames}
         allow-boot-library-installs: True
+        ${shRepoStanza}
         -- Forked boot packages that live outside the GHC tree.
         source-repository-package
           type: git

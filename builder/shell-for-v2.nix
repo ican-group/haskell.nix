@@ -782,11 +782,30 @@ let
                 print nm[1], ui[1], val["depends"] }
         ' "$conf"
       done > units
+      # Likewise every package the project pins `source` itself, outside the
+      # boot-pins block (test/cabal-sublib-shell's aarch64 `text source`):
+      # flipping the block's pin to `installed` contradicts it (`rejecting:
+      # text-2.1.3/installed-... (constraint from project config
+      # cabal.project.local requires source instance)`).  Comments are cut
+      # first; a qualifier (`any.`, `host:`) is dropped, which errs towards
+      # `source`.
       awk '
+        /-- >>> haskell.nix:boot-pins/ { skip = 1; next }
+        /-- <<< haskell.nix:boot-pins/ { skip = 0; next }
+        skip { next }
+        { sub(/--.*/, "")
+          while (match($0, /[A-Za-z0-9:.-]+[ \t]+source([^A-Za-z0-9-]|$)/)) {
+            t = substr($0, RSTART, RLENGTH); sub(/[ \t]+source.*/, "", t)
+            sub(/.*[:.]/, "", t); print t
+            $0 = substr($0, RSTART + RLENGTH)
+          } }
+      ' ${cabalProjectLocalRaw} > pinned-source
+      awk -v seeds=pinned-source '
         { n++; uname[n] = $1; uid[n] = $2; udeps[n] = ""
           for (i = 3; i <= NF; i++) udeps[n] = udeps[n] " " $i }
         END {
           excl["Cabal"] = 1; excl["Cabal-syntax"] = 1
+          while ((getline s < seeds) > 0) if (s != "") excl[s] = 1
           do {
             changed = 0
             for (i = 1; i <= n; i++) if (uname[i] in excl) exclId[uid[i]] = 1
