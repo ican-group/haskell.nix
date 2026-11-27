@@ -1,6 +1,24 @@
 This file contains a summary of changes to Haskell.nix and `nix-tools`
 that will impact users.
 
+## November 25, 2026
+
+  * A v2 `shellFor` for a stable-haskell (`ghc914-sh`) cross target now
+    lets `cabal build` reuse the shell's prebuilt build-machine packages:
+    a custom `Setup.hs`'s `setup-depends`, and build tools.  cabal
+    compiles such a `Setup.hs` with the build compiler and runs it on the
+    build machine, but it rebuilt all of those packages from source (and,
+    without a build-machine linker in the shell, failed).  The shell's
+    cabal store now has them under `build/<platform>/`, where cabal looks
+    for build-machine packages, kept apart from the target's under
+    `host/<platform>/`.  The shell also gives cabal the build machine's
+    `pkg-config`.  `v2-cabal-install` moves to a stable-haskell cabal
+    commit that stops it planning build-machine packages inplace (or, in
+    slices, naming them after their package id) when the project builds
+    a package of the same name for the target (`system-cxx-std-lib`).
+    This rebuilds every v2 slice, the ghc914-sh compilers included,
+    once.  For #1388.
+
 ## November 24, 2026
 
   * `shellFor` and `ghcWithPackages` (including on Stackage snapshots,

@@ -216,16 +216,34 @@ let
   # packages.  Sized linearly with the number of distinct units
   # (lndir → tree of symlinks) rather than the bytes those units
   # take on disk.
-  composedStore = composeStore {
+  composedStore = composeStore ({
     name = "shell-store";
     slices = depSlices;
-  };
+  } // lib.optionalAttrs isTwoStagePlan {
+    # The plan's build-machine units (custom-setup `setup-depends`,
+    # `build-tool-depends`) go in the store's `build/<build platform>/`,
+    # where the fork cabal looks for BUILD-stage units, so a `cabal build`
+    # in the shell compiles a custom `Setup.hs` with the build compiler
+    # against the prebuilt units and runs it on the build machine.
+    buildGhc = ghc.buildGHC;
+  });
+  # A two-stage (stable-haskell `-target` cross) plan, as in
+  # comp-v2-builder's `isTwoStagePlan`.
+  isTwoStagePlan = ghc.emptyGlobalPackageDb or false;
 
   # `lndir` reproduces a directory tree as a tree of symlinks —
   # used for installing unit dirs (which are subtrees of files) so
   # the user's cabal store ends up with symlinks pointing into
   # /nix/store rather than full copies.
   lndir = pkgs.buildPackages.lndir or pkgs.buildPackages.xorg.lndir;
+
+  # Recache the package db `$db` of store root `$rootRel` in the sync
+  # script: a two-stage shell's `build/` roots with the build compiler's
+  # `ghc-pkg`.
+  recacheStoreRoot =
+    if isTwoStagePlan
+    then ''case "$rootRel" in build/*) "${ghc.buildGHC}/bin/ghc-pkg" --package-db="$db" recache 2>/dev/null || true ;; *) "$ghc_pkg" --package-db="$db" recache 2>/dev/null || true ;; esac''
+    else ''"$ghc_pkg" --package-db="$db" recache 2>/dev/null || true'';
 
   # Standalone sync script placed on PATH as
   # `haskell-nix-cabal-store-sync`.  The shell hook invokes it
@@ -269,7 +287,10 @@ let
   # host machines' package dbs whenever they share a platform directory --
   # a musl `-target` cross's glibc build units landed in its musl host db --
   # so the sync no longer makes the link and removes one it made before.
-  # cabal builds what a project needs for its build machine itself.
+  # A two-stage shell's composed store instead has its build-machine units
+  # in a separate `build/<build platform>/` (see `composedStore`), which is
+  # synced like the host dirs (and recached with the build compiler's
+  # `ghc-pkg`, `recacheStoreRoot`).
   cabalStoreSync = pkgs.pkgsBuildBuild.writeShellScriptBin "haskell-nix-cabal-store-sync" ''
     set -eu
 
@@ -292,7 +313,8 @@ let
 
     mkdir -p "$tgt_base"
 
-    if [ -L "$tgt_base/build" ] && [ "$(readlink "$tgt_base/build")" = host ]; then
+    # A `build` symlink is always stale: earlier shells made one to `host`.
+    if [ -L "$tgt_base/build" ]; then
       rm -f "$tgt_base/build"
     fi
 
@@ -349,7 +371,7 @@ let
     # cabal/ghc-pkg need — pkgroot resolves to wherever the copied
     # `package.conf.d` / `package.db` ends up in the target store.
     roots=()
-    for d in "$src"/ghc-*/ "$src"/host/*/; do
+    for d in "$src"/ghc-*/ "$src"/host/*/${lib.optionalString isTwoStagePlan " \"$src\"/build/*/"}; do
       d="''${d%/}"
       [ -d "$d" ] || continue
       [ -L "$d" ] && continue   # skip the fork's inert build->host link
@@ -522,7 +544,7 @@ let
       for f in package.cache package.cache.lock; do
         if [ -L "$db/$f" ]; then rm -f "$db/$f"; fi
       done
-      "$ghc_pkg" --package-db="$db" recache 2>/dev/null || true
+      ${recacheStoreRoot}
     done
 
     # ---- Drop sync marker for this composedStore -----------------
@@ -580,7 +602,38 @@ let
     in lib.optionalString (buildGhc != null) ''
       with-build-compiler: ${buildGhc}/bin/${buildGhc.targetPrefix or ""}ghc
       with-build-hc-pkg: ${buildGhc}/bin/${buildGhc.targetPrefix or ""}ghc-pkg
-    '';
+    '' + buildPkgConfigFields;
+  # The build machine's own pkg-config, for a two-stage project's BUILD
+  # stage, as its slices get it (`--with-build-pkg-config` in
+  # build-cabal-slice, #2628).  cabal configures each machine's programs
+  # separately, and nothing in a cross shell is called plain `pkg-config`,
+  # so without it the solve of a build-stage package with
+  # `pkgconfig-depends` differs from the slices' (zlib's `pkg-config` flag
+  # turned off) and its unit id misses the store's.  Program paths do not
+  # enter unit ids.
+  buildPkgConfigFields = lib.optionalString isTwoStagePlan ''
+
+    build-program-locations
+      pkg-config-location: ${pkgs.pkgsBuildBuild.cabalPkgConfigWrapper}/bin/pkg-config
+  '';
+  # A two-stage plan's build-machine links (a custom `Setup.hs`, a build
+  # tool built from source) use the native build compiler, and on darwin
+  # that needs two things a cross shell (whose stdenv is the target's) does
+  # not give it:
+  #  * a build-platform `-L` for `-liconv`, which `ghc-internal`/`base` add
+  #    to every link ("library not found for -liconv").  clang honours
+  #    `LIBRARY_PATH` whatever its wrapper's salt, as the slices rely on
+  #    (`LIBRARY_PATH` in build-cabal-slice.nix).  A shellHook rather than a
+  #    shell attribute, so a derivation that sources the hook
+  #    (tests.shell-for-setup-deps.cross-setup) gets it too;
+  #  * the build machine's `otool` (and the rest of its bintools) on PATH,
+  #    which GHC runs when it links ("otool: could not execute").
+  buildMachineDarwin = isTwoStagePlan && pkgs.stdenv.buildPlatform.isDarwin;
+  buildMachineLibraryPathHook = lib.optionalString buildMachineDarwin ''
+    export LIBRARY_PATH=${pkgs.pkgsBuildBuild.libiconv}/lib''${LIBRARY_PATH:+:$LIBRARY_PATH}
+  '';
+  buildMachineDarwinTools =
+    lib.optional buildMachineDarwin pkgs.pkgsBuildBuild.stdenv.cc.bintools;
   # Every hash-affecting line the slices' composed cabal.project carries
   # has to appear here too.  A UnitId is a hash of cabal-install's
   # `PackageHashInputs`, and `pkgHashProgramArgs` is one of them: a
@@ -1372,6 +1425,7 @@ mkShell {
     # (issue #1642), not the fake `allPkgConfigWrapper` used during
     # plan-nix evaluation.
     ++ [ pkgs.buildPackages.cabalPkgConfigWrapper ]
+    ++ buildMachineDarwinTools
     ++ nativeBuildInputs
     ++ inputsFromNativeBuildInputs;
   buildInputs = buildInputs
@@ -1394,6 +1448,7 @@ mkShell {
   shellHook =
     cabalProjectLocalShellHook + "\n"
     + shellSyncHook + "\n"
+    + buildMachineLibraryPathHook
     + inputsFromShellHook
     + shellHook;
   # Expose the composed dep store via passthru (and not as a
