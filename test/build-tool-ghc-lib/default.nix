@@ -81,6 +81,10 @@ in lib.recurseIntoAttrs {
 
   build = project.hsPkgs.uses-gen.components.library;
 
+  # The executable on its own: `run` only reaches it where the build
+  # platform can execute it, and it must link on every target.
+  inherit exe;
+
   # Every ghc-lib-gen unit in the plan (on `-target` cross, the build-stage
   # one) must not have a bare id (`<pkg>-<ver>-<exe>`, no hash), and natively
   # its id must be hashed.  A `-target` cross plan still names the build-stage
