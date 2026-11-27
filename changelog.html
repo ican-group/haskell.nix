@@ -35,7 +35,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a55e1a42.js";
+            window.path_to_searchindex_js = "searchindex-e43f7c8b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-2ec6e9f5.js"></script>
@@ -176,6 +176,35 @@
                     <main>
                         <p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="november-26-2026"><a class="header" href="#november-26-2026">November 26, 2026</a></h2>
+<ul>
+<li><code>ghc914-sh</code>’s boot libraries now have ordinary hashed unit ids
+(<code>base-4.22.1.0-&lt;hash&gt;</code> rather than <code>base-4.22.1.0</code>), both in the
+compiler’s own package database and when a <code>-target</code> cross project
+builds them for its target.  They come from a package repository of
+GHC’s boot packages instead of being listed as local packages, which
+made cabal name every unit above them after its package id.  <code>ghc</code>
+itself keeps its bare id (<code>ghc-9.14</code>): the compiler binary looks the
+library up by that id for plugins, on every target.  A plan whose build
+tool has a bare id (only possible for a tool depending on a local
+package under <code>inplace-builds: False</code>) is now an evaluation error
+rather than a tool rebuilt in every slice.  <code>v2-cabal-install</code> now
+pins stable-haskell/cabal <code>hkm/sh-merge3-ports</code>: haskell.nix’s cabal
+changes rebased onto the current <code>stable-haskell/merge</code> (73d3ffda3),
+without the change that reused receipts of local packages.  The two
+wrapper compilers whose binary links a <code>ghc-internal</code> other than the
+one they build for (stage1 and the <code>-target</code> wrapper) no longer report
+it in <code>ghc --info</code>, so cabal does not pin <code>ghc-internal</code> to a unit
+their package databases can never have.  The new
+<code>v2-cabal-install</code> rebuilds every v2 slice once, the <code>ghc914-sh</code>
+compilers included.</li>
+<li>A <code>ghc914-sh</code> cross project that sets its own
+<code>active-repositories</code> now has to list <code>ghc-boot-target:override</code> in
+it: the target’s boot libraries come from that repository, and
+without it cabal can pick Hackage’s <code>base</code>, <code>ghc-internal</code>, … for
+the target instead.  See
+<a href="https://ican-group.github.io/haskell.nix/tutorials/cross-compilation.html#targets">Cross compilation</a>.</li>
+</ul>
 <h2 id="november-25-2026"><a class="header" href="#november-25-2026">November 25, 2026</a></h2>
 <ul>
 <li>A v2 <code>shellFor</code> for a stable-haskell (<code>ghc914-sh</code>) cross target now

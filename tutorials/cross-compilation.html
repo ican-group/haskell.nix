@@ -35,7 +35,7 @@
             const path_to_root = "../";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "../searchindex-a55e1a42.js";
+            window.path_to_searchindex_js = "../searchindex-e43f7c8b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="../toc-2ec6e9f5.js"></script>
@@ -270,7 +270,20 @@ is also built).  On <code>aarch64-darwin</code> CI builds <code>ghcjs</code> and
 <code>aarch64-multiplatform-musl</code> (running Linux code under <code>hyper-linux</code>).
 On <code>x86_64-darwin</code> it builds <code>ghcjs</code>.</p>
 <p>The stable-haskell GHC (<code>ghc914-sh</code>) uses the same <code>projectCross</code>
-interface.</p>
+interface.  It builds the target’s boot libraries (<code>base</code>,
+<code>template-haskell</code>, …) as part of the project, from a package
+repository named <code>ghc-boot-target</code> that haskell.nix adds to it with
+<code>active-repositories: :rest, ghc-boot-target:override</code>.  A project that
+sets <code>active-repositories</code> itself replaces that line, so it has to list
+the repository too, with <code>:override</code> (it stops cabal picking Hackage’s
+<code>base</code> and friends):</p>
+<pre><code>active-repositories: hackage.haskell.org, ghc-boot-target:override
+</code></pre>
+<p>Without it cabal does not see the target’s boot packages, and can pick
+Hackage’s releases of <code>base</code>, <code>ghc-internal</code>, … instead, which fail to
+build or do not match the compiler.  As with
+<code>haskell-nix-hsc2hs</code> (see <code>usePatchedHsc2hs</code>), list it only for
+<code>ghc914-sh</code> cross projects: other projects have no such repository.</p>
 <h2 id="template-haskell-and-tests"><a class="header" href="#template-haskell-and-tests">Template Haskell and tests</a></h2>
 <p>Cross compiled Template Haskell works without configuration.  The splices
 run in an interpreter built for the target, started on the build machine

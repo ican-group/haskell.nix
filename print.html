@@ -36,7 +36,7 @@
             const path_to_root = "";
             const default_light_theme = "light";
             const default_dark_theme = "navy";
-            window.path_to_searchindex_js = "searchindex-a55e1a42.js";
+            window.path_to_searchindex_js = "searchindex-e43f7c8b.js";
         </script>
         <!-- Start loading toc.js asap -->
         <script src="toc-2ec6e9f5.js"></script>
@@ -1754,7 +1754,20 @@ is also built).  On <code>aarch64-darwin</code> CI builds <code>ghcjs</code> and
 <code>aarch64-multiplatform-musl</code> (running Linux code under <code>hyper-linux</code>).
 On <code>x86_64-darwin</code> it builds <code>ghcjs</code>.</p>
 <p>The stable-haskell GHC (<code>ghc914-sh</code>) uses the same <code>projectCross</code>
-interface.</p>
+interface.  It builds the target’s boot libraries (<code>base</code>,
+<code>template-haskell</code>, …) as part of the project, from a package
+repository named <code>ghc-boot-target</code> that haskell.nix adds to it with
+<code>active-repositories: :rest, ghc-boot-target:override</code>.  A project that
+sets <code>active-repositories</code> itself replaces that line, so it has to list
+the repository too, with <code>:override</code> (it stops cabal picking Hackage’s
+<code>base</code> and friends):</p>
+<pre><code>active-repositories: hackage.haskell.org, ghc-boot-target:override
+</code></pre>
+<p>Without it cabal does not see the target’s boot packages, and can pick
+Hackage’s releases of <code>base</code>, <code>ghc-internal</code>, … instead, which fail to
+build or do not match the compiler.  As with
+<code>haskell-nix-hsc2hs</code> (see <code>usePatchedHsc2hs</code>), list it only for
+<code>ghc914-sh</code> cross projects: other projects have no such repository.</p>
 <h2 id="template-haskell-and-tests"><a class="header" href="#template-haskell-and-tests">Template Haskell and tests</a></h2>
 <p>Cross compiled Template Haskell works without configuration.  The splices
 run in an interpreter built for the target, started on the build machine
@@ -8182,6 +8195,35 @@ hix-shell
 <h1 id="changelog"><a href="#changelog" class="header">ChangeLog</a></h1>
 <p>This file contains a summary of changes to Haskell.nix and <code>nix-tools</code>
 that will impact users.</p>
+<h2 id="november-26-2026"><a class="header" href="#november-26-2026">November 26, 2026</a></h2>
+<ul>
+<li><code>ghc914-sh</code>’s boot libraries now have ordinary hashed unit ids
+(<code>base-4.22.1.0-&lt;hash&gt;</code> rather than <code>base-4.22.1.0</code>), both in the
+compiler’s own package database and when a <code>-target</code> cross project
+builds them for its target.  They come from a package repository of
+GHC’s boot packages instead of being listed as local packages, which
+made cabal name every unit above them after its package id.  <code>ghc</code>
+itself keeps its bare id (<code>ghc-9.14</code>): the compiler binary looks the
+library up by that id for plugins, on every target.  A plan whose build
+tool has a bare id (only possible for a tool depending on a local
+package under <code>inplace-builds: False</code>) is now an evaluation error
+rather than a tool rebuilt in every slice.  <code>v2-cabal-install</code> now
+pins stable-haskell/cabal <code>hkm/sh-merge3-ports</code>: haskell.nix’s cabal
+changes rebased onto the current <code>stable-haskell/merge</code> (73d3ffda3),
+without the change that reused receipts of local packages.  The two
+wrapper compilers whose binary links a <code>ghc-internal</code> other than the
+one they build for (stage1 and the <code>-target</code> wrapper) no longer report
+it in <code>ghc --info</code>, so cabal does not pin <code>ghc-internal</code> to a unit
+their package databases can never have.  The new
+<code>v2-cabal-install</code> rebuilds every v2 slice once, the <code>ghc914-sh</code>
+compilers included.</li>
+<li>A <code>ghc914-sh</code> cross project that sets its own
+<code>active-repositories</code> now has to list <code>ghc-boot-target:override</code> in
+it: the target’s boot libraries come from that repository, and
+without it cabal can pick Hackage’s <code>base</code>, <code>ghc-internal</code>, … for
+the target instead.  See
+<a href="https://ican-group.github.io/haskell.nix/tutorials/cross-compilation.html#targets">Cross compilation</a>.</li>
+</ul>
 <h2 id="november-25-2026"><a class="header" href="#november-25-2026">November 25, 2026</a></h2>
 <ul>
 <li>A v2 <code>shellFor</code> for a stable-haskell (<code>ghc914-sh</code>) cross target now
