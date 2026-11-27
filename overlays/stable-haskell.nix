@@ -577,8 +577,17 @@ let
   # tracks upstream; filtered to bootLibraries = what actually gets
   # registered in the final compiler's DB.
   urlBootPkgsFrom = src: lib.filter (p: lib.elem p.name bootLibraries)
-    (pkgs.haskell-nix.haskellLib.hackageTarballUrls
-      (builtins.readFile "${src}/cabal.project.stage2.merged"));
+    (stage2UrlPkgsFrom src);
+  # Every Hackage tarball the stage2 project pins by URL (not only the
+  # registered boot libraries), skipping commented-out lines such as the
+  # `-- https://.../hsc2hs-0.68.10.tar.gz` note in its `packages:` stanza.
+  # Only (name, version) is taken from the text: `mkBootRepo` fetches the
+  # files by hash from hackage.nix.
+  stage2UrlPkgsFrom = src: lib.unique (lib.concatMap (line:
+      if builtins.match "[[:space:]]*--.*" line != null then []
+      else pkgs.haskell-nix.haskellLib.hackageTarballUrls line)
+    (lib.splitString "\n"
+      (builtins.readFile "${src}/cabal.project.stage2.merged")));
   # NB: `urlBootPkgs` is defined per-`mkGhc` (below) reading the EVAL tree — the
   # `readFile` here REALISES the tree at eval, so it must be the eval-platform
   # copy (darwin when a darwin host evaluates a linux job), not the build tree.
@@ -898,16 +907,7 @@ let
   # from the EVAL tree — `urlBootPkgsFrom` does `readFile`, which realises the
   # tree at eval; the build tree must never be realised on a foreign eval host.
   urlBootPkgs       = urlBootPkgsFrom configuredSrcEval;
-  # Every Hackage tarball the stage2 project pins by URL (not only the
-  # registered boot libraries), skipping commented-out lines such as the
-  # `-- https://.../hsc2hs-0.68.10.tar.gz` note in its `packages:` stanza.
-  # Only (name, version) is taken from the text: the files are fetched by
-  # hash from hackage.nix in `mkBootRepo`.
-  stage2UrlPkgs = lib.unique (lib.concatMap (line:
-      if builtins.match "[[:space:]]*--.*" line != null then []
-      else pkgs.haskell-nix.haskellLib.hackageTarballUrls line)
-    (lib.splitString "\n"
-      (builtins.readFile "${configuredSrcEval}/cabal.project.stage2.merged")));
+  stage2UrlPkgs     = stage2UrlPkgsFrom configuredSrcEval;
   # The boot-package repository (see `mkBootRepo`), from the eval tree.
   bootRepoEval = mkBootRepo evalPackages configuredSrcEval stage2UrlPkgs;
 
@@ -1931,9 +1931,16 @@ ENDSCRIPT
            else if lib.hasPrefix "lib:" cn
              then [ { bare = "${bare}-${lib.removePrefix "lib:" cn}"; inherit (u) id; } ]
            else [];
-    in lib.filter (e: e.bare != e.id) (lib.concatMap unitsOf
-      (lib.filter (u: u.type or "" == "configured" && lib.elem u.pkg-name bootLibraries)
-        plan.install-plan));
+      units = lib.filter (e: e.bare != e.id) (lib.concatMap unitsOf
+        (lib.filter (u: u.type or "" == "configured" && lib.elem u.pkg-name bootLibraries)
+          plan.install-plan));
+      # The dummy dump maps each bare form to one id, so two plan units with
+      # the same bare form (two builds of one package version) would leave
+      # it guessing which one `bootLibConfs` registers.
+      dups = lib.attrNames (lib.filterAttrs (_: n: n > 1)
+        (lib.foldl' (acc: e: acc // { ${e.bare} = (acc.${e.bare} or 0) + 1; }) {} units));
+    in if dups == [] then units
+       else throw "ghc914-sh: the stage2 plan has more than one unit for ${lib.concatStringsSep ", " dups}";
 
   # Convenience: path to a stage2 executable.
   s2exe = pkg: exe: s2.${pkg}.components.exes.${exe}.exePath;
